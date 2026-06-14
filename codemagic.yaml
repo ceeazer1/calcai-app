@@ -11,19 +11,27 @@ workflows:
       flutter: stable
       xcode: latest
       cocoapods: default
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.calcai.calcaiApp
 
     scripts:
       - name: Set up code signing
         script: |
           keychain initialize
       
-      - name: Fetch signing files
+      - name: Create certificate and profiles
         script: |
+          # Generate a persistent key
+          openssl genrsa -out $CM_BUILD_DIR/cert_key.pem 2048
+          
+          # Create fresh distribution certificate (old ones were revoked)
+          app-store-connect certificates create \
+            --type IOS_DISTRIBUTION \
+            --certificate-key @file:$CM_BUILD_DIR/cert_key.pem \
+            --save
+          
+          # Fetch/create provisioning profile
           app-store-connect fetch-signing-files "com.calcai.calcaiApp" \
             --type IOS_APP_STORE \
+            --certificate-key @file:$CM_BUILD_DIR/cert_key.pem \
             --create
       
       - name: Set up keychain and profiles
