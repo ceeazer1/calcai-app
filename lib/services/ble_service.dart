@@ -364,11 +364,14 @@ class BleService extends ChangeNotifier {
         withoutResponse: _scanChar!.properties.writeWithoutResponse,
       );
 
-      // Wait briefly for the ESP32 to perform its scan
-      await Future.delayed(const Duration(seconds: 3));
-
-      // Read results
-      final response = await _scanChar!.read();
+      // Poll for results — ESP32 WiFi scan can take up to 10 seconds
+      List<int> response = [];
+      for (int i = 0; i < 8; i++) {
+        await Future.delayed(const Duration(seconds: 2));
+        response = await _scanChar!.read();
+        // Check if we got actual results (not empty "[]")
+        if (response.length > 4) break;
+      }
 
       if (response.isNotEmpty) {
         _parseWifiScanResults(response);
