@@ -17,8 +17,11 @@ workflows:
         script: |
           keychain initialize
       
-      - name: Fetch signing files
+      - name: Create certificate and fetch signing files
         script: |
+          app-store-connect create-certificate \
+            --type IOS_DISTRIBUTION \
+            --save
           app-store-connect fetch-signing-files "com.calcai.calcaiApp" \
             --type IOS_APP_STORE \
             --create
