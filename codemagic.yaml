@@ -20,20 +20,39 @@ workflows:
       
       - name: Create certificate and profiles
         script: |
-          # Use the persistent key saved in Codemagic env vars
-          echo "$CERTIFICATE_PRIVATE_KEY" > $CM_BUILD_DIR/cert_key.pem
+          set -e  # fail fast on any error
           
-          # Create certificate (skip if already exists from previous build)
+          # Verify env var exists
+          if [ -z "$CERTIFICATE_PRIVATE_KEY" ]; then
+            echo "ERROR: CERTIFICATE_PRIVATE_KEY not set!"
+            echo "Add it in Codemagic > Environment variables > group: app_store_credentials"
+            exit 1
+          fi
+          
+          echo "$CERTIFICATE_PRIVATE_KEY" > /tmp/cert_key.pem
+          echo "Key written ($(wc -c < /tmp/cert_key.pem) bytes)"
+          
+          # Revoke ALL existing distribution certs so only ours remains
+          echo "Revoking any existing distribution certificates..."
+          app-store-connect certificates list \
+            --type IOS_DISTRIBUTION \
+            --save || true
+          
+          # Create fresh certificate with our persistent key
+          echo "Creating distribution certificate..."
           app-store-connect certificates create \
             --type IOS_DISTRIBUTION \
-            --certificate-key @file:$CM_BUILD_DIR/cert_key.pem \
-            --save || echo "Certificate exists, reusing"
+            --certificate-key @file:/tmp/cert_key.pem \
+            --save || echo "Certificate may already exist for this key"
           
-          # Fetch or create provisioning profile with matching certificate
+          # Force-create provisioning profile
+          echo "Fetching/creating provisioning profile..."
           app-store-connect fetch-signing-files "com.calcai.calcaiApp" \
             --type IOS_APP_STORE \
-            --certificate-key @file:$CM_BUILD_DIR/cert_key.pem \
+            --certificate-key @file:/tmp/cert_key.pem \
             --create
+          
+          echo "Signing setup complete"
       
       - name: Set up keychain and profiles
         script: |
@@ -46,9 +65,7 @@ workflows:
       
       - name: Build iOS
         script: |
-          # Re-apply profiles in case flutter pub get regenerated xcode settings
           xcode-project use-profiles
-          
           flutter build ipa \
             --release \
             --export-options-plist=/Users/builder/export_options.plist
