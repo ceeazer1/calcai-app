@@ -10,6 +10,8 @@ workflows:
     environment:
       flutter: stable
       xcode: latest
+      groups:
+        - app_store_credentials
 
     scripts:
       - name: Set up code signing
@@ -18,13 +20,16 @@ workflows:
       
       - name: Create certificate and profiles
         script: |
-          openssl genrsa -out $CM_BUILD_DIR/cert_key.pem 2048
+          # Write the persistent key from env var
+          echo "$CERTIFICATE_PRIVATE_KEY" > $CM_BUILD_DIR/cert_key.pem
           
+          # Create cert (|| true in case it already exists from last build)
           app-store-connect certificates create \
             --type IOS_DISTRIBUTION \
             --certificate-key @file:$CM_BUILD_DIR/cert_key.pem \
             --save || true
           
+          # Fetch/create provisioning profile
           app-store-connect fetch-signing-files "com.calcai.calcaiApp" \
             --type IOS_APP_STORE \
             --certificate-key @file:$CM_BUILD_DIR/cert_key.pem \
