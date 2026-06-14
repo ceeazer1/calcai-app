@@ -17,13 +17,22 @@ workflows:
         script: |
           keychain initialize
       
-      - name: Create certificate and fetch signing files
+      - name: Generate key and create certificate
         script: |
-          app-store-connect create-certificate \
+          # Generate a new RSA private key for certificate signing
+          openssl genrsa -out $HOME/cert_key.pem 2048
+          export CERTIFICATE_PRIVATE_KEY=$(cat $HOME/cert_key.pem)
+          
+          # Create iOS distribution certificate
+          app-store-connect certificates create \
             --type IOS_DISTRIBUTION \
+            --certificate-key @file:$HOME/cert_key.pem \
             --save
+          
+          # Fetch/create provisioning profile
           app-store-connect fetch-signing-files "com.calcai.calcaiApp" \
             --type IOS_APP_STORE \
+            --certificate-key @file:$HOME/cert_key.pem \
             --create
       
       - name: Set up signing
