@@ -20,16 +20,16 @@ workflows:
       
       - name: Create certificate and profiles
         script: |
-          # Write the persistent key from env var
+          # Use the persistent key saved in Codemagic env vars
           echo "$CERTIFICATE_PRIVATE_KEY" > $CM_BUILD_DIR/cert_key.pem
           
-          # Create cert (|| true in case it already exists from last build)
+          # Create certificate (skip if already exists from previous build)
           app-store-connect certificates create \
             --type IOS_DISTRIBUTION \
             --certificate-key @file:$CM_BUILD_DIR/cert_key.pem \
-            --save || true
+            --save || echo "Certificate exists, reusing"
           
-          # Fetch/create provisioning profile
+          # Fetch or create provisioning profile with matching certificate
           app-store-connect fetch-signing-files "com.calcai.calcaiApp" \
             --type IOS_APP_STORE \
             --certificate-key @file:$CM_BUILD_DIR/cert_key.pem \
@@ -40,12 +40,13 @@ workflows:
           keychain add-certificates
           xcode-project use-profiles
       
+      - name: Get packages
+        script: |
+          flutter packages pub get
+      
       - name: Build iOS
         script: |
-          flutter clean
-          flutter packages pub get
-          
-          # Re-apply signing after flutter regenerates Xcode project
+          # Re-apply profiles in case flutter pub get regenerated xcode settings
           xcode-project use-profiles
           
           flutter build ipa \
