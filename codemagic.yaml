@@ -4,12 +4,13 @@ workflows:
     max_build_duration: 60
     instance_type: mac_mini_m2
     
+    integrations:
+      app_store_connect: CalcAI App Store Connect
+    
     environment:
       flutter: stable
       xcode: latest
       cocoapods: default
-      groups:
-        - app_store_credentials  # Set up in Codemagic UI
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.calcai.calcaiApp
@@ -47,5 +48,3 @@ workflows:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
-        beta_groups:
-          - CalcAI Testers
