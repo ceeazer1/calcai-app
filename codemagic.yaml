@@ -45,9 +45,17 @@ workflows:
       
       - name: Build iOS
         script: |
-          rm -f ios/Podfile.lock
-          rm -rf ios/Pods
-          rm -rf ios/.symlinks
+          # Clean everything to avoid stale sandbox/pod conflicts
+          flutter clean
+          flutter packages pub get
+          
+          cd ios
+          rm -f Podfile.lock
+          rm -rf Pods
+          rm -rf .symlinks
+          rm -rf ~/Library/Developer/Xcode/DerivedData
+          pod install
+          cd ..
           
           flutter build ipa \
             --release \
