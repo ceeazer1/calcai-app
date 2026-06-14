@@ -5,7 +5,7 @@ workflows:
     instance_type: mac_mini_m2
     
     integrations:
-      app_store_connect: CalcAI App Store Connect
+      app_store_connect: CalcAI
     
     environment:
       flutter: stable
