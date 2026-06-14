@@ -1,7 +1,7 @@
 name: calcai_app
 description: CalcAI - ESP32 WiFi Provisioning App
 publish_to: 'none'
-version: 1.0.0+5
+version: 1.0.0+6
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -12,6 +12,9 @@ dependencies:
   flutter_blue_plus: ^1.35.2
   provider: ^6.1.2
   google_fonts: ^6.2.1
+  flutter_secure_storage: ^9.2.4
+  http: ^1.2.2
+  shared_preferences: ^2.3.5
 
 dev_dependencies:
   flutter_test:

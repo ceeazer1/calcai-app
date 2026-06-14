@@ -3,12 +3,15 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'app.dart';
+import 'services/auth_service.dart';
 import 'services/ble_service.dart';
+import 'services/cloud_service.dart';
 
 /// Application entry point.
 ///
-/// Sets up system UI overlays, initialises the [BleService] provider,
-/// and launches the CalcAI app.
+/// Sets up system UI overlays, initialises service providers
+/// ([BleService], [AuthService], [CloudService]), and launches the
+/// CalcAI app.
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -27,9 +30,14 @@ void main() {
   ));
 
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => BleService(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => BleService()),
+        ChangeNotifierProvider(create: (_) => AuthService()),
+        ChangeNotifierProvider(create: (_) => CloudService()),
+      ],
       child: const CalcAIApp(),
     ),
   );
 }
+

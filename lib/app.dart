@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 
-import 'screens/splash_screen.dart';
+import 'screens/auth_screen.dart';
+import 'screens/main_shell.dart';
+import 'screens/scan_screen.dart';
+import 'services/auth_service.dart';
+import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
 
 /// Root widget for the CalcAI application.
 ///
-/// Applies the dark theme and sets up the initial route
-/// to the [SplashScreen].
+/// Applies the dark theme and delegates the initial route decision to
+/// [_AppGate], which watches [AuthService] to show the appropriate screen.
 class CalcAIApp extends StatelessWidget {
   const CalcAIApp({super.key});
 
@@ -16,7 +22,93 @@ class CalcAIApp extends StatelessWidget {
       title: 'CalcAI',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
-      home: const SplashScreen(),
+      home: const _AppGate(),
     );
+  }
+}
+
+/// Gate widget that resolves which top-level screen to display based on
+/// the current [AuthService] state.
+///
+/// - **Loading** → minimal splash / loading indicator
+/// - **Not authenticated** → [AuthScreen]
+/// - **Authenticated, no devices** → [ScanScreen] (initial device setup)
+/// - **Authenticated with devices** → [MainShell]
+///
+/// Because this widget watches [AuthService] via [Provider], it will
+/// automatically rebuild whenever the auth state changes (e.g. after
+/// sign-in, sign-out, or device pairing).
+class _AppGate extends StatefulWidget {
+  const _AppGate();
+
+  @override
+  State<_AppGate> createState() => _AppGateState();
+}
+
+class _AppGateState extends State<_AppGate> {
+  bool _initialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initAuth();
+  }
+
+  Future<void> _initAuth() async {
+    final auth = context.read<AuthService>();
+    await auth.init();
+    if (mounted) {
+      setState(() => _initialized = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthService>();
+
+    // ── Still loading persisted session ──────────────────────────────
+    if (!_initialized || auth.isLoading) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'CalcAI',
+                style: GoogleFonts.outfit(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 24),
+              const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.electricBlue,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // ── Not authenticated → sign-in screen ──────────────────────────
+    if (!auth.isAuthenticated) {
+      return const AuthScreen();
+    }
+
+    // ── Authenticated but no paired devices → setup / scan ──────────
+    if (!auth.hasDevices) {
+      return const ScanScreen();
+    }
+
+    // ── Fully ready → main navigation shell ─────────────────────────
+    return const MainShell();
   }
 }
