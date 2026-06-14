@@ -3,7 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'dart:io' show Platform;
 
 import '../models/calcai_device.dart';
 import '../models/wifi_network.dart';
@@ -79,27 +79,54 @@ class BleService extends ChangeNotifier {
   StreamSubscription<BluetoothConnectionState>? _connectionSub;
   StreamSubscription<List<int>>? _statusNotifySub;
 
-  // ── Permissions ────────────────────────────────────────────────────
-
-  /// Requests Bluetooth and location permissions required for BLE.
+  /// Requests Bluetooth permissions required for BLE.
   ///
-  /// Returns `true` if all required permissions were granted.
+  /// On iOS, CoreBluetooth handles permissions natively when scanning starts.
+  /// On Android, flutter_blue_plus requests permissions automatically.
+  /// Returns `true` if Bluetooth is ready to use.
   Future<bool> requestPermissions() async {
-    final statuses = await [
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
-      Permission.locationWhenInUse,
-    ].request();
+    try {
+      // Check if Bluetooth adapter is available
+      if (await FlutterBluePlus.isSupported == false) {
+        _setError('Bluetooth is not supported on this device.');
+        return false;
+      }
 
-    final allGranted = statuses.values.every(
-      (s) => s.isGranted || s.isLimited,
-    );
+      // Check adapter state
+      final adapterState = await FlutterBluePlus.adapterState.first;
+      
+      if (adapterState != BluetoothAdapterState.on) {
+        // On iOS, this prompts the user to enable Bluetooth
+        if (Platform.isIOS) {
+          _setError('Please enable Bluetooth in Settings.');
+        } else {
+          // On Android, try to turn it on
+          try {
+            await FlutterBluePlus.turnOn();
+          } catch (_) {
+            _setError('Please enable Bluetooth.');
+            return false;
+          }
+        }
+        
+        // Wait briefly for Bluetooth to turn on
+        final state = await FlutterBluePlus.adapterState
+            .where((s) => s == BluetoothAdapterState.on)
+            .first
+            .timeout(const Duration(seconds: 10), onTimeout: () => BluetoothAdapterState.off);
+        
+        if (state != BluetoothAdapterState.on) {
+          _setError('Bluetooth is not enabled.');
+          return false;
+        }
+      }
 
-    if (!allGranted) {
-      _setError('Bluetooth and Location permissions are required.');
+      _clearError();
+      return true;
+    } catch (e) {
+      _setError('Bluetooth setup failed: ${_friendlyError(e)}');
+      return false;
     }
-
-    return allGranted;
   }
 
   /// Checks whether Bluetooth is currently on.
