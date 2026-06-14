@@ -10,7 +10,6 @@ workflows:
     environment:
       flutter: stable
       xcode: latest
-      cocoapods: default
 
     scripts:
       - name: Set up code signing
@@ -19,16 +18,13 @@ workflows:
       
       - name: Create certificate and profiles
         script: |
-          # Generate a persistent key
           openssl genrsa -out $CM_BUILD_DIR/cert_key.pem 2048
           
-          # Create fresh distribution certificate (old ones were revoked)
           app-store-connect certificates create \
             --type IOS_DISTRIBUTION \
             --certificate-key @file:$CM_BUILD_DIR/cert_key.pem \
-            --save
+            --save || true
           
-          # Fetch/create provisioning profile
           app-store-connect fetch-signing-files "com.calcai.calcaiApp" \
             --type IOS_APP_STORE \
             --certificate-key @file:$CM_BUILD_DIR/cert_key.pem \
@@ -39,24 +35,10 @@ workflows:
           keychain add-certificates
           xcode-project use-profiles
       
-      - name: Get Flutter packages
-        script: |
-          flutter packages pub get
-      
       - name: Build iOS
         script: |
-          # Clean everything to avoid stale sandbox/pod conflicts
           flutter clean
           flutter packages pub get
-          
-          cd ios
-          rm -f Podfile.lock
-          rm -rf Pods
-          rm -rf .symlinks
-          rm -rf ~/Library/Developer/Xcode/DerivedData
-          pod install
-          cd ..
-          
           flutter build ipa \
             --release \
             --export-options-plist=/Users/builder/export_options.plist
