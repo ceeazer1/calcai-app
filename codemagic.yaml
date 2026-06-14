@@ -44,6 +44,10 @@ workflows:
         script: |
           flutter clean
           flutter packages pub get
+          
+          # Re-apply signing after flutter regenerates Xcode project
+          xcode-project use-profiles
+          
           flutter build ipa \
             --release \
             --export-options-plist=/Users/builder/export_options.plist
