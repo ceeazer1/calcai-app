@@ -19,17 +19,14 @@ workflows:
       
       - name: Generate key and create certificate
         script: |
-          # Generate a new RSA private key for certificate signing
           openssl genrsa -out $HOME/cert_key.pem 2048
           export CERTIFICATE_PRIVATE_KEY=$(cat $HOME/cert_key.pem)
           
-          # Create iOS distribution certificate
           app-store-connect certificates create \
             --type IOS_DISTRIBUTION \
             --certificate-key @file:$HOME/cert_key.pem \
             --save
           
-          # Fetch/create provisioning profile
           app-store-connect fetch-signing-files "com.calcai.calcaiApp" \
             --type IOS_APP_STORE \
             --certificate-key @file:$HOME/cert_key.pem \
@@ -44,12 +41,13 @@ workflows:
         script: |
           flutter packages pub get
       
-      - name: Install CocoaPods
-        script: |
-          cd ios && pod install
-      
       - name: Build iOS
         script: |
+          # Clean stale pod state so flutter build runs pod install fresh
+          rm -f ios/Podfile.lock
+          rm -rf ios/Pods
+          rm -rf ios/.symlinks
+          
           flutter build ipa \
             --release \
             --export-options-plist=/Users/builder/export_options.plist
