@@ -665,8 +665,10 @@ class BleService extends ChangeNotifier {
         withoutResponse: false,
       );
 
-      // Remove from local list
+      // Remove from local lists and persist
       _wifiNetworks.removeWhere((n) => n.ssid == ssid);
+      _savedNetworks.remove(ssid);
+      await _persistSavedNetworks();
       notifyListeners();
 
       return true;
