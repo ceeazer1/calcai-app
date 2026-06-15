@@ -71,9 +71,11 @@ class _AuthScreenState extends State<AuthScreen>
       }
       // _AppGate will react to AuthService state change automatically
     } catch (e) {
-      setState(() {
-        _error = 'Sign in failed. Please try again.';
-      });
+      if (mounted) {
+        setState(() {
+          _error = 'Sign in error: $e';
+        });
+      }
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
