@@ -9,9 +9,9 @@
 	<key>CFBundleDisplayName</key>
 	<string>CalcAI</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>CalcAI uses Bluetooth to connect to your ESP32 device for WiFi setup and management.</string>
+	<string>CalcAI uses Bluetooth to connect to your CalcAI device for WiFi setup and management.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>CalcAI uses Bluetooth to connect to your ESP32 device for WiFi setup and management.</string>
+	<string>CalcAI uses Bluetooth to connect to your CalcAI device for WiFi setup and management.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>CalcAI needs location access to scan for nearby Bluetooth devices.</string>
 	<key>CFBundleExecutable</key>
@@ -21,7 +21,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>calcai_app</string>
+	<string>CalcAI</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

@@ -184,7 +184,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      cloud.deviceName ?? 'CalcAI Device',
+                      "${auth.username ?? 'My'}'s CalcAI",
                       style: GoogleFonts.outfit(
                         fontSize: 17,
                         fontWeight: FontWeight.w600,
@@ -511,135 +511,32 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   void _showModelPicker(CloudService cloud) {
-    final models = {
-      'OpenAI': [
+    final providers = [
+      _ModelProvider('OpenAI', Icons.auto_awesome_rounded, [
         'gpt-5.5', 'gpt-5.5-instant', 'gpt-5.4-pro', 'gpt-5.4',
         'gpt-5.4-mini', 'gpt-5.4-nano', 'o4-mini',
-      ],
-      'Google': [
+      ]),
+      _ModelProvider('Google', Icons.cloud_rounded, [
         'gemini-3.5-flash', 'gemini-3.1-pro', 'gemini-3.1-flash-lite',
         'gemini-2.5-pro', 'gemini-2.5-flash',
-      ],
-      'Anthropic': [
+      ]),
+      _ModelProvider('Anthropic', Icons.psychology_rounded, [
         'claude-opus-4.8', 'claude-opus-4.7', 'claude-opus-4.6',
         'claude-sonnet-4.6', 'claude-sonnet-4.5', 'claude-haiku-4.5',
-      ],
-    };
+      ]),
+    ];
 
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (ctx) => Container(
-        height: MediaQuery.of(ctx).size.height * 0.7,
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          border: Border.all(color: AppColors.glassBorder, width: 0.5),
-        ),
-        child: Column(
-          children: [
-            const SizedBox(height: 12),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.textTertiary,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Text(
-                'Select AI Model',
-                style: GoogleFonts.outfit(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-            ),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                children: models.entries.map((entry) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        entry.key,
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textSecondary,
-                          letterSpacing: 1,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      ...entry.value.map((model) {
-                        final isSelected = model == cloud.currentModel;
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap: () {
-                                Navigator.pop(ctx);
-                                _setModel(model);
-                              },
-                              borderRadius: BorderRadius.circular(12),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 200),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 14,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: isSelected
-                                      ? AppColors.electricBlue.withOpacity(0.1)
-                                      : AppColors.surfaceLight,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: isSelected
-                                        ? AppColors.electricBlue.withOpacity(0.3)
-                                        : Colors.transparent,
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        model,
-                                        style: GoogleFonts.inter(
-                                          fontSize: 14,
-                                          fontWeight: isSelected
-                                              ? FontWeight.w600
-                                              : FontWeight.w400,
-                                          color: AppColors.textPrimary,
-                                        ),
-                                      ),
-                                    ),
-                                    if (isSelected)
-                                      const Icon(
-                                        Icons.check_rounded,
-                                        color: AppColors.success,
-                                        size: 20,
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      }),
-                      const SizedBox(height: 16),
-                    ],
-                  );
-                }).toList(),
-              ),
-            ),
-          ],
-        ),
+      builder: (ctx) => _ModelPickerSheet(
+        providers: providers,
+        currentModel: cloud.currentModel,
+        onSelected: (model) {
+          Navigator.pop(ctx);
+          _setModel(model);
+        },
       ),
     );
   }
@@ -710,6 +607,214 @@ class _UsageStat extends StatelessWidget {
             style: GoogleFonts.inter(
               fontSize: 12,
               color: AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Model Picker ────────────────────────────────────────────────────────
+
+class _ModelProvider {
+  final String name;
+  final IconData icon;
+  final List<String> models;
+  const _ModelProvider(this.name, this.icon, this.models);
+}
+
+class _ModelPickerSheet extends StatefulWidget {
+  final List<_ModelProvider> providers;
+  final String? currentModel;
+  final ValueChanged<String> onSelected;
+
+  const _ModelPickerSheet({
+    required this.providers,
+    required this.currentModel,
+    required this.onSelected,
+  });
+
+  @override
+  State<_ModelPickerSheet> createState() => _ModelPickerSheetState();
+}
+
+class _ModelPickerSheetState extends State<_ModelPickerSheet> {
+  int _selectedTab = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Auto-select tab based on current model
+    if (widget.currentModel != null) {
+      for (int i = 0; i < widget.providers.length; i++) {
+        if (widget.providers[i].models.contains(widget.currentModel)) {
+          _selectedTab = i;
+          break;
+        }
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = widget.providers[_selectedTab];
+
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.65,
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border.all(color: AppColors.glassBorder, width: 0.5),
+      ),
+      child: Column(
+        children: [
+          const SizedBox(height: 12),
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.textTertiary,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+            child: Text(
+              'Select AI Model',
+              style: GoogleFonts.outfit(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+
+          // ── Provider tabs ──────────────────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: List.generate(widget.providers.length, (i) {
+                final p = widget.providers[i];
+                final isActive = i == _selectedTab;
+                return Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => _selectedTab = i),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      margin: EdgeInsets.only(right: i < 2 ? 8 : 0),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: isActive
+                            ? AppColors.electricBlue.withOpacity(0.12)
+                            : AppColors.surfaceLight,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isActive
+                              ? AppColors.electricBlue.withOpacity(0.3)
+                              : Colors.transparent,
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Icon(
+                            p.icon,
+                            size: 20,
+                            color: isActive
+                                ? AppColors.textPrimary
+                                : AppColors.textTertiary,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            p.name,
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              fontWeight: isActive
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                              color: isActive
+                                  ? AppColors.textPrimary
+                                  : AppColors.textTertiary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // ── Model list for selected provider ───────
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              itemCount: provider.models.length,
+              itemBuilder: (context, index) {
+                final model = provider.models[index];
+                final isSelected = model == widget.currentModel;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => widget.onSelected(model),
+                      borderRadius: BorderRadius.circular(14),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 16,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? AppColors.electricBlue.withOpacity(0.1)
+                              : AppColors.surfaceLight,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: isSelected
+                                ? AppColors.electricBlue.withOpacity(0.3)
+                                : AppColors.glassBorder,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                model,
+                                style: GoogleFonts.inter(
+                                  fontSize: 15,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w600
+                                      : FontWeight.w400,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                            ),
+                            if (isSelected)
+                              Container(
+                                width: 24,
+                                height: 24,
+                                decoration: BoxDecoration(
+                                  color: AppColors.success.withOpacity(0.15),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.check_rounded,
+                                  color: AppColors.success,
+                                  size: 16,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
           ),
         ],

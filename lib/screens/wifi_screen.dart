@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../models/calcai_device.dart';
 import '../services/ble_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glass_card.dart';
@@ -442,7 +443,7 @@ class _WifiScreenState extends State<WifiScreen> {
             onPressed: () {
               Navigator.pop(ctx);
               final ble = context.read<BleService>();
-              ble.sendWifiCredentials(ssid, passwordController.text);
+              ble.sendWifiCredentials(ssid: ssid, password: passwordController.text);
             },
             child: Text(
               'Connect',
@@ -487,7 +488,8 @@ class _WifiScreenState extends State<WifiScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
-              // TODO: Send remove command via BLE
+              final ble = context.read<BleService>();
+              ble.removeWifiNetwork(ssid);
             },
             child: Text(
               'Remove',

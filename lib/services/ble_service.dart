@@ -543,6 +543,40 @@ class BleService extends ChangeNotifier {
     return result;
   }
 
+  /// Sends a remove-network command to the ESP32 via BLE.
+  ///
+  /// The ESP32 firmware accepts `{"action":"remove","ssid":"..."}` on the
+  /// Config characteristic and clears the matching NVS slot.
+  Future<bool> removeWifiNetwork(String ssid) async {
+    if (_configChar == null) {
+      _setError('WiFi config characteristic not available.');
+      return false;
+    }
+
+    _clearError();
+
+    try {
+      final payload = jsonEncode({
+        'action': 'remove',
+        'ssid': ssid,
+      });
+
+      await _configChar!.write(
+        utf8.encode(payload),
+        withoutResponse: false,
+      );
+
+      // Remove from local list
+      _wifiNetworks.removeWhere((n) => n.ssid == ssid);
+      notifyListeners();
+
+      return true;
+    } catch (e) {
+      _setError('Failed to remove network: $e');
+      return false;
+    }
+  }
+
   // ── Helpers ────────────────────────────────────────────────────────
 
   void _setConnectionState(DeviceConnectionState state) {

@@ -405,6 +405,98 @@ class CloudService extends ChangeNotifier {
     }
   }
 
+  // ── API Key Management ───────────────────────────────────────────────
+
+  /// Saved API key info per provider: { 'openai': { active: true, last4: 'xxxx' }, ... }
+  Map<String, dynamic> _apiKeys = {};
+  Map<String, dynamic> get apiKeys => Map.unmodifiable(_apiKeys);
+
+  /// Whether a specific provider has a saved key.
+  bool hasApiKey(String provider) {
+    final info = _apiKeys[provider.toLowerCase()];
+    return info != null && info['active'] == true;
+  }
+
+  /// Get the last 4 chars of a saved key for display.
+  String? apiKeyLast4(String provider) {
+    final info = _apiKeys[provider.toLowerCase()];
+    return info?['last4']?.toString();
+  }
+
+  /// List all saved API keys. Returns provider → { active, last4 }.
+  Future<Map<String, dynamic>> listApiKeys(String token) async {
+    try {
+      final resp = await http.get(
+        Uri.parse('$_baseUrl/ai/apikey/list'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body);
+        if (data is Map<String, dynamic>) {
+          // Remove non-provider keys like 'ok'
+          _apiKeys = Map.from(data)..remove('ok');
+          notifyListeners();
+        }
+      }
+      return _apiKeys;
+    } catch (e) {
+      debugPrint('listApiKeys error: $e');
+      return _apiKeys;
+    }
+  }
+
+  /// Save an API key for a provider. Backend validates the key first.
+  Future<bool> saveApiKey(String token, String provider, String key) async {
+    try {
+      final resp = await http.post(
+        Uri.parse('$_baseUrl/ai/apikey/save'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'provider': provider.toLowerCase(), 'key': key}),
+      );
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body);
+        if (data['ok'] == true) {
+          _apiKeys[provider.toLowerCase()] = {
+            'active': true,
+            'last4': data['last4'],
+          };
+          notifyListeners();
+          return true;
+        }
+      }
+      return false;
+    } catch (e) {
+      debugPrint('saveApiKey error: $e');
+      return false;
+    }
+  }
+
+  /// Delete a saved API key for a provider.
+  Future<bool> deleteApiKey(String token, String provider) async {
+    try {
+      final resp = await http.post(
+        Uri.parse('$_baseUrl/ai/apikey/delete'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'provider': provider.toLowerCase()}),
+      );
+      if (resp.statusCode == 200) {
+        _apiKeys.remove(provider.toLowerCase());
+        notifyListeners();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('deleteApiKey error: $e');
+      return false;
+    }
+  }
+
   void _setLoading(bool value) {
     _isLoading = value;
     notifyListeners();

@@ -150,7 +150,7 @@ class _AuthScreenState extends State<AuthScreen>
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Your calculator, supercharged',
+                        'Your Calculator, Reimagined with AI.',
                         style: GoogleFonts.inter(
                           fontSize: 16,
                           color: AppColors.textSecondary,

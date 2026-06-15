@@ -1,9 +1,13 @@
 import 'dart:convert';
+import 'dart:math';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 /// Manages authentication state for the CalcAI app.
 ///
@@ -26,6 +30,13 @@ class AuthService extends ChangeNotifier {
   static const String _keyEmail = 'email';
   static const String _keyDeviceMacs = 'device_macs';
   static const String _keyPrimaryMac = 'primary_mac';
+
+  /// Generate a cryptographically secure nonce for Apple Sign-In.
+  static String _generateNonce([int length = 32]) {
+    const charset = '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
+    final random = Random.secure();
+    return List.generate(length, (_) => charset[random.nextInt(charset.length)]).join();
+  }
 
   // ── State ─────────────────────────────────────────────────────────────
 
@@ -87,7 +98,8 @@ class AuthService extends ChangeNotifier {
   Future<void> init() async {
     _isLoading = true;
     _error = null;
-    notifyListeners();
+    // Don't call notifyListeners() here — we're likely inside a build frame.
+    // The finally block will notify once loading completes.
 
     try {
       // Retrieve sensitive token from secure storage.
@@ -119,26 +131,59 @@ class AuthService extends ChangeNotifier {
 
   /// Signs in using Apple credentials.
   ///
-  /// Currently returns a mock token so the rest of the app can be built and
-  /// tested against a realistic auth flow.
-  ///
-  // TODO(auth): Integrate `sign_in_with_apple` package and exchange the
-  //  Apple identity token with the CalcAI backend for a server JWT.
+  /// Uses the `sign_in_with_apple` package to get an identity token, then
+  /// exchanges it with the CalcAI backend for a server session token.
   Future<bool> signInWithApple() async {
     _setLoading(true);
 
     try {
-      // Mock sign-in — replace with real Apple Sign-In flow.
-      await Future<void>.delayed(const Duration(milliseconds: 800));
+      // Generate a nonce for security
+      final rawNonce = _generateNonce();
+      final hashedNonce = sha256.convert(utf8.encode(rawNonce)).toString();
 
-      _token = 'mock_apple_token_${DateTime.now().millisecondsSinceEpoch}';
-      _username = 'Apple User';
-      _email = 'apple@example.com';
+      final credential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+        nonce: hashedNonce,
+      );
+
+      final identityToken = credential.identityToken;
+      if (identityToken == null) {
+        _error = 'No identity token received from Apple.';
+        return false;
+      }
+
+      // Exchange with backend
+      final response = await _httpClient.post(
+        Uri.parse('$_baseUrl/auth/apple'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'identityToken': identityToken}),
+      );
+
+      final data = jsonDecode(response.body);
+      if (response.statusCode != 200 || data['ok'] != true) {
+        _error = data['error'] ?? 'Apple sign-in failed';
+        return false;
+      }
+
+      _token = data['token'];
+      _email = data['email'];
+      _username = credential.givenName ?? _email?.split('@').first ?? 'User';
       _isAuthenticated = true;
       _error = null;
 
       await _saveToStorage();
+      await fetchDevices();
       return true;
+    } on SignInWithAppleAuthorizationException catch (e) {
+      if (e.code == AuthorizationErrorCode.canceled) {
+        _error = null; // User cancelled — not an error
+      } else {
+        _error = 'Apple sign-in failed: ${e.message}';
+      }
+      return false;
     } catch (e) {
       _error = 'Apple sign-in failed: $e';
       return false;
@@ -149,25 +194,49 @@ class AuthService extends ChangeNotifier {
 
   /// Signs in using Google credentials.
   ///
-  /// Currently returns a mock token so the rest of the app can be built and
-  /// tested against a realistic auth flow.
-  ///
-  // TODO(auth): Integrate `google_sign_in` package and exchange the Google
-  //  ID token with the CalcAI backend for a server JWT.
+  /// Uses the `google_sign_in` package to get an ID token, then exchanges
+  /// it with the CalcAI backend for a server session token.
   Future<bool> signInWithGoogle() async {
     _setLoading(true);
 
     try {
-      // Mock sign-in — replace with real Google Sign-In flow.
-      await Future<void>.delayed(const Duration(milliseconds: 800));
+      final googleSignIn = GoogleSignIn(scopes: ['email']);
+      final account = await googleSignIn.signIn();
 
-      _token = 'mock_google_token_${DateTime.now().millisecondsSinceEpoch}';
-      _username = 'Google User';
-      _email = 'google@example.com';
+      if (account == null) {
+        _error = null; // User cancelled
+        return false;
+      }
+
+      final auth = await account.authentication;
+      final idToken = auth.idToken;
+
+      if (idToken == null) {
+        _error = 'No ID token received from Google.';
+        return false;
+      }
+
+      // Exchange with backend
+      final response = await _httpClient.post(
+        Uri.parse('$_baseUrl/auth/google'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'idToken': idToken}),
+      );
+
+      final data = jsonDecode(response.body);
+      if (response.statusCode != 200 || data['ok'] != true) {
+        _error = data['error'] ?? 'Google sign-in failed';
+        return false;
+      }
+
+      _token = data['token'];
+      _email = data['email'];
+      _username = account.displayName ?? _email?.split('@').first ?? 'User';
       _isAuthenticated = true;
       _error = null;
 
       await _saveToStorage();
+      await fetchDevices();
       return true;
     } catch (e) {
       _error = 'Google sign-in failed: $e';
