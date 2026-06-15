@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -155,22 +156,28 @@ class AuthService extends ChangeNotifier {
         return false;
       }
 
-      // Exchange with backend
+      // Exchange with backend (with timeout to avoid hanging forever)
       final response = await _httpClient.post(
         Uri.parse('$_baseUrl/auth/apple'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'identityToken': identityToken}),
-      );
+      ).timeout(const Duration(seconds: 15));
 
       final data = jsonDecode(response.body);
       if (response.statusCode != 200 || data['ok'] != true) {
-        _error = data['error'] ?? 'Apple sign-in failed';
+        debugPrint('[auth] Apple sign-in backend error: ${response.statusCode} ${response.body}');
+        _error = data['error']?.toString() ?? 'Apple sign-in failed (${response.statusCode})';
         return false;
       }
 
       _token = data['token'];
       _email = data['email'];
-      _username = credential.givenName ?? _email?.split('@').first ?? 'User';
+      // Apple only sends givenName on the FIRST sign-in. On repeat logins
+      // it's null, so fall back to the email prefix.
+      _username = credential.givenName ??
+          credential.familyName ??
+          _email?.split('@').first ??
+          'User';
       _isAuthenticated = true;
       _error = null;
 
@@ -184,7 +191,11 @@ class AuthService extends ChangeNotifier {
         _error = 'Apple sign-in failed: ${e.message}';
       }
       return false;
+    } on TimeoutException {
+      _error = 'Connection timed out. Please try again.';
+      return false;
     } catch (e) {
+      debugPrint('[auth] Apple sign-in error: $e');
       _error = 'Apple sign-in failed: $e';
       return false;
     } finally {

@@ -66,8 +66,8 @@ class _AppGateState extends State<_AppGate> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthService>();
 
-    // ── Still loading persisted session ──────────────────────────────
-    if (!_initialized || auth.isLoading) {
+    // ── Still loading persisted session (initial app boot only) ────────
+    if (!_initialized) {
       return Scaffold(
         backgroundColor: AppColors.background,
         body: Center(
