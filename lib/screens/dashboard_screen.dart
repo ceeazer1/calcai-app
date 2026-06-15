@@ -7,6 +7,10 @@ import '../services/cloud_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glass_card.dart';
 
+/// Notification dispatched when the user taps "Connect Device" on the
+/// locked dashboard. MainShell listens for this to switch to the WiFi tab.
+class SwitchToWifiTabNotification extends Notification {}
+
 /// Main dashboard screen — the hub after login.
 ///
 /// Shows device status, AI model selector, usage info, and quick actions.
@@ -56,6 +60,9 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthService>();
+    final hasDevice = auth.primaryMac != null && auth.primaryMac!.isNotEmpty;
+
     return Container(
       decoration: const BoxDecoration(
         gradient: AppColors.backgroundGradient,
@@ -63,41 +70,120 @@ class _DashboardScreenState extends State<DashboardScreen>
       child: SafeArea(
         child: FadeTransition(
           opacity: _fadeIn,
-          child: RefreshIndicator(
-            onRefresh: _loadData,
-            color: AppColors.electricBlue,
-            backgroundColor: AppColors.surface,
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
-              children: [
-                // ── Header ──────────────────────────────────────
-                _buildHeader(),
-                const SizedBox(height: 24),
+          child: Stack(
+            children: [
+              // ── Dashboard content (always visible) ──────────
+              IgnorePointer(
+                ignoring: !hasDevice,
+                child: AnimatedOpacity(
+                  opacity: hasDevice ? 1.0 : 0.4,
+                  duration: const Duration(milliseconds: 300),
+                  child: RefreshIndicator(
+                    onRefresh: _loadData,
+                    color: AppColors.electricBlue,
+                    backgroundColor: AppColors.surface,
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+                      children: [
+                        _buildHeader(),
+                        const SizedBox(height: 24),
+                        _buildDeviceCard(),
+                        const SizedBox(height: 16),
+                        _buildSectionTitle('AI Configuration'),
+                        const SizedBox(height: 12),
+                        _buildModelSelector(),
+                        const SizedBox(height: 12),
+                        _buildThinkingSelector(),
+                        const SizedBox(height: 24),
+                        _buildSectionTitle('Usage'),
+                        const SizedBox(height: 12),
+                        _buildUsageCard(),
+                        const SizedBox(height: 24),
+                        _buildSectionTitle('Recent Activity'),
+                        const SizedBox(height: 12),
+                        _buildLastPromptCard(),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
 
-                // ── Device Card ──────────────────────────────────
-                _buildDeviceCard(),
-                const SizedBox(height: 16),
-
-                // ── AI Model Section ────────────────────────────
-                _buildSectionTitle('AI Configuration'),
-                const SizedBox(height: 12),
-                _buildModelSelector(),
-                const SizedBox(height: 12),
-                _buildThinkingSelector(),
-                const SizedBox(height: 24),
-
-                // ── Usage Section ────────────────────────────────
-                _buildSectionTitle('Usage'),
-                const SizedBox(height: 12),
-                _buildUsageCard(),
-                const SizedBox(height: 24),
-
-                // ── Last Prompt ─────────────────────────────────
-                _buildSectionTitle('Recent Activity'),
-                const SizedBox(height: 12),
-                _buildLastPromptCard(),
-              ],
-            ),
+              // ── Lock overlay (when no device paired) ───────
+              if (!hasDevice)
+                Positioned.fill(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 32),
+                      child: GlassCard(
+                        child: Padding(
+                          padding: const EdgeInsets.all(28),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 64,
+                                height: 64,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: AppColors.electricBlue.withOpacity(0.15),
+                                ),
+                                child: const Icon(
+                                  Icons.lock_rounded,
+                                  color: AppColors.electricBlue,
+                                  size: 32,
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                              Text(
+                                'Connect Your CalcAI',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Pair your calculator via Bluetooth to unlock the dashboard, change AI models, and view your usage.',
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  color: AppColors.textSecondary,
+                                  height: 1.5,
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton.icon(
+                                  onPressed: () {
+                                    SwitchToWifiTabNotification().dispatch(context);
+                                  },
+                                  icon: const Icon(Icons.bluetooth_rounded, size: 18),
+                                  label: Text(
+                                    'Connect Device',
+                                    style: GoogleFonts.inter(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.electricBlue,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       ),

@@ -42,15 +42,20 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      // Extend body behind the floating nav bar so content isn't clipped.
-      extendBody: true,
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
+    return NotificationListener<SwitchToWifiTabNotification>(
+      onNotification: (notification) {
+        setState(() => _currentIndex = 2); // WiFi tab
+        return true;
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        extendBody: true,
+        body: IndexedStack(
+          index: _currentIndex,
+          children: _screens,
+        ),
+        bottomNavigationBar: _buildBottomBar(context),
       ),
-      bottomNavigationBar: _buildBottomBar(context),
     );
   }
 
