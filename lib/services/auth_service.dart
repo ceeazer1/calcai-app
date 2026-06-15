@@ -185,18 +185,13 @@ class AuthService extends ChangeNotifier {
       await fetchDevices();
       return true;
     } on SignInWithAppleAuthorizationException catch (e) {
-      if (e.code == AuthorizationErrorCode.canceled) {
-        _error = null; // User cancelled — not an error
-      } else {
-        _error = 'Apple sign-in failed: ${e.message}';
-      }
+      _error = 'Apple auth error [${e.code}]: ${e.message}';
       return false;
     } on TimeoutException {
       _error = 'Connection timed out. Please try again.';
       return false;
     } catch (e) {
-      debugPrint('[auth] Apple sign-in error: $e');
-      _error = 'Apple sign-in failed: $e';
+      _error = 'Apple sign-in error: $e';
       return false;
     } finally {
       _setLoading(false);
