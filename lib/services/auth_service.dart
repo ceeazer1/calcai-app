@@ -157,11 +157,24 @@ class AuthService extends ChangeNotifier {
         return 'Step 3: No identity token from Apple';
       }
 
+      // Quick network test — does the app reach the server at all?
+      step = '3b-network-test';
+      try {
+        await http.get(Uri.parse('$_baseUrl/auth/apple'),
+          headers: {'User-Agent': 'CalcAI/1.0'},
+        ).timeout(const Duration(seconds: 10));
+      } catch (e) {
+        return 'Step 3b: Cannot reach server: $e';
+      }
+
       step = '4-backend-call';
       final url = Uri.parse('$_baseUrl/auth/apple');
       final response = await http.post(
         url,
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'CalcAI/1.0',
+        },
         body: jsonEncode({'identityToken': identityToken}),
       ).timeout(const Duration(seconds: 30),
         onTimeout: () => throw TimeoutException('POST $url timed out after 30s'),
