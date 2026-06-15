@@ -132,9 +132,8 @@ class AuthService extends ChangeNotifier {
 
   /// Signs in using Apple credentials.
   ///
-  /// Uses the `sign_in_with_apple` package to get an identity token, then
-  /// exchanges it with the CalcAI backend for a server session token.
-  Future<bool> signInWithApple() async {
+  /// Returns `null` on success, or an error message string on failure.
+  Future<String?> signInWithApple() async {
     _setLoading(true);
     String step = 'start';
 
@@ -155,8 +154,7 @@ class AuthService extends ChangeNotifier {
       step = '3-check-token';
       final identityToken = credential.identityToken;
       if (identityToken == null) {
-        _error = 'Step 3: No identity token from Apple';
-        return false;
+        return 'Step 3: No identity token from Apple';
       }
 
       step = '4-backend-call';
@@ -169,8 +167,7 @@ class AuthService extends ChangeNotifier {
       step = '5-parse-response';
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       if (response.statusCode != 200 || data['ok'] != true) {
-        _error = 'Step 5: Backend ${response.statusCode}: ${response.body}';
-        return false;
+        return 'Step 5: Backend ${response.statusCode}: ${response.body}';
       }
 
       step = '6-save-state';
@@ -183,18 +180,19 @@ class AuthService extends ChangeNotifier {
       _isAuthenticated = true;
       _error = null;
 
+      step = '7-save-storage';
       await _saveToStorage();
+
+      step = '8-fetch-devices';
       await fetchDevices();
-      return true;
+
+      return null; // success
     } on SignInWithAppleAuthorizationException catch (e) {
-      _error = 'Apple auth error [${e.code}]: ${e.message}';
-      return false;
+      return 'Step $step Apple err [${e.code}]: ${e.message}';
     } on TimeoutException {
-      _error = 'Connection timed out. Please try again.';
-      return false;
+      return 'Step $step: Timeout';
     } catch (e) {
-      _error = 'Apple sign-in error: $e';
-      return false;
+      return 'Step $step: $e';
     } finally {
       _setLoading(false);
     }

@@ -61,16 +61,13 @@ class _AuthScreenState extends State<AuthScreen>
     String? errorDetail;
     try {
       final auth = context.read<AuthService>();
-      bool success;
       if (provider == 'apple') {
-        success = await auth.signInWithApple();
+        errorDetail = await auth.signInWithApple();
       } else {
-        success = await auth.signInWithGoogle();
-      }
-      if (!success) {
-        errorDetail = 'returned=$success, auth.error=${auth.error}, auth.isAuth=${auth.isAuthenticated}';
-      } else if (success && !auth.isAuthenticated) {
-        errorDetail = 'SUCCESS but isAuth=false?? error=${auth.error}';
+        final success = await auth.signInWithGoogle();
+        if (!success) {
+          errorDetail = auth.error ?? 'Google sign-in failed';
+        }
       }
     } catch (e, stack) {
       errorDetail = 'Exception: $e\n\nStack: ${stack.toString().split('\n').take(5).join('\n')}';
