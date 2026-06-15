@@ -135,14 +135,11 @@ class AuthService extends ChangeNotifier {
   /// Returns `null` on success, or an error message string on failure.
   Future<String?> signInWithApple() async {
     _setLoading(true);
-    String step = 'start';
 
     try {
-      step = '1-nonce';
       final rawNonce = _generateNonce();
       final hashedNonce = sha256.convert(utf8.encode(rawNonce)).toString();
 
-      step = '2-apple-sdk';
       final credential = await SignInWithApple.getAppleIDCredential(
         scopes: [
           AppleIDAuthorizationScopes.email,
@@ -151,44 +148,29 @@ class AuthService extends ChangeNotifier {
         nonce: hashedNonce,
       );
 
-      step = '3-check-token';
       final identityToken = credential.identityToken;
       if (identityToken == null) {
-        return 'Step 3: No identity token from Apple';
+        return 'No identity token received from Apple.';
       }
 
-      // Quick network test — does the app reach the server at all?
-      step = '3b-network-test';
-      try {
-        await http.get(Uri.parse('$_baseUrl/auth/apple'),
-          headers: {'User-Agent': 'CalcAI/1.0'},
-        ).timeout(const Duration(seconds: 10));
-      } catch (e) {
-        return 'Step 3b: Cannot reach server: $e';
-      }
-
-      step = '4-backend-call';
-      final url = Uri.parse('$_baseUrl/auth/apple');
+      // Exchange token with backend
       final response = await http.post(
-        url,
+        Uri.parse('$_baseUrl/auth/apple'),
         headers: {
           'Content-Type': 'application/json',
           'User-Agent': 'CalcAI/1.0',
         },
         body: jsonEncode({'identityToken': identityToken}),
-      ).timeout(const Duration(seconds: 30),
-        onTimeout: () => throw TimeoutException('POST $url timed out after 30s'),
-      );
+      ).timeout(const Duration(seconds: 30));
 
-      step = '5-parse-response';
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       if (response.statusCode != 200 || data['ok'] != true) {
-        return 'Step 5: Backend ${response.statusCode}: ${response.body}';
+        return data['error']?.toString() ?? 'Sign-in failed (${response.statusCode})';
       }
 
-      step = '6-save-state';
       _token = data['token'] as String?;
       _email = data['email'] as String?;
+      // Apple only sends givenName on the FIRST sign-in
       _username = credential.givenName ??
           credential.familyName ??
           _email?.split('@').first ??
@@ -196,19 +178,19 @@ class AuthService extends ChangeNotifier {
       _isAuthenticated = true;
       _error = null;
 
-      step = '7-save-storage';
       await _saveToStorage();
-
-      step = '8-fetch-devices';
       await fetchDevices();
 
       return null; // success
     } on SignInWithAppleAuthorizationException catch (e) {
-      return 'Step $step Apple err [${e.code}]: ${e.message}';
+      if (e.code == AuthorizationErrorCode.canceled) {
+        return null; // user cancelled — not an error
+      }
+      return 'Apple sign-in failed: ${e.message}';
     } on TimeoutException {
-      return 'Step $step: Timeout';
+      return 'Connection timed out. Please try again.';
     } catch (e) {
-      return 'Step $step: $e';
+      return 'Sign-in failed: $e';
     } finally {
       _setLoading(false);
     }

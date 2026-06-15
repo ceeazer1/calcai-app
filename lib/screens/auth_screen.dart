@@ -69,32 +69,14 @@ class _AuthScreenState extends State<AuthScreen>
           errorDetail = auth.error ?? 'Google sign-in failed';
         }
       }
-    } catch (e, stack) {
-      errorDetail = 'Exception: $e\n\nStack: ${stack.toString().split('\n').take(5).join('\n')}';
+    } catch (e) {
+      errorDetail = 'Sign in failed. Please try again.';
     } finally {
       if (mounted) {
-        setState(() => _isLoading = false);
-        if (errorDetail != null) {
-          setState(() => _error = errorDetail);
-          // Also show a dialog so the full error is visible
-          showDialog(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              backgroundColor: const Color(0xFF1A1A1A),
-              title: const Text('Sign-In Debug', style: TextStyle(color: Colors.white)),
-              content: SelectableText(
-                errorDetail!,
-                style: const TextStyle(color: Colors.white70, fontSize: 12),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('OK'),
-                ),
-              ],
-            ),
-          );
-        }
+        setState(() {
+          _isLoading = false;
+          _error = errorDetail;
+        });
       }
     }
   }

@@ -103,12 +103,8 @@ class _AppGateState extends State<_AppGate> {
       return const AuthScreen();
     }
 
-    // ── Authenticated but no paired devices → setup / scan ──────────
-    if (!auth.hasDevices) {
-      return const ScanScreen();
-    }
-
-    // ── Fully ready → main navigation shell ─────────────────────────
+    // ── Authenticated → main navigation shell ─────────────────────────
+    // The WiFi tab handles BLE connection prompts for unpaired devices.
     return const MainShell();
   }
 }

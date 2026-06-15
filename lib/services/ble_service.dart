@@ -223,6 +223,13 @@ class BleService extends ChangeNotifier {
         autoConnect: false,
       );
 
+      // Request larger MTU for WiFi scan results (ESP32 sends ~500 bytes)
+      if (Platform.isAndroid) {
+        await device.device.requestMtu(517);
+      }
+      // iOS negotiates MTU automatically but we still request it
+      try { await device.device.requestMtu(517); } catch (_) {}
+
       _setConnectionState(DeviceConnectionState.connected);
 
       // Discover services
@@ -364,17 +371,23 @@ class BleService extends ChangeNotifier {
         withoutResponse: _scanChar!.properties.writeWithoutResponse,
       );
 
-      // Poll for results — ESP32 WiFi scan can take up to 10 seconds
+      // ESP32 WiFi scan takes ~10 seconds for 40+ networks.
+      // Wait 12s before first read, then retry a few times.
+      await Future.delayed(const Duration(seconds: 12));
+
       List<int> response = [];
-      for (int i = 0; i < 8; i++) {
-        await Future.delayed(const Duration(seconds: 2));
+      for (int i = 0; i < 5; i++) {
         response = await _scanChar!.read();
-        // Check if we got actual results (not empty "[]")
-        if (response.length > 4) break;
+        debugPrint('CalcAI BLE: scan read attempt ${i + 1}, got ${response.length} bytes');
+        if (response.length > 10) break;
+        await Future.delayed(const Duration(seconds: 2));
       }
 
-      if (response.isNotEmpty) {
+      if (response.isNotEmpty && response.length > 4) {
         _parseWifiScanResults(response);
+        debugPrint('CalcAI BLE: parsed ${_wifiNetworks.length} networks');
+      } else {
+        debugPrint('CalcAI BLE: no scan results received (${response.length} bytes)');
       }
 
       _provisioningState = ProvisioningState.idle;
