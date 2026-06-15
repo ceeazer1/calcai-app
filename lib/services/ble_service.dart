@@ -586,6 +586,42 @@ class BleService extends ChangeNotifier {
     }
   }
 
+  /// Force-saves a network to the ESP32 without verifying connection.
+  /// Used when the user chooses "Save Anyway" after a failed connection.
+  Future<bool> forceSaveNetwork({
+    required String ssid,
+    String password = '',
+  }) async {
+    if (_configChar == null) {
+      _setError('WiFi config characteristic not available.');
+      return false;
+    }
+
+    try {
+      final payload = jsonEncode({
+        'action': 'force_save',
+        'ssid': ssid,
+        'password': password,
+      });
+
+      await _configChar!.write(
+        utf8.encode(payload),
+        withoutResponse: false,
+      );
+
+      // Wait for ESP32 confirmation
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      // Refresh saved networks list
+      await requestSavedNetworks();
+
+      return true;
+    } catch (e) {
+      _setError('Failed to save network: ${_friendlyError(e)}');
+      return false;
+    }
+  }
+
   Future<bool> _pollProvisioningStatus() async {
     for (int i = 0; i < 15; i++) {
       await Future.delayed(const Duration(seconds: 2));

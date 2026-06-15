@@ -611,12 +611,144 @@ class _WifiScreenState extends State<WifiScreen> {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(ctx);
-              final ble = context.read<BleService>();
-              ble.sendWifiCredentials(ssid: ssid, password: passwordController.text);
+              _attemptConnect(ssid, passwordController.text);
             },
             child: Text(
               'Connect',
               style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _attemptConnect(String ssid, String password) async {
+    final ble = context.read<BleService>();
+
+    // Show a connecting indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: AppColors.glassBorder),
+        ),
+        content: Row(
+          children: [
+            const SizedBox(
+              width: 24, height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: AppColors.electricBlue,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Text(
+              'Connecting to $ssid...',
+              style: GoogleFonts.inter(
+                color: AppColors.textPrimary,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final success = await ble.sendWifiCredentials(
+      ssid: ssid,
+      password: password,
+    );
+
+    if (!mounted) return;
+    Navigator.pop(context); // dismiss connecting dialog
+
+    if (success) {
+      // Show success briefly
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Connected to $ssid'),
+          backgroundColor: AppColors.success,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
+    } else {
+      // Show failure dialog with Save Anyway option
+      _showConnectionFailedDialog(ssid, password);
+    }
+  }
+
+  void _showConnectionFailedDialog(String ssid, String password) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: AppColors.glassBorder),
+        ),
+        icon: Icon(
+          Icons.wifi_off_rounded,
+          color: AppColors.error,
+          size: 32,
+        ),
+        title: Text(
+          'Connection Failed',
+          style: GoogleFonts.outfit(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          'Could not connect to "$ssid". The password may be incorrect, or the network may be out of range.',
+          style: GoogleFonts.inter(
+            color: AppColors.textSecondary,
+            fontSize: 14,
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              // Re-open password dialog to try again
+              _showPasswordDialog(ssid);
+            },
+            child: Text(
+              'Try Again',
+              style: GoogleFonts.inter(color: AppColors.textSecondary),
+            ),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final ble = context.read<BleService>();
+              await ble.forceSaveNetwork(ssid: ssid, password: password);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('$ssid saved for later'),
+                    backgroundColor: AppColors.surface,
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                );
+              }
+            },
+            child: Text(
+              'Save Anyway',
+              style: GoogleFonts.inter(
+                color: AppColors.electricBlue,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
