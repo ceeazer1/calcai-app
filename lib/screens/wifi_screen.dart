@@ -17,6 +17,7 @@ class WifiScreen extends StatefulWidget {
 
 class _WifiScreenState extends State<WifiScreen> {
   bool _isAddingNetwork = false;
+  bool _isConnecting = false;
 
   @override
   Widget build(BuildContext context) {
@@ -109,26 +110,51 @@ class _WifiScreenState extends State<WifiScreen> {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
-          SizedBox(
-            width: 200,
-            height: 48,
-            child: ElevatedButton.icon(
-              onPressed: () => _connectToDevice(ble),
-              icon: const Icon(Icons.bluetooth_searching_rounded, size: 20),
-              label: Text(
-                'Connect',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+          if (ble.connectionState == DeviceConnectionState.connecting ||
+              ble.connectionState == DeviceConnectionState.discovering ||
+              _isConnecting) ...[
+            const SizedBox(
+              width: 28,
+              height: 28,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: AppColors.electricBlue,
               ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.surfaceLight,
-                foregroundColor: AppColors.textPrimary,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  side: BorderSide(color: AppColors.glassBorder),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              ble.connectionState == DeviceConnectionState.connecting
+                  ? 'Connecting...'
+                  : ble.connectionState == DeviceConnectionState.discovering
+                      ? 'Discovering services...'
+                      : 'Scanning for devices...',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ] else ...[
+            SizedBox(
+              width: 200,
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: () => _connectToDevice(ble),
+                icon: const Icon(Icons.bluetooth_searching_rounded, size: 20),
+                label: Text(
+                  'Connect',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.surfaceLight,
+                  foregroundColor: AppColors.textPrimary,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide(color: AppColors.glassBorder),
+                  ),
                 ),
               ),
             ),
-          ),
+          ],
           const SizedBox(height: 80),
         ],
       ),
@@ -252,17 +278,31 @@ class _WifiScreenState extends State<WifiScreen> {
   }
 
   Future<void> _connectToDevice(BleService ble) async {
-    // Start BLE scan and auto-connect to first CalcAI device
-    final hasPerms = await ble.requestPermissions();
-    if (!hasPerms) return;
+    setState(() => _isConnecting = true);
+    try {
+      final hasPerms = await ble.requestPermissions();
+      if (!hasPerms) {
+        if (mounted) setState(() => _isConnecting = false);
+        return;
+      }
 
-    await ble.startScan();
+      await ble.startScan();
 
-    // Wait for devices to appear
-    await Future.delayed(const Duration(seconds: 5));
+      // Poll for devices (up to 10 seconds)
+      for (int i = 0; i < 10; i++) {
+        await Future.delayed(const Duration(seconds: 1));
+        if (ble.devices.isNotEmpty) break;
+      }
 
-    if (ble.devices.isNotEmpty) {
-      await ble.connectToDevice(ble.devices.first);
+      if (ble.devices.isNotEmpty) {
+        await ble.connectToDevice(ble.devices.first);
+        // Auto-scan WiFi networks after connecting
+        if (ble.connectionState == DeviceConnectionState.ready) {
+          await ble.requestWifiScan();
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _isConnecting = false);
     }
   }
 
