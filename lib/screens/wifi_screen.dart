@@ -60,7 +60,9 @@ class _WifiScreenState extends State<WifiScreen> {
                 Expanded(
                   child: isConnected
                       ? _buildConnectedView(ble)
-                      : _buildDisconnectedView(ble),
+                      : ble.savedNetworks.isNotEmpty
+                          ? _buildOfflineView(ble)
+                          : _buildDisconnectedView(ble),
                 ),
               ],
             );
@@ -161,6 +163,135 @@ class _WifiScreenState extends State<WifiScreen> {
     );
   }
 
+  /// Shows saved networks with an offline banner and grayed-out actions.
+  Widget _buildOfflineView(BleService ble) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
+      children: [
+        // ── Offline banner ──────────────────────────
+        GlassCard(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.bluetooth_disabled_rounded,
+                  color: AppColors.textTertiary,
+                  size: 20,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Offline — connect via Bluetooth to manage networks',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (ble.connectionState == DeviceConnectionState.connecting ||
+                    _isConnecting)
+                  const SizedBox(
+                    width: 18, height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2, color: AppColors.electricBlue,
+                    ),
+                  )
+                else
+                  TextButton(
+                    onPressed: () => _connectToDevice(ble),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: Text(
+                      'Connect',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.electricBlue,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        // ── Saved networks header ───────────────────
+        Text(
+          'Saved Networks',
+          style: GoogleFonts.outfit(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // ── Saved network list ──────────────────────
+        ...ble.savedNetworks.map((ssid) => Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: GlassCard(
+            child: ListTile(
+              leading: Icon(
+                Icons.wifi_rounded,
+                color: AppColors.textTertiary,
+                size: 22,
+              ),
+              title: Text(
+                ssid,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              trailing: Icon(
+                Icons.delete_outline_rounded,
+                color: AppColors.textTertiary.withOpacity(0.3),
+                size: 20,
+              ),
+            ),
+          ),
+        )),
+
+        const SizedBox(height: 16),
+
+        // ── Add network (grayed out) ────────────────
+        Opacity(
+          opacity: 0.4,
+          child: GlassCard(
+            child: ListTile(
+              leading: const Icon(
+                Icons.add_circle_outline_rounded,
+                color: AppColors.textTertiary,
+                size: 22,
+              ),
+              title: Text(
+                'Add Network',
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  color: AppColors.textTertiary,
+                ),
+              ),
+              subtitle: Text(
+                'Connect via Bluetooth to add networks',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  color: AppColors.textTertiary,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildConnectedView(BleService ble) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
@@ -177,7 +308,7 @@ class _WifiScreenState extends State<WifiScreen> {
         ),
         const SizedBox(height: 10),
 
-        if (ble.wifiNetworks.isEmpty)
+        if (ble.savedNetworks.isEmpty)
           GlassCard(
             padding: const EdgeInsets.all(20),
             child: Center(
@@ -191,8 +322,8 @@ class _WifiScreenState extends State<WifiScreen> {
             ),
           )
         else
-          ...ble.wifiNetworks.asMap().entries.map((entry) {
-            final network = entry.value;
+          ...ble.savedNetworks.map((ssid) {
+            final isCurrentlyConnected = ssid == ble.connectedSsid;
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: GlassCard(
@@ -204,7 +335,7 @@ class _WifiScreenState extends State<WifiScreen> {
                   children: [
                     Icon(
                       Icons.wifi_rounded,
-                      color: entry.key == 0
+                      color: isCurrentlyConnected
                           ? AppColors.success
                           : AppColors.textSecondary,
                       size: 22,
@@ -215,7 +346,7 @@ class _WifiScreenState extends State<WifiScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            network.ssid,
+                            ssid,
                             style: GoogleFonts.inter(
                               fontSize: 15,
                               fontWeight: FontWeight.w600,
@@ -223,10 +354,10 @@ class _WifiScreenState extends State<WifiScreen> {
                             ),
                           ),
                           Text(
-                            entry.key == 0 ? 'Connected' : 'Saved',
+                            isCurrentlyConnected ? 'Connected' : 'Saved',
                             style: GoogleFonts.inter(
                               fontSize: 12,
-                              color: entry.key == 0
+                              color: isCurrentlyConnected
                                   ? AppColors.success
                                   : AppColors.textTertiary,
                             ),
@@ -234,15 +365,14 @@ class _WifiScreenState extends State<WifiScreen> {
                         ],
                       ),
                     ),
-                    if (entry.key > 0)
-                      IconButton(
-                        onPressed: () => _removeNetwork(network.ssid),
-                        icon: const Icon(
-                          Icons.close_rounded,
-                          color: AppColors.textTertiary,
-                          size: 20,
-                        ),
+                    IconButton(
+                      onPressed: () => _removeNetwork(ssid),
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        color: AppColors.textTertiary,
+                        size: 20,
                       ),
+                    ),
                   ],
                 ),
               ),
@@ -296,10 +426,7 @@ class _WifiScreenState extends State<WifiScreen> {
 
       if (ble.devices.isNotEmpty) {
         await ble.connectToDevice(ble.devices.first);
-        // Auto-scan WiFi networks after connecting
-        if (ble.connectionState == DeviceConnectionState.ready) {
-          await ble.requestWifiScan();
-        }
+        // Saved networks are fetched automatically by BleService on connect
       }
     } finally {
       if (mounted) setState(() => _isConnecting = false);

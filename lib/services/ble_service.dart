@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io' show Platform;
 
 import '../models/calcai_device.dart';
@@ -53,9 +54,13 @@ class BleService extends ChangeNotifier {
   DeviceConnectionState _connectionState = DeviceConnectionState.disconnected;
   DeviceConnectionState get connectionState => _connectionState;
 
-  /// WiFi networks received from the ESP32.
+  /// WiFi networks from a scan (available nearby networks).
   final List<WifiNetwork> _wifiNetworks = [];
   List<WifiNetwork> get wifiNetworks => List.unmodifiable(_wifiNetworks);
+
+  /// Saved/configured networks on the ESP32 device.
+  final List<String> _savedNetworks = [];
+  List<String> get savedNetworks => List.unmodifiable(_savedNetworks);
 
   /// Current WiFi provisioning state.
   ProvisioningState _provisioningState = ProvisioningState.idle;
@@ -260,6 +265,9 @@ class BleService extends ChangeNotifier {
 
       // Subscribe to status notifications if available
       await _subscribeToStatus();
+
+      // Auto-fetch saved networks from the ESP32
+      await requestSavedNetworks();
     } catch (e) {
       _setError('Connection failed: ${_friendlyError(e)}');
       _setConnectionState(DeviceConnectionState.error);
@@ -447,6 +455,79 @@ class BleService extends ChangeNotifier {
     }
   }
 
+  // ── Saved Networks ────────────────────────────────────────────────
+
+  /// Requests saved/configured networks from the ESP32 via BLE.
+  /// Sends `{"cmd":"list"}` to the scan characteristic and reads the response.
+  Future<void> requestSavedNetworks() async {
+    if (_scanChar == null) return;
+
+    try {
+      await _scanChar!.write(
+        utf8.encode(jsonEncode({'cmd': 'list'})),
+        withoutResponse: _scanChar!.properties.writeWithoutResponse,
+      );
+
+      // Wait for ESP32 to process and set the value
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      final response = await _scanChar!.read();
+      if (response.isNotEmpty && response.length > 2) {
+        final json = utf8.decode(response);
+        final parsed = jsonDecode(json);
+        _savedNetworks.clear();
+        if (parsed is List) {
+          for (final item in parsed) {
+            if (item is Map<String, dynamic>) {
+              final ssid = item['ssid'] as String? ?? '';
+              if (ssid.isNotEmpty) _savedNetworks.add(ssid);
+            }
+          }
+        }
+        debugPrint('CalcAI BLE: got ${_savedNetworks.length} saved networks');
+
+        // Persist locally for offline display
+        await _persistSavedNetworks();
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('CalcAI BLE: Error fetching saved networks: $e');
+    }
+  }
+
+  /// Loads previously saved networks from local storage.
+  /// Call this on app startup so the WiFi screen can show networks
+  /// even when BLE is not connected.
+  Future<void> loadPersistedNetworks(String? deviceMac) async {
+    if (deviceMac == null || deviceMac.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final json = prefs.getString('saved_networks_$deviceMac');
+      if (json != null) {
+        final list = jsonDecode(json) as List;
+        _savedNetworks.clear();
+        _savedNetworks.addAll(list.cast<String>());
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('CalcAI BLE: Error loading persisted networks: $e');
+    }
+  }
+
+  Future<void> _persistSavedNetworks() async {
+    final mac = _connectedDevice?.device.remoteId.str;
+    if (mac == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'saved_networks_$mac',
+        jsonEncode(_savedNetworks),
+      );
+    } catch (e) {
+      debugPrint('CalcAI BLE: Error persisting networks: $e');
+    }
+  }
+
   // ── WiFi Provisioning ──────────────────────────────────────────────
 
   /// Sends WiFi credentials to the ESP32 and monitors connection status.
@@ -490,6 +571,11 @@ class BleService extends ChangeNotifier {
       final success = await _waitForProvisioningResult(
         timeout: const Duration(seconds: 30),
       );
+
+      // Refresh saved networks after successful provisioning
+      if (success) {
+        await requestSavedNetworks();
+      }
 
       return success;
     } catch (e) {

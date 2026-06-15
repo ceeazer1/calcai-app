@@ -4,8 +4,8 @@ import 'package:provider/provider.dart';
 
 import 'screens/auth_screen.dart';
 import 'screens/main_shell.dart';
-import 'screens/scan_screen.dart';
 import 'services/auth_service.dart';
+import 'services/ble_service.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
 
@@ -56,7 +56,14 @@ class _AppGateState extends State<_AppGate> {
 
   Future<void> _initAuth() async {
     final auth = context.read<AuthService>();
+    final ble = context.read<BleService>();
     await auth.init();
+
+    // Load persisted WiFi networks so they display offline
+    if (auth.isAuthenticated && auth.primaryMac != null) {
+      await ble.loadPersistedNetworks(auth.primaryMac);
+    }
+
     if (mounted) {
       setState(() => _initialized = true);
     }
