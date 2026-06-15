@@ -58,6 +58,7 @@ class _AuthScreenState extends State<AuthScreen>
       _error = null;
     });
 
+    String? errorDetail;
     try {
       final auth = context.read<AuthService>();
       bool success;
@@ -66,19 +67,35 @@ class _AuthScreenState extends State<AuthScreen>
       } else {
         success = await auth.signInWithGoogle();
       }
-      if (!success && mounted) {
-        setState(() => _error = auth.error ?? 'Sign in failed.');
+      if (!success) {
+        errorDetail = auth.error ?? 'Unknown error (auth.error was null)';
       }
-      // _AppGate will react to AuthService state change automatically
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = 'Sign in error: $e';
-        });
-      }
+    } catch (e, stack) {
+      errorDetail = 'Exception: $e\n\nStack: ${stack.toString().split('\n').take(5).join('\n')}';
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
+        if (errorDetail != null) {
+          setState(() => _error = errorDetail);
+          // Also show a dialog so the full error is visible
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              backgroundColor: const Color(0xFF1A1A1A),
+              title: const Text('Sign-In Debug', style: TextStyle(color: Colors.white)),
+              content: SelectableText(
+                errorDetail!,
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+        }
       }
     }
   }
