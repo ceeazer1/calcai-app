@@ -136,12 +136,14 @@ class AuthService extends ChangeNotifier {
   /// exchanges it with the CalcAI backend for a server session token.
   Future<bool> signInWithApple() async {
     _setLoading(true);
+    String step = 'start';
 
     try {
-      // Generate a nonce for security
+      step = '1-nonce';
       final rawNonce = _generateNonce();
       final hashedNonce = sha256.convert(utf8.encode(rawNonce)).toString();
 
+      step = '2-apple-sdk';
       final credential = await SignInWithApple.getAppleIDCredential(
         scopes: [
           AppleIDAuthorizationScopes.email,
@@ -150,30 +152,30 @@ class AuthService extends ChangeNotifier {
         nonce: hashedNonce,
       );
 
+      step = '3-check-token';
       final identityToken = credential.identityToken;
       if (identityToken == null) {
-        _error = 'No identity token received from Apple.';
+        _error = 'Step 3: No identity token from Apple';
         return false;
       }
 
-      // Exchange with backend (with timeout to avoid hanging forever)
+      step = '4-backend-call';
       final response = await _httpClient.post(
         Uri.parse('$_baseUrl/auth/apple'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'identityToken': identityToken}),
       ).timeout(const Duration(seconds: 15));
 
-      final data = jsonDecode(response.body);
+      step = '5-parse-response';
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
       if (response.statusCode != 200 || data['ok'] != true) {
-        debugPrint('[auth] Apple sign-in backend error: ${response.statusCode} ${response.body}');
-        _error = data['error']?.toString() ?? 'Apple sign-in failed (${response.statusCode})';
+        _error = 'Step 5: Backend ${response.statusCode}: ${response.body}';
         return false;
       }
 
-      _token = data['token'];
-      _email = data['email'];
-      // Apple only sends givenName on the FIRST sign-in. On repeat logins
-      // it's null, so fall back to the email prefix.
+      step = '6-save-state';
+      _token = data['token'] as String?;
+      _email = data['email'] as String?;
       _username = credential.givenName ??
           credential.familyName ??
           _email?.split('@').first ??

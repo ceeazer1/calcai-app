@@ -68,7 +68,9 @@ class _AuthScreenState extends State<AuthScreen>
         success = await auth.signInWithGoogle();
       }
       if (!success) {
-        errorDetail = auth.error ?? 'Unknown error (auth.error was null)';
+        errorDetail = 'returned=$success, auth.error=${auth.error}, auth.isAuth=${auth.isAuthenticated}';
+      } else if (success && !auth.isAuthenticated) {
+        errorDetail = 'SUCCESS but isAuth=false?? error=${auth.error}';
       }
     } catch (e, stack) {
       errorDetail = 'Exception: $e\n\nStack: ${stack.toString().split('\n').take(5).join('\n')}';
