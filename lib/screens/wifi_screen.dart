@@ -28,7 +28,9 @@ class _WifiScreenState extends State<WifiScreen> {
         child: Consumer<BleService>(
           builder: (context, ble, _) {
             final isConnected =
-                ble.connectionState == DeviceConnectionState.connected;
+                ble.connectionState == DeviceConnectionState.connected ||
+                ble.connectionState == DeviceConnectionState.ready ||
+                ble.connectionState == DeviceConnectionState.discovering;
 
             return Column(
               children: [
