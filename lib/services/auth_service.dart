@@ -158,11 +158,14 @@ class AuthService extends ChangeNotifier {
       }
 
       step = '4-backend-call';
-      final response = await _httpClient.post(
-        Uri.parse('$_baseUrl/auth/apple'),
+      final url = Uri.parse('$_baseUrl/auth/apple');
+      final response = await http.post(
+        url,
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'identityToken': identityToken}),
-      ).timeout(const Duration(seconds: 15));
+      ).timeout(const Duration(seconds: 30),
+        onTimeout: () => throw TimeoutException('POST $url timed out after 30s'),
+      );
 
       step = '5-parse-response';
       final data = jsonDecode(response.body) as Map<String, dynamic>;
