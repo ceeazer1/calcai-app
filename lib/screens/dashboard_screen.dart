@@ -142,7 +142,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                   color: AppColors.electricBlue.withOpacity(0.15),
                                 ),
                                 child: const Icon(
-                                  Icons.bluetooth_rounded,
+                                  Icons.calculate_rounded,
                                   color: AppColors.electricBlue,
                                   size: 20,
                                 ),
@@ -162,7 +162,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      'Connect via Bluetooth to unlock all features',
+                                      'Link your CalcAI to access settings and activity',
                                       style: GoogleFonts.inter(
                                         fontSize: 12,
                                         color: AppColors.textSecondary,
@@ -180,9 +180,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                               onPressed: () {
                                 SwitchToWifiTabNotification().dispatch(context);
                               },
-                              icon: const Icon(Icons.bluetooth_searching_rounded, size: 18),
+                              icon: const Icon(Icons.add_link_rounded, size: 18),
                               label: Text(
-                                'Connect Device',
+                                'Link Your Device',
                                 style: GoogleFonts.inter(
                                   fontWeight: FontWeight.w600,
                                   fontSize: 14,

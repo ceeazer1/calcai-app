@@ -526,7 +526,7 @@ class _EmptyState extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             isScanning
-                ? 'Looking for CalcAI devices…'
+                ? 'Looking for your CalcAI device…'
                 : 'No devices found',
             style: GoogleFonts.inter(
               fontSize: 14,

@@ -337,7 +337,11 @@ class AuthService extends ChangeNotifier {
           rawMacs = [];
         }
 
-        _deviceMacs = rawMacs.map((e) => e.toString()).toList();
+        // Worker returns either plain strings or {mac, pairedAt} objects.
+        _deviceMacs = rawMacs.map((e) {
+          if (e is Map) return (e['mac'] ?? '').toString();
+          return e.toString();
+        }).where((m) => m.isNotEmpty).toList();
 
         // Keep primaryMac in sync: reset if the previous value is no longer
         // in the list, or default to the first entry.

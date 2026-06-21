@@ -98,7 +98,11 @@ class CloudService extends ChangeNotifier {
 
       final data = jsonDecode(response.body);
       final List<dynamic> raw = data is List ? data : (data['devices'] ?? []);
-      _devices = raw.map((e) => e.toString()).toList();
+      // Worker returns [{mac, pairedAt}] objects or plain strings.
+      _devices = raw.map((e) {
+        if (e is Map) return (e['mac'] ?? '').toString();
+        return e.toString();
+      }).where((m) => m.isNotEmpty).toList();
 
       notifyListeners();
       return _devices;

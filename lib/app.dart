@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import 'screens/auth_screen.dart';
+import 'screens/link_device_screen.dart';
 import 'screens/main_shell.dart';
 import 'services/auth_service.dart';
 import 'services/ble_service.dart';
@@ -32,7 +33,7 @@ class CalcAIApp extends StatelessWidget {
 ///
 /// - **Loading** → minimal splash / loading indicator
 /// - **Not authenticated** → [AuthScreen]
-/// - **Authenticated, no devices** → [ScanScreen] (initial device setup)
+/// - **Authenticated, no devices** → [LinkDeviceScreen] (one-time WiFi setup)
 /// - **Authenticated with devices** → [MainShell]
 ///
 /// Because this widget watches [AuthService] via [Provider], it will
@@ -110,8 +111,14 @@ class _AppGateState extends State<_AppGate> {
       return const AuthScreen();
     }
 
-    // ── Authenticated → main navigation shell ─────────────────────────
-    // The WiFi tab handles BLE connection prompts for unpaired devices.
+    // ── Authenticated, no device linked → first-time setup ────────────
+    // Walk the user through the one-time Bluetooth WiFi-provisioning flow
+    // before they reach the main shell.
+    if (auth.primaryMac == null || auth.primaryMac!.isEmpty) {
+      return const LinkDeviceScreen();
+    }
+
+    // ── Authenticated + device linked → main navigation shell ─────────
     return const MainShell();
   }
 }

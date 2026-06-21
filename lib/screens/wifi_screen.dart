@@ -40,13 +40,25 @@ class _WifiScreenState extends State<WifiScreen> {
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
                   child: Row(
                     children: [
-                      Text(
-                        'WiFi Networks',
-                        style: GoogleFonts.outfit(
-                          fontSize: 28,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
-                        ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'WiFi Networks',
+                            style: GoogleFonts.outfit(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          Text(
+                            'Managed via Bluetooth',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: AppColors.textTertiary,
+                            ),
+                          ),
+                        ],
                       ),
                       const Spacer(),
                       _BleStatusChip(isConnected: isConnected),
@@ -94,7 +106,7 @@ class _WifiScreenState extends State<WifiScreen> {
           ),
           const SizedBox(height: 20),
           Text(
-            'Not Connected',
+            'Connect to Manage Networks',
             style: GoogleFonts.outfit(
               fontSize: 20,
               fontWeight: FontWeight.w600,
@@ -103,11 +115,20 @@ class _WifiScreenState extends State<WifiScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Move closer to your CalcAI device\nto manage WiFi networks',
+            'Bluetooth is used to add and remove WiFi\nnetworks on your CalcAI device.',
             style: GoogleFonts.inter(
               fontSize: 14,
               color: AppColors.textSecondary,
               height: 1.5,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Move closer and tap Connect.',
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              color: AppColors.textTertiary,
             ),
             textAlign: TextAlign.center,
           ),
@@ -182,7 +203,7 @@ class _WifiScreenState extends State<WifiScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Offline — connect via Bluetooth to manage networks',
+                    'Connect via Bluetooth to add or remove networks on your device',
                     style: GoogleFonts.inter(
                       fontSize: 12,
                       color: AppColors.textSecondary,

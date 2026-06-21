@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../services/auth_service.dart';
 import '../services/ble_service.dart';
+import '../services/cloud_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/gradient_button.dart';
-import 'scan_screen.dart';
+import 'main_shell.dart';
 
 /// Success screen — shown after WiFi provisioning completes.
 ///
@@ -100,13 +102,27 @@ class _SuccessScreenState extends State<SuccessScreen>
     super.dispose();
   }
 
-  void _onDone() {
+  Future<void> _onDone() async {
     final ble = context.read<BleService>();
+    final auth = context.read<AuthService>();
+    final cloud = context.read<CloudService>();
+
+    // Capture the MAC before disconnecting (disconnect clears connectedDevice).
+    final mac = ble.connectedDevice?.id;
     ble.disconnect();
+
+    // Register the device with the cloud and set it as the primary device
+    // so the home page can load cloud data immediately.
+    if (mac != null && auth.token != null) {
+      await cloud.claimDevice(auth.token!, mac);
+      await auth.addDevice(mac);
+    }
+
+    if (!mounted) return;
 
     Navigator.of(context).pushAndRemoveUntil(
       PageRouteBuilder(
-        pageBuilder: (_, __, ___) => const ScanScreen(),
+        pageBuilder: (_, __, ___) => const MainShell(),
         transitionDuration: const Duration(milliseconds: 500),
         transitionsBuilder: (context, animation, _, child) {
           return FadeTransition(
@@ -194,7 +210,7 @@ class _SuccessScreenState extends State<SuccessScreen>
                           shaderCallback: (bounds) =>
                               AppColors.accentGradient.createShader(bounds),
                           child: Text(
-                            'Connected!',
+                            'Device Linked!',
                             style: GoogleFonts.outfit(
                               fontSize: 32,
                               fontWeight: FontWeight.w700,
@@ -214,7 +230,7 @@ class _SuccessScreenState extends State<SuccessScreen>
                             ),
                             children: [
                               const TextSpan(
-                                  text: 'Your CalcAI device is now\nconnected to '),
+                                  text: 'Your CalcAI is online and ready.\nConnected to '),
                               TextSpan(
                                 text: widget.ssid,
                                 style: GoogleFonts.inter(
@@ -241,7 +257,7 @@ class _SuccessScreenState extends State<SuccessScreen>
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              'WiFi Provisioning Complete',
+                              'Setup Complete',
                               style: GoogleFonts.inter(
                                 fontSize: 12,
                                 color: AppColors.success,
