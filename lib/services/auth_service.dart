@@ -103,13 +103,21 @@ class AuthService extends ChangeNotifier {
     // The finally block will notify once loading completes.
 
     try {
-      // Retrieve sensitive token from secure storage.
-      _token = await _secureStorage.read(key: _keyToken);
-
-      // Retrieve non-sensitive data from shared preferences.
+      // Retrieve non-sensitive data from shared preferences first.
       final prefs = await SharedPreferences.getInstance();
       _username = prefs.getString(_keyUsername);
       _email = prefs.getString(_keyEmail);
+
+      // Retrieve sensitive token from secure storage.
+      _token = await _secureStorage.read(key: _keyToken);
+
+      // iOS Keychain survives app reinstalls. If SharedPreferences has no
+      // session data (fresh install) but the Keychain has a token, that token
+      // is stale — wipe it so the user sees the sign-in screen.
+      if (_token != null && _username == null && _email == null) {
+        await _secureStorage.delete(key: _keyToken);
+        _token = null;
+      }
 
       // Device MAC list stored as a JSON-encoded List<String>.
       final macsJson = prefs.getString(_keyDeviceMacs);
