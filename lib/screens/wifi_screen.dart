@@ -17,7 +17,6 @@ class WifiScreen extends StatefulWidget {
 
 class _WifiScreenState extends State<WifiScreen> {
   bool _isAddingNetwork = false;
-  bool _isConnecting = false;
 
   @override
   Widget build(BuildContext context) {
@@ -68,13 +67,49 @@ class _WifiScreenState extends State<WifiScreen> {
 
                 const SizedBox(height: 20),
 
-                // ── Content ─────────────────────────────────
+                // ── Offline banner ────────────────────────────
+                if (!isConnected)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceLight,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.glassBorder),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.bluetooth_disabled_rounded,
+                            color: AppColors.textTertiary,
+                            size: 16,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Bring your CalcAI nearby to manage networks',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                // ── Network list (grayed when offline) ──────
                 Expanded(
-                  child: isConnected
-                      ? _buildConnectedView(ble)
-                      : ble.savedNetworks.isNotEmpty
-                          ? _buildOfflineView(ble)
-                          : _buildDisconnectedView(ble),
+                  child: AbsorbPointer(
+                    absorbing: !isConnected,
+                    child: Opacity(
+                      opacity: isConnected ? 1.0 : 0.4,
+                      child: _buildNetworkList(ble),
+                    ),
+                  ),
                 ),
               ],
             );
@@ -84,236 +119,7 @@ class _WifiScreenState extends State<WifiScreen> {
     );
   }
 
-  Widget _buildDisconnectedView(BleService ble) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 80,
-            height: 80,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppColors.surfaceLight,
-              border: Border.all(color: AppColors.glassBorder),
-            ),
-            child: const Icon(
-              Icons.bluetooth_disabled_rounded,
-              color: AppColors.textTertiary,
-              size: 36,
-            ),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            'Connect to Manage Networks',
-            style: GoogleFonts.outfit(
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Bluetooth is used to add and remove WiFi\nnetworks on your CalcAI device.',
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              color: AppColors.textSecondary,
-              height: 1.5,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Move closer and tap Connect.',
-            style: GoogleFonts.inter(
-              fontSize: 13,
-              color: AppColors.textTertiary,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 24),
-          if (ble.connectionState == DeviceConnectionState.connecting ||
-              ble.connectionState == DeviceConnectionState.discovering ||
-              _isConnecting) ...[
-            const SizedBox(
-              width: 28,
-              height: 28,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.5,
-                color: AppColors.electricBlue,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              ble.connectionState == DeviceConnectionState.connecting
-                  ? 'Connecting...'
-                  : ble.connectionState == DeviceConnectionState.discovering
-                      ? 'Discovering services...'
-                      : 'Scanning for devices...',
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ] else ...[
-            SizedBox(
-              width: 200,
-              height: 48,
-              child: ElevatedButton.icon(
-                onPressed: () => _connectToDevice(ble),
-                icon: const Icon(Icons.bluetooth_searching_rounded, size: 20),
-                label: Text(
-                  'Connect',
-                  style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.surfaceLight,
-                  foregroundColor: AppColors.textPrimary,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    side: BorderSide(color: AppColors.glassBorder),
-                  ),
-                ),
-              ),
-            ),
-          ],
-          const SizedBox(height: 80),
-        ],
-      ),
-    );
-  }
-
-  /// Shows saved networks with an offline banner and grayed-out actions.
-  Widget _buildOfflineView(BleService ble) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
-      children: [
-        // ── Offline banner ──────────────────────────
-        GlassCard(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.bluetooth_disabled_rounded,
-                  color: AppColors.textTertiary,
-                  size: 20,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Connect via Bluetooth to add or remove networks on your device',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                if (ble.connectionState == DeviceConnectionState.connecting ||
-                    _isConnecting)
-                  const SizedBox(
-                    width: 18, height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2, color: AppColors.electricBlue,
-                    ),
-                  )
-                else
-                  TextButton(
-                    onPressed: () => _connectToDevice(ble),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: Text(
-                      'Connect',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.electricBlue,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 20),
-
-        // ── Saved networks header ───────────────────
-        Text(
-          'Saved Networks',
-          style: GoogleFonts.outfit(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 10),
-
-        // ── Saved network list ──────────────────────
-        ...ble.savedNetworks.map((ssid) => Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: GlassCard(
-            child: ListTile(
-              leading: Icon(
-                Icons.wifi_rounded,
-                color: AppColors.textTertiary,
-                size: 22,
-              ),
-              title: Text(
-                ssid,
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-              trailing: Icon(
-                Icons.delete_outline_rounded,
-                color: AppColors.textTertiary.withOpacity(0.3),
-                size: 20,
-              ),
-            ),
-          ),
-        )),
-
-        const SizedBox(height: 16),
-
-        // ── Add network (grayed out) ────────────────
-        Opacity(
-          opacity: 0.4,
-          child: GlassCard(
-            child: ListTile(
-              leading: const Icon(
-                Icons.add_circle_outline_rounded,
-                color: AppColors.textTertiary,
-                size: 22,
-              ),
-              title: Text(
-                'Add Network',
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  color: AppColors.textTertiary,
-                ),
-              ),
-              subtitle: Text(
-                'Connect via Bluetooth to add networks',
-                style: GoogleFonts.inter(
-                  fontSize: 11,
-                  color: AppColors.textTertiary,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildConnectedView(BleService ble) {
+  Widget _buildNetworkList(BleService ble) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
       children: [
@@ -426,32 +232,6 @@ class _WifiScreenState extends State<WifiScreen> {
         ),
       ],
     );
-  }
-
-  Future<void> _connectToDevice(BleService ble) async {
-    setState(() => _isConnecting = true);
-    try {
-      final hasPerms = await ble.requestPermissions();
-      if (!hasPerms) {
-        if (mounted) setState(() => _isConnecting = false);
-        return;
-      }
-
-      await ble.startScan();
-
-      // Poll for devices (up to 10 seconds)
-      for (int i = 0; i < 10; i++) {
-        await Future.delayed(const Duration(seconds: 1));
-        if (ble.devices.isNotEmpty) break;
-      }
-
-      if (ble.devices.isNotEmpty) {
-        await ble.connectToDevice(ble.devices.first);
-        // Saved networks are fetched automatically by BleService on connect
-      }
-    } finally {
-      if (mounted) setState(() => _isConnecting = false);
-    }
   }
 
   Future<void> _addNetwork(BleService ble) async {
