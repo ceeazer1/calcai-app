@@ -70,6 +70,12 @@ class BleService extends ChangeNotifier {
   String? _connectedSsid;
   String? get connectedSsid => _connectedSsid;
 
+  /// The WiFi MAC address received from the ESP32 over BLE.
+  /// On iOS, device.remoteId is a UUID not a MAC, so we read the real
+  /// MAC from the status characteristic's connected response instead.
+  String? _deviceMac;
+  String? get deviceMac => _deviceMac;
+
   /// Human-readable error message (null when there is no error).
   String? _error;
   String? get error => _error;
@@ -297,6 +303,7 @@ class BleService extends ChangeNotifier {
     _statusChar = null;
     _wifiNetworks.clear();
     _provisioningState = ProvisioningState.idle;
+    _deviceMac = null;
     _setConnectionState(DeviceConnectionState.disconnected);
   }
 
@@ -337,6 +344,11 @@ class BleService extends ChangeNotifier {
       final status = data['status'] as String?;
       if (status == 'connected') {
         _connectedSsid = data['ssid'] as String? ?? _connectedSsid;
+        // Normalize MAC: "AA:BB:CC:DD:EE:FF" → "aabbccddeeff"
+        final rawMac = data['mac'] as String?;
+        if (rawMac != null && rawMac.isNotEmpty) {
+          _deviceMac = rawMac.replaceAll(':', '').toLowerCase();
+        }
         _provisioningState = ProvisioningState.success;
       } else if (status == 'failed') {
         _setError(data['error'] as String? ?? 'WiFi connection failed.');

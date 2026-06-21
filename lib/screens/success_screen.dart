@@ -107,8 +107,9 @@ class _SuccessScreenState extends State<SuccessScreen>
     final auth = context.read<AuthService>();
     final cloud = context.read<CloudService>();
 
-    // Capture the MAC before disconnecting (disconnect clears connectedDevice).
-    final mac = ble.connectedDevice?.id;
+    // Use the WiFi MAC sent by the ESP32 over BLE (reliable on both iOS and
+    // Android). Fall back to remoteId only on Android where it is the real MAC.
+    final mac = ble.deviceMac ?? ble.connectedDevice?.id;
     ble.disconnect();
 
     // Register the device with the cloud and set it as the primary device
