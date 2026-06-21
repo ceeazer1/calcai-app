@@ -103,17 +103,29 @@ class _DashboardScreenState extends State<DashboardScreen>
   Widget _buildHeader() {
     return Row(
       children: [
-        ShaderMask(
-          shaderCallback: (bounds) =>
-              AppColors.accentGradient.createShader(bounds),
-          child: Text(
-            'CalcAI',
-            style: GoogleFonts.outfit(
-              fontSize: 28,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ShaderMask(
+              shaderCallback: (bounds) =>
+                  AppColors.accentGradient.createShader(bounds),
+              child: Text(
+                'CalcAI',
+                style: GoogleFonts.outfit(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
             ),
-          ),
+            Text(
+              'No device nearby needed',
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                color: AppColors.textTertiary,
+              ),
+            ),
+          ],
         ),
         const Spacer(),
         Container(
