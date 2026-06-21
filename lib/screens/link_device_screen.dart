@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 
+import '../services/auth_service.dart';
 import '../theme/app_colors.dart';
 import 'scan_screen.dart';
 
@@ -59,6 +61,21 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen>
               padding: const EdgeInsets.symmetric(horizontal: 28),
               child: Column(
                 children: [
+                  // ── Sign-out ───────────────────────────────────────
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: IconButton(
+                      onPressed: () =>
+                          context.read<AuthService>().signOut(),
+                      icon: const Icon(
+                        Icons.logout_rounded,
+                        color: AppColors.textTertiary,
+                        size: 20,
+                      ),
+                      tooltip: 'Sign out',
+                    ),
+                  ),
+
                   const Spacer(flex: 2),
 
                   // ── Icon ──────────────────────────────────
@@ -118,7 +135,7 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen>
                         elevation: 0,
                       ),
                       child: Text(
-                        'Connect',
+                        'Scan',
                         style: GoogleFonts.inter(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
