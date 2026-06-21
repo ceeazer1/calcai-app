@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../models/calcai_device.dart';
 import '../services/ble_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/scanning_animation.dart';
