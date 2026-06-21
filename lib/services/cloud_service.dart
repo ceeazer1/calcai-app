@@ -72,12 +72,16 @@ class CloudService extends ChangeNotifier {
       _usage?['planType']?.toString();
 
   /// Number of standard/cheap model calls used today.
-  int? get cheapUsage => _usage?['cheap'] as int? ??
-      _usage?['cheapUsage'] as int?;
+  int get cheapUsage => (_usage?['cheapCount'] as num?)?.toInt() ?? 0;
 
   /// Number of premium model calls used today.
-  int? get premiumUsage => _usage?['expensive'] as int? ??
-      _usage?['premiumUsage'] as int?;
+  int get premiumUsage => (_usage?['expensiveCount'] as num?)?.toInt() ?? 0;
+
+  /// Daily limit for cheap calls (-1 = unlimited/pro).
+  int get cheapLimit => (_usage?['cheapLimit'] as num?)?.toInt() ?? 30;
+
+  /// Daily limit for premium calls (-1 = unlimited/pro).
+  int get premiumLimit => (_usage?['expensiveLimit'] as num?)?.toInt() ?? 10;
 
   // ── Device Management ─────────────────────────────────────────────
 

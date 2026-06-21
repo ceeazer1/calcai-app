@@ -402,25 +402,22 @@ class _DashboardScreenState extends State<DashboardScreen>
   Widget _buildUsageCard() {
     return Consumer<CloudService>(
       builder: (context, cloud, _) {
+        final isPro = cloud.planType?.toLowerCase() == 'pro';
         return GlassCard(
           padding: const EdgeInsets.all(16),
-          child: Row(
+          child: Column(
             children: [
-              _UsageStat(
+              _UsageBar(
                 label: 'Standard',
-                value: '${cloud.cheapUsage ?? 0}',
-                limit: cloud.planType == 'Pro' ? '∞' : '/30',
+                used: cloud.cheapUsage,
+                limit: isPro ? -1 : cloud.cheapLimit,
                 color: AppColors.success,
               ),
-              Container(
-                width: 1,
-                height: 40,
-                color: AppColors.glassBorder,
-              ),
-              _UsageStat(
+              const SizedBox(height: 12),
+              _UsageBar(
                 label: 'Premium',
-                value: '${cloud.premiumUsage ?? 0}',
-                limit: cloud.planType == 'Pro' ? '∞' : '/10',
+                used: cloud.premiumUsage,
+                limit: isPro ? -1 : cloud.premiumLimit,
                 color: AppColors.warning,
               ),
             ],
@@ -602,55 +599,59 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 }
 
-class _UsageStat extends StatelessWidget {
+class _UsageBar extends StatelessWidget {
   final String label;
-  final String value;
-  final String limit;
+  final int used;
+  final int limit; // -1 = unlimited
   final Color color;
 
-  const _UsageStat({
+  const _UsageBar({
     required this.label,
-    required this.value,
+    required this.used,
     required this.limit,
     required this.color,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Column(
-        children: [
-          RichText(
-            text: TextSpan(
-              children: [
-                TextSpan(
-                  text: value,
-                  style: GoogleFonts.outfit(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
-                    color: color,
-                  ),
-                ),
-                TextSpan(
-                  text: limit,
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    color: AppColors.textTertiary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
+    final isUnlimited = limit < 0;
+    final fraction = isUnlimited ? 0.0 : (used / limit).clamp(0.0, 1.0);
+
+    return Row(
+      children: [
+        SizedBox(
+          width: 60,
+          child: Text(
             label,
             style: GoogleFonts.inter(
               fontSize: 12,
               color: AppColors.textSecondary,
             ),
           ),
-        ],
-      ),
+        ),
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: isUnlimited ? 1.0 : fraction,
+              minHeight: 6,
+              backgroundColor: AppColors.surfaceHighlight,
+              valueColor: AlwaysStoppedAnimation(
+                isUnlimited ? AppColors.electricBlue : color,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          isUnlimited ? '∞' : '$used/$limit',
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: AppColors.textSecondary,
+          ),
+        ),
+      ],
     );
   }
 }
