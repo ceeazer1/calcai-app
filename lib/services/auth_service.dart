@@ -31,6 +31,10 @@ class AuthService extends ChangeNotifier {
   static const String _keyEmail = 'email';
   static const String _keyDeviceMacs = 'device_macs';
   static const String _keyPrimaryMac = 'primary_mac';
+  // Written to SharedPreferences on every successful sign-in.
+  // Absent only on a true fresh install (SharedPreferences is wiped on
+  // reinstall, Keychain is not), letting us detect and discard stale tokens.
+  static const String _keySessionValid = 'session_valid';
 
   /// Generate a cryptographically secure nonce for Apple Sign-In.
   static String _generateNonce([int length = 32]) {
@@ -111,10 +115,11 @@ class AuthService extends ChangeNotifier {
       // Retrieve sensitive token from secure storage.
       _token = await _secureStorage.read(key: _keyToken);
 
-      // iOS Keychain survives app reinstalls. If SharedPreferences has no
-      // session data (fresh install) but the Keychain has a token, that token
-      // is stale — wipe it so the user sees the sign-in screen.
-      if (_token != null && _username == null && _email == null) {
+      // iOS Keychain survives app reinstalls but SharedPreferences does not.
+      // If the session flag is absent, the token is left over from a previous
+      // install — discard it so the user sees the sign-in screen.
+      final sessionValid = prefs.getBool(_keySessionValid) ?? false;
+      if (_token != null && !sessionValid) {
         await _secureStorage.delete(key: _keyToken);
         _token = null;
       }
@@ -418,6 +423,10 @@ class AuthService extends ChangeNotifier {
     // Non-sensitive — goes into shared_preferences.
     final prefs = await SharedPreferences.getInstance();
 
+    // Mark that a real session exists so the stale-token check in init()
+    // doesn't mistake a valid Keychain token for a post-reinstall leftover.
+    await prefs.setBool(_keySessionValid, true);
+
     if (_username != null) {
       await prefs.setString(_keyUsername, _username!);
     }
@@ -444,6 +453,7 @@ class AuthService extends ChangeNotifier {
       prefs.remove(_keyEmail),
       prefs.remove(_keyDeviceMacs),
       prefs.remove(_keyPrimaryMac),
+      prefs.remove(_keySessionValid),
     ]);
   }
 
