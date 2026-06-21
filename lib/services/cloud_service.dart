@@ -304,7 +304,8 @@ class CloudService extends ChangeNotifier {
       _assertSuccess(response);
 
       final data = jsonDecode(response.body);
-      final List<dynamic> raw = data is List ? data : (data['logs'] ?? []);
+      // Worker returns { ok, items: [...] }
+      final List<dynamic> raw = data is List ? data : (data['items'] ?? data['logs'] ?? []);
       _history = raw.cast<Map<String, dynamic>>();
 
       notifyListeners();
