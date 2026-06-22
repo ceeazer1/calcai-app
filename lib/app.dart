@@ -114,7 +114,8 @@ class _AppGateState extends State<_AppGate> {
     // ── Authenticated, no device linked → first-time setup ────────────
     // Walk the user through the one-time Bluetooth WiFi-provisioning flow
     // before they reach the main shell.
-    if (auth.primaryMac == null || auth.primaryMac!.isEmpty) {
+    if ((auth.primaryMac == null || auth.primaryMac!.isEmpty) &&
+        !auth.setupSkipped) {
       return const LinkDeviceScreen();
     }
 

@@ -80,6 +80,17 @@ class AuthService extends ChangeNotifier {
   /// Convenience getter — `true` when the user has at least one paired device.
   bool get hasDevices => _deviceMacs.isNotEmpty;
 
+  /// `true` when the user chose "Set up later", letting them into the app
+  /// without a paired device. Reset on sign-out. Not persisted.
+  bool _setupSkipped = false;
+  bool get setupSkipped => _setupSkipped;
+
+  /// Lets a device-less user bypass first-time setup and explore the app.
+  void skipSetup() {
+    _setupSkipped = true;
+    notifyListeners();
+  }
+
   // ── Constructor ───────────────────────────────────────────────────────
 
   /// Creates an [AuthService].
@@ -448,6 +459,7 @@ class AuthService extends ChangeNotifier {
     _error = null;
     _deviceMacs = [];
     _primaryMac = null;
+    _setupSkipped = false;
 
     await _clearStorage();
     notifyListeners();

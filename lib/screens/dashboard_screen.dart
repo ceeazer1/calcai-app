@@ -6,6 +6,7 @@ import '../services/auth_service.dart';
 import '../services/cloud_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glass_card.dart';
+import 'link_device_screen.dart';
 
 /// Notification dispatched when the user taps "Connect Device" on the
 /// locked dashboard. MainShell listens for this to switch to the WiFi tab.
@@ -77,6 +78,7 @@ class _DashboardScreenState extends State<DashboardScreen>
               children: [
                 _buildHeader(),
                 const SizedBox(height: 24),
+                _buildPairBanner(),
                 _buildSectionTitle('AI Configuration'),
                 const SizedBox(height: 12),
                 _buildModelSelector(),
@@ -151,6 +153,46 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
         ),
       ],
+    );
+  }
+
+  /// Slim "pair your device" prompt, shown only when no device is linked
+  /// (e.g. the user chose "Set up later"). Tapping launches the setup flow.
+  Widget _buildPairBanner() {
+    return Consumer<AuthService>(
+      builder: (context, auth, _) {
+        if (auth.primaryMac != null && auth.primaryMac!.isNotEmpty) {
+          return const SizedBox.shrink();
+        }
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: GlassCard(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const LinkDeviceScreen()),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.add_link_rounded,
+                    color: AppColors.electricBlue, size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Pair your CalcAI to get started',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+                const Icon(Icons.chevron_right_rounded,
+                    color: AppColors.textTertiary, size: 20),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 

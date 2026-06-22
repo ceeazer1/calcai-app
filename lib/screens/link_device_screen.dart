@@ -144,7 +144,22 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen>
                     ),
                   ),
 
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 8),
+
+                  // ── Set up later ───────────────────────────
+                  TextButton(
+                    onPressed: () => context.read<AuthService>().skipSetup(),
+                    child: Text(
+                      'Set up later',
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textTertiary,
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
                 ],
               ),
             ),
