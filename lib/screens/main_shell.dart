@@ -24,14 +24,6 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
 
-  /// The four top-level tab screens.
-  static const List<Widget> _screens = [
-    DashboardScreen(),
-    HistoryScreen(),
-    WifiScreen(),
-    SettingsScreen(),
-  ];
-
   /// Tab definitions used to build the bottom bar items.
   static const List<_NavTab> _tabs = [
     _NavTab(icon: Icons.home_rounded, label: 'Home'),
@@ -52,7 +44,14 @@ class _MainShellState extends State<MainShell> {
         extendBody: true,
         body: IndexedStack(
           index: _currentIndex,
-          children: _screens,
+          children: [
+            const DashboardScreen(),
+            const HistoryScreen(),
+            // Pass tab-active state so the WiFi screen can auto-connect over
+            // BLE whenever the user opens this tab.
+            WifiScreen(isActive: _currentIndex == 2),
+            const SettingsScreen(),
+          ],
         ),
         bottomNavigationBar: _buildBottomBar(context),
       ),

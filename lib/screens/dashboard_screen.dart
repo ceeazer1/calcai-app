@@ -77,8 +77,6 @@ class _DashboardScreenState extends State<DashboardScreen>
               children: [
                 _buildHeader(),
                 const SizedBox(height: 24),
-                _buildDeviceCard(),
-                const SizedBox(height: 16),
                 _buildSectionTitle('AI Configuration'),
                 const SizedBox(height: 12),
                 _buildModelSelector(),
@@ -101,33 +99,25 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Widget _buildHeader() {
+    final auth = context.read<AuthService>();
+    final name = auth.username;
     return Row(
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ShaderMask(
-              shaderCallback: (bounds) =>
-                  AppColors.accentGradient.createShader(bounds),
-              child: Text(
-                'CalcAI',
-                style: GoogleFonts.outfit(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
+        Expanded(
+          child: ShaderMask(
+            shaderCallback: (bounds) =>
+                AppColors.accentGradient.createShader(bounds),
+            child: Text(
+              name != null && name.isNotEmpty ? 'Welcome, $name' : 'Welcome',
+              style: GoogleFonts.outfit(
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
               ),
             ),
-            Text(
-              'No device nearby needed',
-              style: GoogleFonts.inter(
-                fontSize: 11,
-                color: AppColors.textTertiary,
-              ),
-            ),
-          ],
+          ),
         ),
-        const Spacer(),
+        const SizedBox(width: 12),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           decoration: BoxDecoration(
@@ -161,77 +151,6 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildDeviceCard() {
-    return Consumer<CloudService>(
-      builder: (context, cloud, _) {
-        final auth = context.read<AuthService>();
-        return GlassCard(
-          padding: const EdgeInsets.all(20),
-          child: Row(
-            children: [
-              // Calculator icon
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  gradient: AppColors.accentGradientSoft,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Icon(
-                  Icons.calculate_rounded,
-                  color: AppColors.textPrimary,
-                  size: 26,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "${auth.username ?? 'My'}'s CalcAI",
-                      style: GoogleFonts.outfit(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      auth.primaryMac ?? 'No device paired',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: AppColors.textTertiary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.electricBlue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  cloud.planType ?? 'Free',
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.electricBlue,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 

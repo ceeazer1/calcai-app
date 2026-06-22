@@ -9,7 +9,11 @@ import '../widgets/glass_card.dart';
 
 /// WiFi management screen — BLE-dependent, requires nearby CalcAI device.
 class WifiScreen extends StatefulWidget {
-  const WifiScreen({super.key});
+  const WifiScreen({super.key, this.isActive = false});
+
+  /// Whether this tab is currently the visible one. The shell flips this so
+  /// the screen can auto-connect over BLE when the user opens the tab.
+  final bool isActive;
 
   @override
   State<WifiScreen> createState() => _WifiScreenState();
@@ -17,6 +21,85 @@ class WifiScreen extends StatefulWidget {
 
 class _WifiScreenState extends State<WifiScreen> {
   bool _isAddingNetwork = false;
+
+  /// True while we're scanning for + connecting to the device from this tab.
+  bool _autoConnecting = false;
+
+  /// Guards against calling connectToDevice more than once per scan.
+  bool _connectStarted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<BleService>().addListener(_onBle);
+      if (widget.isActive) _attemptAutoConnect();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant WifiScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Tab just became visible → try to reconnect to the device.
+    if (!oldWidget.isActive && widget.isActive) {
+      _attemptAutoConnect();
+    }
+  }
+
+  @override
+  void dispose() {
+    context.read<BleService>().removeListener(_onBle);
+    super.dispose();
+  }
+
+  /// Side-effect listener: connect to the first CalcAI found during an
+  /// auto-connect scan, and clear the flag once resolved.
+  void _onBle() {
+    if (!mounted || !_autoConnecting) return;
+    final ble = context.read<BleService>();
+
+    if (ble.connectionState.isConnected) {
+      _connectStarted = false;
+      setState(() => _autoConnecting = false);
+      return;
+    }
+
+    if (!_connectStarted && ble.devices.isNotEmpty) {
+      _connectStarted = true;
+      ble.connectToDevice(ble.devices.first);
+      return;
+    }
+
+    // Scan finished with nothing found → stop showing the connecting state.
+    if (!_connectStarted && !ble.isScanning && ble.devices.isEmpty) {
+      setState(() => _autoConnecting = false);
+    }
+  }
+
+  /// Scans for a nearby CalcAI and connects to it. Safe to call repeatedly.
+  Future<void> _attemptAutoConnect() async {
+    final ble = context.read<BleService>();
+    if (ble.connectionState.isConnected || _autoConnecting) return;
+
+    setState(() {
+      _autoConnecting = true;
+      _connectStarted = false;
+    });
+
+    final granted = await ble.requestPermissions();
+    final on = granted && await ble.isBluetoothOn();
+    if (!granted || !on) {
+      if (mounted) setState(() => _autoConnecting = false);
+      return;
+    }
+
+    await ble.startScan();
+
+    // If the scan ended without connecting, drop back to the idle banner.
+    if (mounted && !ble.connectionState.isConnected && !_connectStarted) {
+      setState(() => _autoConnecting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -67,7 +150,7 @@ class _WifiScreenState extends State<WifiScreen> {
 
                 const SizedBox(height: 20),
 
-                // ── Offline banner ────────────────────────────
+                // ── Offline / connecting banner ───────────────
                 if (!isConnected)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
@@ -81,21 +164,56 @@ class _WifiScreenState extends State<WifiScreen> {
                       ),
                       child: Row(
                         children: [
-                          const Icon(
-                            Icons.bluetooth_disabled_rounded,
-                            color: AppColors.textTertiary,
-                            size: 16,
-                          ),
+                          if (_autoConnecting)
+                            const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation(
+                                    AppColors.electricBlue),
+                              ),
+                            )
+                          else
+                            const Icon(
+                              Icons.bluetooth_disabled_rounded,
+                              color: AppColors.textTertiary,
+                              size: 16,
+                            ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
-                              'Bring your CalcAI nearby to manage networks',
+                              _autoConnecting
+                                  ? 'Connecting to your CalcAI…'
+                                  : 'Bring your CalcAI nearby to manage networks',
                               style: GoogleFonts.inter(
                                 fontSize: 12,
                                 color: AppColors.textSecondary,
                               ),
                             ),
                           ),
+                          if (!_autoConnecting) ...[
+                            const SizedBox(width: 8),
+                            GestureDetector(
+                              onTap: _attemptAutoConnect,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: AppColors.electricBlue,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  'Connect',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
