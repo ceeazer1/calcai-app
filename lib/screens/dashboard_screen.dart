@@ -83,7 +83,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 const SizedBox(height: 12),
                 _buildModelSelector(),
                 const SizedBox(height: 12),
-                _buildThinkingSelector(),
+                _buildStyleSelector(),
                 const SizedBox(height: 24),
                 _buildSectionTitle('Usage'),
                 const SizedBox(height: 12),
@@ -312,11 +312,15 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  Widget _buildThinkingSelector() {
+  Widget _buildStyleSelector() {
     return Consumer<CloudService>(
       builder: (context, cloud, _) {
-        final levels = ['off', 'low', 'medium', 'high'];
-        final current = cloud.thinkingLevel ?? 'off';
+        const styles = [
+          ('answer', 'Answers only', 'Just the final answers', Icons.bolt_rounded),
+          ('small', 'Brief explanation', 'Answers with short work', Icons.notes_rounded),
+          ('detailed', 'Detailed explanation', 'Full step-by-step work', Icons.menu_book_rounded),
+        ];
+        final current = cloud.responseStyle;
 
         return GlassCard(
           padding: const EdgeInsets.all(16),
@@ -333,14 +337,14 @@ class _DashboardScreenState extends State<DashboardScreen>
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Icon(
-                      Icons.psychology_rounded,
+                      Icons.tune_rounded,
                       color: AppColors.textPrimary,
                       size: 20,
                     ),
                   ),
                   const SizedBox(width: 14),
                   Text(
-                    'Thinking Level',
+                    'Response Style',
                     style: GoogleFonts.inter(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
@@ -350,48 +354,76 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ],
               ),
               const SizedBox(height: 14),
-              Row(
-                children: levels.map((level) {
-                  final isSelected = level == current;
-                  return Expanded(
-                    child: GestureDetector(
-                      onTap: () => _setThinking(level),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        margin: EdgeInsets.only(
-                          right: level != 'high' ? 8 : 0,
-                        ),
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        decoration: BoxDecoration(
+              ...styles.map((s) {
+                final value = s.$1;
+                final isSelected = value == current;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: GestureDetector(
+                    onTap: () => _setStyle(value),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? AppColors.electricBlue.withOpacity(0.12)
+                            : AppColors.surfaceHighlight.withOpacity(0.5),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
                           color: isSelected
-                              ? AppColors.electricBlue.withOpacity(0.15)
-                              : AppColors.surfaceHighlight.withOpacity(0.5),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: isSelected
-                                ? AppColors.electricBlue.withOpacity(0.3)
-                                : Colors.transparent,
-                          ),
-                        ),
-                        child: Center(
-                          child: Text(
-                            level[0].toUpperCase() + level.substring(1),
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: isSelected
-                                  ? FontWeight.w600
-                                  : FontWeight.w400,
-                              color: isSelected
-                                  ? AppColors.textPrimary
-                                  : AppColors.textSecondary,
-                            ),
-                          ),
+                              ? AppColors.electricBlue.withOpacity(0.3)
+                              : Colors.transparent,
                         ),
                       ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            s.$4,
+                            size: 20,
+                            color: isSelected
+                                ? AppColors.electricBlue
+                                : AppColors.textTertiary,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  s.$2,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 14,
+                                    fontWeight: isSelected
+                                        ? FontWeight.w600
+                                        : FontWeight.w500,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
+                                Text(
+                                  s.$3,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    color: AppColors.textTertiary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (isSelected)
+                            const Icon(
+                              Icons.check_circle_rounded,
+                              color: AppColors.electricBlue,
+                              size: 20,
+                            ),
+                        ],
+                      ),
                     ),
-                  );
-                }).toList(),
-              ),
+                  ),
+                );
+              }),
             ],
           ),
         );
@@ -583,18 +615,18 @@ class _DashboardScreenState extends State<DashboardScreen>
     final auth = context.read<AuthService>();
     final cloud = context.read<CloudService>();
     if (auth.token != null && auth.primaryMac != null) {
-      await cloud.setModel(auth.token!, auth.primaryMac!, model,
-          cloud.thinkingLevel ?? 'off');
+      await cloud.setModel(
+          auth.token!, auth.primaryMac!, model, cloud.responseStyle);
     }
     if (mounted) setState(() => _isLoadingModel = false);
   }
 
-  Future<void> _setThinking(String level) async {
+  Future<void> _setStyle(String style) async {
     final auth = context.read<AuthService>();
     final cloud = context.read<CloudService>();
     if (auth.token != null && auth.primaryMac != null) {
       await cloud.setModel(auth.token!, auth.primaryMac!,
-          cloud.currentModel ?? 'gpt-5.4-mini', level);
+          cloud.currentModel ?? 'gpt-5.4-mini', style);
     }
   }
 }

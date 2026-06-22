@@ -31,7 +31,7 @@ class CloudService extends ChangeNotifier {
   Map<String, dynamic>? _deviceInfo;
   Map<String, dynamic>? get deviceInfo => _deviceInfo;
 
-  /// AI model configuration for the current device ({model, thinking}).
+  /// AI model configuration for the current device ({model, style}).
   Map<String, dynamic>? _modelInfo;
   Map<String, dynamic>? get modelInfo => _modelInfo;
 
@@ -64,8 +64,8 @@ class CloudService extends ChangeNotifier {
   /// Current AI model name (e.g. "gpt-5.4-mini").
   String? get currentModel => _modelInfo?['model']?.toString();
 
-  /// Current thinking level (e.g. "off", "low", "medium", "high").
-  String? get thinkingLevel => _modelInfo?['thinking']?.toString();
+  /// Current response style ("answer", "small", or "detailed").
+  String get responseStyle => _modelInfo?['style']?.toString() ?? 'small';
 
   /// Plan type (e.g. "Free", "Pro").
   String? get planType => _usage?['plan']?.toString() ??
@@ -173,7 +173,7 @@ class CloudService extends ChangeNotifier {
 
   /// Gets the current AI model configuration for a device.
   ///
-  /// GET /ai/model/get?mac=  → {model, thinking}
+  /// GET /ai/model/get?mac=  → {model, style}
   Future<Map<String, dynamic>> getModel(String token, String mac) async {
     try {
       _setLoading(true);
@@ -197,14 +197,14 @@ class CloudService extends ChangeNotifier {
     }
   }
 
-  /// Updates the AI model and thinking-mode for a device.
+  /// Updates the AI model and response style for a device.
   ///
-  /// POST /ai/model/set  body: {mac, model, thinking}
+  /// POST /ai/model/set  body: {mac, model, style}
   Future<void> setModel(
     String token,
     String mac,
     String model,
-    String thinking,
+    String style,
   ) async {
     try {
       _setLoading(true);
@@ -216,14 +216,14 @@ class CloudService extends ChangeNotifier {
         body: jsonEncode({
           'mac': mac,
           'model': model,
-          'thinking': thinking,
+          'style': style,
         }),
       );
 
       _assertSuccess(response);
 
       // Optimistic update so the UI reflects changes immediately.
-      _modelInfo = {'model': model, 'thinking': thinking};
+      _modelInfo = {'model': model, 'style': style};
       notifyListeners();
     } catch (e) {
       _setError('Failed to update model: ${_friendlyError(e)}');
