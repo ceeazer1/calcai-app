@@ -395,6 +395,48 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Account Deletion ──────────────────────────────────────────────────
+
+  /// Permanently deletes the account and all server-side data, then clears
+  /// the local session. Returns `null` on success or an error message.
+  ///
+  /// Required by App Store Review Guideline 5.1.1(v).
+  Future<String?> deleteAccount() async {
+    if (_token == null) return 'You are not signed in.';
+    _setLoading(true);
+
+    try {
+      final response = await _httpClient
+          .delete(
+            Uri.parse('$_baseUrl/account/delete'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $_token',
+            },
+          )
+          .timeout(const Duration(seconds: 30));
+
+      if (response.statusCode != 200) {
+        String message = 'Failed to delete account (${response.statusCode}).';
+        try {
+          final body = jsonDecode(response.body) as Map<String, dynamic>;
+          message = body['error']?.toString() ?? message;
+        } catch (_) {}
+        return message;
+      }
+
+      // Wipe all local state so the user returns to the sign-in screen.
+      await signOut();
+      return null;
+    } on TimeoutException {
+      return 'Request timed out. Please try again.';
+    } catch (e) {
+      return 'Could not delete account: $e';
+    } finally {
+      _setLoading(false);
+    }
+  }
+
   // ── Sign-Out ──────────────────────────────────────────────────────────
 
   /// Signs the user out and wipes all persisted auth state.

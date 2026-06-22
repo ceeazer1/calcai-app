@@ -239,35 +239,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     value: '1.0.0',
                   ),
                   Divider(color: AppColors.glassBorder, height: 1, indent: 56),
-                  Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: () {
-                        launchUrl(Uri.parse('https://calcai.cc'));
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        child: Row(
-                          children: [
-                            Icon(Icons.language_rounded, color: AppColors.textSecondary, size: 20),
-                            const SizedBox(width: 14),
-                            Text(
-                              'calcai.cc',
-                              style: GoogleFonts.inter(
-                                fontSize: 14,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                            const Spacer(),
-                            Icon(
-                              Icons.open_in_new_rounded,
-                              color: AppColors.textTertiary,
-                              size: 16,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                  _LinkRow(
+                    icon: Icons.language_rounded,
+                    label: 'calcai.cc',
+                    url: 'https://calcai.cc',
+                  ),
+                  Divider(color: AppColors.glassBorder, height: 1, indent: 56),
+                  _LinkRow(
+                    icon: Icons.privacy_tip_rounded,
+                    label: 'Privacy Policy',
+                    url: 'https://calcai.cc/privacy',
                   ),
                 ],
               ),
@@ -302,10 +283,104 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             ),
+
+            const SizedBox(height: 12),
+
+            // ── Delete Account ──────────────────────────
+            Center(
+              child: TextButton(
+                onPressed: () => _handleDeleteAccount(context),
+                child: Text(
+                  'Delete Account',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textTertiary,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _handleDeleteAccount(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: AppColors.glassBorder),
+        ),
+        icon: Icon(Icons.warning_amber_rounded,
+            color: AppColors.error, size: 32),
+        title: Text(
+          'Delete Account?',
+          style: GoogleFonts.outfit(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          'This permanently deletes your account, unpairs your CalcAI '
+          'devices, and erases all your data from our servers. '
+          'This cannot be undone.',
+          style: GoogleFonts.inter(
+            color: AppColors.textSecondary,
+            fontSize: 14,
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel',
+                style: GoogleFonts.inter(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Delete',
+                style: GoogleFonts.inter(
+                    color: AppColors.error, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    // Show a blocking progress indicator while the request runs.
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(
+        child: CircularProgressIndicator(color: AppColors.electricBlue),
+      ),
+    );
+
+    final auth = context.read<AuthService>();
+    final cloud = context.read<CloudService>();
+    final error = await auth.deleteAccount();
+
+    if (!context.mounted) return;
+    Navigator.pop(context); // dismiss progress
+
+    if (error == null) {
+      // Success — auth state is cleared, the app returns to sign-in.
+      cloud.reset();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   void _handleSignOut(BuildContext context) {
@@ -483,6 +558,53 @@ class _SectionTitle extends StatelessWidget {
         fontWeight: FontWeight.w600,
         color: AppColors.textSecondary,
         letterSpacing: 0.5,
+      ),
+    );
+  }
+}
+
+class _LinkRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String url;
+
+  const _LinkRow({
+    required this.icon,
+    required this.label,
+    required this.url,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => launchUrl(
+          Uri.parse(url),
+          mode: LaunchMode.externalApplication,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Icon(icon, color: AppColors.textSecondary, size: 20),
+              const SizedBox(width: 14),
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const Spacer(),
+              Icon(
+                Icons.open_in_new_rounded,
+                color: AppColors.textTertiary,
+                size: 16,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
