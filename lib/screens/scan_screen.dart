@@ -24,6 +24,9 @@ class _ScanScreenState extends State<ScanScreen>
     with SingleTickerProviderStateMixin {
   _ScanPhase _phase = _ScanPhase.scanning;
 
+  /// Advertised name of the device we connected to (e.g. "CalcAI-BD21").
+  String? _connectedName;
+
   late final AnimationController _enterController;
   late final Animation<double> _fadeIn;
 
@@ -62,12 +65,13 @@ class _ScanScreenState extends State<ScanScreen>
       return;
     }
 
-    // Connected and ready → show success, then navigate
+    // Connected and ready → show success + device name, wait for the user
+    // to tap Continue (no auto-navigate).
     if (_phase == _ScanPhase.connecting &&
         ble.connectionState == DeviceConnectionState.ready) {
-      setState(() => _phase = _ScanPhase.connected);
-      Future.delayed(const Duration(milliseconds: 1400), () {
-        if (mounted) _navigateToWifi();
+      setState(() {
+        _phase = _ScanPhase.connected;
+        _connectedName = ble.connectedDevice?.name;
       });
       return;
     }
@@ -149,7 +153,7 @@ class _ScanScreenState extends State<ScanScreen>
       case _ScanPhase.connecting:
         return 'Device found — connecting…';
       case _ScanPhase.connected:
-        return 'Connected!';
+        return 'Connected to ${_connectedName ?? 'your CalcAI'}';
       case _ScanPhase.failed:
         return 'No device found nearby';
     }
@@ -157,9 +161,6 @@ class _ScanScreenState extends State<ScanScreen>
 
   bool get _isActive =>
       _phase == _ScanPhase.scanning || _phase == _ScanPhase.connecting;
-
-  bool get _canScanAgain =>
-      _phase == _ScanPhase.failed;
 
   @override
   Widget build(BuildContext context) {
@@ -244,9 +245,15 @@ class _ScanScreenState extends State<ScanScreen>
                     width: double.infinity,
                     height: 52,
                     child: ElevatedButton(
-                      onPressed: _canScanAgain ? _startScan : null,
+                      onPressed: switch (_phase) {
+                        _ScanPhase.connected => _navigateToWifi,
+                        _ScanPhase.failed => _startScan,
+                        _ => null,
+                      },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.electricBlue,
+                        backgroundColor: _phase == _ScanPhase.connected
+                            ? AppColors.success
+                            : AppColors.electricBlue,
                         foregroundColor: Colors.white,
                         disabledBackgroundColor:
                             AppColors.surfaceHighlight,
@@ -257,7 +264,11 @@ class _ScanScreenState extends State<ScanScreen>
                         elevation: 0,
                       ),
                       child: Text(
-                        _isActive ? 'Scanning…' : 'Scan Again',
+                        switch (_phase) {
+                          _ScanPhase.connected => 'Continue',
+                          _ScanPhase.failed => 'Scan Again',
+                          _ => 'Scanning…',
+                        },
                         style: GoogleFonts.inter(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,

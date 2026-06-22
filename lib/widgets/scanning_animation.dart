@@ -137,16 +137,20 @@ class _RadarPainter extends CustomPainter {
     if (!isActive) return;
 
     // ── Expanding pulse rings ──────────────────────────────────────
+    // Each ring eases outward, fading IN from the center and OUT at the
+    // edge (sine envelope) so rings never pop on birth or death — the
+    // loop stays seamless.
     for (int i = 0; i < ringCount; i++) {
       final phaseOffset = i / ringCount;
       final ringProgress = (progress + phaseOffset) % 1.0;
-      final radius = maxRadius * ringProgress;
-      final opacity = (1.0 - ringProgress).clamp(0.0, 0.4);
+      final eased = Curves.easeOutCubic.transform(ringProgress);
+      final radius = maxRadius * eased;
+      final opacity = math.sin(math.pi * ringProgress) * 0.35;
 
       final ringPaint = Paint()
-        ..color = color.withOpacity(opacity)
+        ..color = color.withOpacity(opacity.clamp(0.0, 0.35))
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5 * (1.0 - ringProgress) + 0.5;
+        ..strokeWidth = 2.0 * (1.0 - ringProgress) + 0.6;
 
       canvas.drawCircle(center, radius, ringPaint);
     }
@@ -180,17 +184,19 @@ class _RadarPainter extends CustomPainter {
 
     canvas.drawLine(center, lineEnd, linePaint);
 
-    // ── Center glow ────────────────────────────────────────────────
+    // ── Center glow (gentle breathing) ─────────────────────────────
+    final pulse = 0.5 + 0.5 * math.sin(progress * 2 * math.pi);
+    final glowRadius = maxRadius * (0.16 + 0.05 * pulse);
     final glowPaint = Paint()
       ..shader = RadialGradient(
         colors: [
-          color.withOpacity(0.2),
+          color.withOpacity(0.18 + 0.10 * pulse),
           color.withOpacity(0.0),
         ],
-        radius: 0.15,
-      ).createShader(Rect.fromCircle(center: center, radius: maxRadius));
+        radius: 0.5,
+      ).createShader(Rect.fromCircle(center: center, radius: glowRadius));
 
-    canvas.drawCircle(center, maxRadius * 0.15, glowPaint);
+    canvas.drawCircle(center, glowRadius, glowPaint);
   }
 
   @override
