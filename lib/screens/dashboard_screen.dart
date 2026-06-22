@@ -79,15 +79,15 @@ class _DashboardScreenState extends State<DashboardScreen>
                 _buildHeader(),
                 const SizedBox(height: 24),
                 _buildPairBanner(),
+                _buildSectionTitle('Today'),
+                const SizedBox(height: 12),
+                _buildUsageCard(),
+                const SizedBox(height: 24),
                 _buildSectionTitle('AI Configuration'),
                 const SizedBox(height: 12),
                 _buildModelSelector(),
                 const SizedBox(height: 12),
                 _buildStyleSelector(),
-                const SizedBox(height: 24),
-                _buildSectionTitle('Usage'),
-                const SizedBox(height: 12),
-                _buildUsageCard(),
                 const SizedBox(height: 24),
                 _buildSectionTitle('Recent Activity'),
                 const SizedBox(height: 12),
@@ -430,23 +430,34 @@ class _DashboardScreenState extends State<DashboardScreen>
       builder: (context, cloud, _) {
         final isPro = cloud.planType?.toLowerCase() == 'pro';
         return GlassCard(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              _UsageBar(
-                label: 'Standard',
-                used: cloud.cheapUsage,
-                limit: isPro ? -1 : cloud.cheapLimit,
-                color: AppColors.success,
-              ),
-              const SizedBox(height: 12),
-              _UsageBar(
-                label: 'Premium',
-                used: cloud.premiumUsage,
-                limit: isPro ? -1 : cloud.premiumLimit,
-                color: AppColors.warning,
-              ),
-            ],
+          padding: const EdgeInsets.all(18),
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _UsageStat(
+                    label: 'Standard',
+                    used: cloud.cheapUsage,
+                    limit: isPro ? -1 : cloud.cheapLimit,
+                    accent: AppColors.electricBlue,
+                  ),
+                ),
+                Container(
+                  width: 1,
+                  margin: const EdgeInsets.symmetric(horizontal: 18),
+                  color: AppColors.glassBorder,
+                ),
+                Expanded(
+                  child: _UsageStat(
+                    label: 'Premium',
+                    used: cloud.premiumUsage,
+                    limit: isPro ? -1 : cloud.premiumLimit,
+                    accent: AppColors.cyan,
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -625,56 +636,75 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 }
 
-class _UsageBar extends StatelessWidget {
+class _UsageStat extends StatelessWidget {
   final String label;
   final int used;
   final int limit; // -1 = unlimited
-  final Color color;
+  final Color accent;
 
-  const _UsageBar({
+  const _UsageStat({
     required this.label,
     required this.used,
     required this.limit,
-    required this.color,
+    required this.accent,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isUnlimited = limit < 0;
-    final fraction = isUnlimited ? 0.0 : (used / limit).clamp(0.0, 1.0);
+    final unlimited = limit < 0;
+    final left = unlimited ? 0 : (limit - used).clamp(0, limit > 0 ? limit : 0);
+    final remaining =
+        unlimited ? 1.0 : (limit > 0 ? left / limit : 0.0).clamp(0.0, 1.0);
 
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: 60,
-          child: Text(
-            label,
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              color: AppColors.textSecondary,
-            ),
-          ),
-        ),
-        Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: isUnlimited ? 1.0 : fraction,
-              minHeight: 6,
-              backgroundColor: AppColors.surfaceHighlight,
-              valueColor: AlwaysStoppedAnimation(
-                isUnlimited ? AppColors.electricBlue : color,
+        // Big "left" number — the thing a student checks at a glance.
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text(
+              unlimited ? '∞' : '$left',
+              style: GoogleFonts.outfit(
+                fontSize: 30,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+                height: 1.0,
               ),
             ),
-          ),
+            if (!unlimited) ...[
+              const SizedBox(width: 5),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 3),
+                child: Text(
+                  'left',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
-        const SizedBox(width: 10),
+        const SizedBox(height: 4),
         Text(
-          isUnlimited ? '∞' : '$used/$limit',
+          label,
           style: GoogleFonts.inter(
             fontSize: 12,
             fontWeight: FontWeight.w500,
             color: AppColors.textSecondary,
+          ),
+        ),
+        const SizedBox(height: 12),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(
+            value: remaining,
+            minHeight: 6,
+            backgroundColor: AppColors.surfaceHighlight,
+            valueColor: AlwaysStoppedAnimation(accent),
           ),
         ),
       ],
