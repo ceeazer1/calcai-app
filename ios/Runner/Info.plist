@@ -12,8 +12,6 @@
 	<string>CalcAI uses Bluetooth to connect to your CalcAI device for WiFi setup and management.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>CalcAI uses Bluetooth to connect to your CalcAI device for WiFi setup and management.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>CalcAI needs location access to scan for nearby Bluetooth devices.</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
