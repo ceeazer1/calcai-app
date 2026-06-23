@@ -377,8 +377,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
 bool _isImageEntry(Map<String, dynamic> e) =>
     (e['type'] ?? '').toString().contains('image');
 
-String _questionOf(Map<String, dynamic> e) =>
-    (e['question'] ?? e['prompt'] ?? '').toString();
+String _questionOf(Map<String, dynamic> e) {
+  // For photos the logged "prompt" is the auto tutor instruction, not the
+  // student's own text — don't surface it as their prompt.
+  if (_isImageEntry(e)) return '';
+  return (e['question'] ?? e['prompt'] ?? '').toString();
+}
 
 DateTime? _tsOf(Map<String, dynamic> e) {
   final raw = e['ts'];
@@ -506,11 +510,11 @@ class _HistoryCard extends StatelessWidget {
                     ],
                   ),
 
-                  // Question text
-                  if (question.isNotEmpty) ...[
+                  // Title: the student's prompt, or "Photo" for image entries.
+                  if (question.isNotEmpty || isImage) ...[
                     const SizedBox(height: 8),
                     Text(
-                      question,
+                      isImage ? 'Photo' : question,
                       style: GoogleFonts.inter(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,

@@ -503,7 +503,11 @@ class _DashboardScreenState extends State<DashboardScreen>
 
         final last = cloud.history.first;
         final isImage = (last['type'] ?? '').toString().contains('image');
-        final question = (last['question'] ?? last['prompt'] ?? '').toString();
+        // For photos the logged prompt is the auto instruction, so label it
+        // "Photo" instead of surfacing that text.
+        final question = isImage
+            ? 'Photo'
+            : (last['question'] ?? last['prompt'] ?? '').toString();
         final response = (last['response'] ?? '').toString();
         final imageUrl = last['imageUrl']?.toString();
 

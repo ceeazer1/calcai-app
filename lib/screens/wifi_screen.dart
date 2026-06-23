@@ -64,6 +64,14 @@ class _WifiScreenState extends State<WifiScreen> {
       return;
     }
 
+    // A started connect attempt failed → stop showing the connecting state.
+    if (_connectStarted &&
+        ble.connectionState == DeviceConnectionState.error) {
+      _connectStarted = false;
+      setState(() => _autoConnecting = false);
+      return;
+    }
+
     if (!_connectStarted && ble.devices.isNotEmpty) {
       _connectStarted = true;
       ble.connectToDevice(ble.devices.first);

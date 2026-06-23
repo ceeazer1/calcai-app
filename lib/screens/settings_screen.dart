@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -18,6 +19,24 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _apiKeysExpanded = false;
+  String _version = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() => _version = '${info.version} (${info.buildNumber})');
+      }
+    } catch (_) {
+      // Leave blank if unavailable.
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -236,7 +255,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _SettingsRow(
                     icon: Icons.info_outline_rounded,
                     label: 'Version',
-                    value: '1.0.0',
+                    value: _version.isEmpty ? '—' : _version,
                   ),
                   Divider(color: AppColors.glassBorder, height: 1, indent: 56),
                   _LinkRow(

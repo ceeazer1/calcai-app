@@ -364,12 +364,14 @@ class CloudService extends ChangeNotifier {
     _setLoading(true);
 
     try {
-      // Fire all three requests concurrently.
+      // Fire all requests concurrently. History is included so the home
+      // "Recent Activity" card has data without needing the History tab.
       final results = await Future.wait<dynamic>(
         [
           getModel(token, mac),
           getUsage(token, mac),
           getDeviceInfo(token, mac),
+          getHistory(token, mac, limit: 10),
         ],
         eagerError: false,
       );
@@ -378,7 +380,8 @@ class CloudService extends ChangeNotifier {
         'CalcAI Cloud: Dashboard loaded — '
         'model=${(results[0] as Map).length} keys, '
         'usage=${(results[1] as Map).length} keys, '
-        'info=${(results[2] as Map).length} keys',
+        'info=${(results[2] as Map).length} keys, '
+        'history=${(results[3] as List).length} items',
       );
     } catch (e) {
       _setError('Dashboard load error: ${_friendlyError(e)}');
