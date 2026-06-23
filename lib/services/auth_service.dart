@@ -25,6 +25,14 @@ class AuthService extends ChangeNotifier {
   // ── Constants ─────────────────────────────────────────────────────────
   static const String _baseUrl = 'https://ai.calcai.cc/ai';
 
+  // Google OAuth client IDs (from Google Cloud Console).
+  // The iOS client authenticates the app; serverClientId (Web) sets the
+  // idToken audience so the backend can verify it.
+  static const String _googleIosClientId =
+      '520192434738-ot569t9hdad0i2hfoiuqr7scrdql14p7.apps.googleusercontent.com';
+  static const String _googleWebClientId =
+      '520192434738-sgkjkb455cb147rt10nabsa3auul2eki.apps.googleusercontent.com';
+
   // Storage keys
   static const String _keyToken = 'auth_token';
   static const String _keyUsername = 'username';
@@ -228,7 +236,11 @@ class AuthService extends ChangeNotifier {
     _setLoading(true);
 
     try {
-      final googleSignIn = GoogleSignIn(scopes: ['email']);
+      final googleSignIn = GoogleSignIn(
+        clientId: _googleIosClientId,
+        serverClientId: _googleWebClientId,
+        scopes: ['email'],
+      );
       final account = await googleSignIn.signIn();
 
       if (account == null) {

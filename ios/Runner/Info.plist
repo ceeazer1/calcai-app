@@ -12,6 +12,17 @@
 	<string>CalcAI uses Bluetooth to connect to your CalcAI device for WiFi setup and management.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>CalcAI uses Bluetooth to connect to your CalcAI device for WiFi setup and management.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.520192434738-ot569t9hdad0i2hfoiuqr7scrdql14p7</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
