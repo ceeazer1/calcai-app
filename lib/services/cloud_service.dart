@@ -120,8 +120,9 @@ class CloudService extends ChangeNotifier {
 
   /// Claims / pairs a new device to the authenticated user's account.
   ///
-  /// POST /ai/pair/claim  body: {mac}
-  Future<void> claimDevice(String token, String mac) async {
+  /// POST /ai/pair/claim  body: {mac, proof}
+  /// [proof] is the device's BLE-supplied proof-of-possession token.
+  Future<void> claimDevice(String token, String mac, {String? proof}) async {
     try {
       _setLoading(true);
       _clearError();
@@ -129,7 +130,10 @@ class CloudService extends ChangeNotifier {
       final response = await http.post(
         Uri.parse('$_baseUrl/ai/pair/claim'),
         headers: _jsonAuthHeaders(token),
-        body: jsonEncode({'mac': mac}),
+        body: jsonEncode({
+          'mac': mac,
+          if (proof != null && proof.isNotEmpty) 'proof': proof,
+        }),
       );
 
       _assertSuccess(response);

@@ -76,6 +76,11 @@ class BleService extends ChangeNotifier {
   String? _deviceMac;
   String? get deviceMac => _deviceMac;
 
+  /// Proof-of-possession token the device sends over BLE (HMAC of its MAC).
+  /// Relayed to the worker on claim to prove this is a genuine device.
+  String? _devicePairProof;
+  String? get devicePairProof => _devicePairProof;
+
   /// Human-readable error message (null when there is no error).
   String? _error;
   String? get error => _error;
@@ -304,6 +309,7 @@ class BleService extends ChangeNotifier {
     _wifiNetworks.clear();
     _provisioningState = ProvisioningState.idle;
     _deviceMac = null;
+    _devicePairProof = null;
     _setConnectionState(DeviceConnectionState.disconnected);
   }
 
@@ -348,6 +354,10 @@ class BleService extends ChangeNotifier {
         final rawMac = data['mac'] as String?;
         if (rawMac != null && rawMac.isNotEmpty) {
           _deviceMac = rawMac.replaceAll(':', '').toLowerCase();
+        }
+        final proof = data['proof'] as String?;
+        if (proof != null && proof.isNotEmpty) {
+          _devicePairProof = proof;
         }
         _provisioningState = ProvisioningState.success;
       } else if (status == 'failed') {
