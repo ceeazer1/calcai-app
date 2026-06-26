@@ -214,23 +214,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     secondChild: Column(
                       children: [
                         Divider(color: AppColors.glassBorder, height: 1),
-                        _ApiKeyRow(
-                          provider: 'OpenAI',
-                          icon: Icons.auto_awesome_rounded,
-                          onTap: () => _showApiKeyDialog(context, 'OpenAI'),
-                        ),
+                        _providerSection('OpenAI', Icons.auto_awesome_rounded),
                         Divider(color: AppColors.glassBorder, height: 1, indent: 56),
-                        _ApiKeyRow(
-                          provider: 'Google',
-                          icon: Icons.cloud_rounded,
-                          onTap: () => _showApiKeyDialog(context, 'Google'),
-                        ),
+                        _providerSection('Google', Icons.cloud_rounded),
                         Divider(color: AppColors.glassBorder, height: 1, indent: 56),
-                        _ApiKeyRow(
-                          provider: 'Anthropic',
-                          icon: Icons.psychology_rounded,
-                          onTap: () => _showApiKeyDialog(context, 'Anthropic'),
-                        ),
+                        _providerSection('Anthropic', Icons.psychology_rounded),
                         const SizedBox(height: 4),
                       ],
                     ),
@@ -440,6 +428,175 @@ class _SettingsScreenState extends State<SettingsScreen> {
               'Sign Out',
               style: GoogleFonts.inter(color: AppColors.error),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// One provider's API-key row, plus a custom-model field once a key is saved
+  /// (BYOK users can run any model their key supports).
+  Widget _providerSection(String provider, IconData icon) {
+    return Consumer<CloudService>(
+      builder: (context, cloud, _) {
+        return Column(
+          children: [
+            _ApiKeyRow(
+              provider: provider,
+              icon: icon,
+              onTap: () => _showApiKeyDialog(context, provider),
+            ),
+            if (cloud.hasApiKey(provider)) ...[
+              Divider(color: AppColors.glassBorder, height: 1, indent: 56),
+              _customModelRow(context, cloud, provider),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _customModelRow(
+      BuildContext context, CloudService cloud, String provider) {
+    final current = cloud.currentModel ?? '';
+    final showsCurrent = current.isNotEmpty && _modelBelongsTo(current, provider);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _showCustomModelDialog(context, provider),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(56, 12, 16, 12),
+          child: Row(
+            children: [
+              const Icon(Icons.tune_rounded,
+                  color: AppColors.textTertiary, size: 18),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Custom model',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+              Text(
+                showsCurrent ? current : 'Set',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: showsCurrent
+                      ? AppColors.electricBlue
+                      : AppColors.textTertiary,
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(Icons.chevron_right_rounded,
+                  color: AppColors.textTertiary, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  bool _modelBelongsTo(String model, String provider) {
+    switch (provider) {
+      case 'OpenAI':
+        return model.startsWith('gpt') || model.startsWith('o');
+      case 'Google':
+        return model.startsWith('gemini');
+      case 'Anthropic':
+        return model.startsWith('claude');
+      default:
+        return false;
+    }
+  }
+
+  void _showCustomModelDialog(BuildContext context, String provider) {
+    final cloud = context.read<CloudService>();
+    final auth = context.read<AuthService>();
+    final current = cloud.currentModel ?? '';
+    final controller = TextEditingController(
+      text: _modelBelongsTo(current, provider) ? current : '',
+    );
+    final hint = switch (provider) {
+      'OpenAI' => 'e.g. gpt-5.4 or gpt-4o',
+      'Google' => 'e.g. gemini-3.1-pro-preview',
+      'Anthropic' => 'e.g. claude-opus-4-8',
+      _ => 'model id',
+    };
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: AppColors.glassBorder),
+        ),
+        title: Text(
+          '$provider Custom Model',
+          style: GoogleFonts.outfit(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Run any $provider model your API key supports — including '
+              'older or niche ones not in the picker.',
+              style: GoogleFonts.inter(
+                  color: AppColors.textSecondary, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              autocorrect: false,
+              style: GoogleFonts.inter(
+                  color: AppColors.textPrimary, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: hint,
+                hintStyle: GoogleFonts.inter(color: AppColors.textTertiary),
+                filled: true,
+                fillColor: AppColors.surfaceLight,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel',
+                style: GoogleFonts.inter(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final model = controller.text.trim();
+              if (model.isEmpty) return;
+              Navigator.pop(ctx);
+              if (auth.token != null && auth.primaryMac != null) {
+                await cloud.setModel(auth.token!, auth.primaryMac!, model,
+                    cloud.responseStyle);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Model set to $model'),
+                      backgroundColor: AppColors.surface,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              }
+            },
+            child: Text('Apply',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
           ),
         ],
       ),

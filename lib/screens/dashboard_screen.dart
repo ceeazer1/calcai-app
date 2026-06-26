@@ -8,6 +8,17 @@ import '../theme/app_colors.dart';
 import '../widgets/glass_card.dart';
 import 'link_device_screen.dart';
 
+/// Model IDs usable on the free plan. Everything else is premium.
+const Set<String> kFreeModels = {
+  'gpt-5.4-mini',
+  'gpt-5.4-nano',
+  'gemini-3.5-flash',
+  'gemini-3.1-flash-lite',
+  'claude-haiku-4-5',
+};
+
+bool isFreeModel(String model) => kFreeModels.contains(model);
+
 /// Notification dispatched when the user taps "Connect Device" on the
 /// locked dashboard. MainShell listens for this to switch to the WiFi tab.
 class SwitchToWifiTabNotification extends Notification {}
@@ -83,7 +94,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 const SizedBox(height: 12),
                 _buildUsageCard(),
                 const SizedBox(height: 24),
-                _buildSectionTitle('AI Configuration'),
+                _buildSectionTitle('AI Settings'),
                 const SizedBox(height: 12),
                 _buildModelSelector(),
                 const SizedBox(height: 12),
@@ -101,91 +112,30 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Widget _buildHeader() {
-    final auth = context.read<AuthService>();
-    final name = auth.username;
-    final hour = DateTime.now().hour;
-    final greeting = hour < 12
-        ? 'Good morning'
-        : hour < 18
-            ? 'Good afternoon'
-            : 'Good evening';
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        gradient: const LinearGradient(
-          colors: [Color(0x24D4D4DC), Color(0x0A8A8A96)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        border: Border.all(color: AppColors.glassBorder, width: 0.5),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '$greeting 👋',
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                ShaderMask(
-                  shaderCallback: (bounds) =>
-                      AppColors.accentGradient.createShader(bounds),
-                  child: Text(
-                    name != null && name.isNotEmpty ? name : 'Welcome',
-                    style: GoogleFonts.outfit(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: AppColors.success.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: AppColors.success.withOpacity(0.2),
+    return Row(
+      children: [
+        Expanded(
+          child: ShaderMask(
+            shaderCallback: (bounds) =>
+                AppColors.accentGradient.createShader(bounds),
+            child: Text(
+              'CalcAI',
+              style: GoogleFonts.outfit(
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
               ),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 6,
-                  height: 6,
-                  decoration: const BoxDecoration(
-                    color: AppColors.success,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  'Online',
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.success,
-                  ),
-                ),
-              ],
-            ),
           ),
-        ],
-      ),
+        ),
+        const SizedBox(width: 12),
+        // Calculator icon = device is online.
+        const Icon(
+          Icons.calculate_rounded,
+          color: AppColors.electricBlue,
+          size: 26,
+        ),
+      ],
     );
   }
 
@@ -591,16 +541,13 @@ class _DashboardScreenState extends State<DashboardScreen>
   void _showModelPicker(CloudService cloud) {
     final providers = [
       _ModelProvider('OpenAI', Icons.auto_awesome_rounded, [
-        'gpt-5.5', 'gpt-5.5-instant', 'gpt-5.4-pro', 'gpt-5.4',
-        'gpt-5.4-mini', 'gpt-5.4-nano', 'o4-mini',
+        'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-nano',
       ]),
       _ModelProvider('Google', Icons.cloud_rounded, [
-        'gemini-3.5-flash', 'gemini-3.1-pro', 'gemini-3.1-flash-lite',
-        'gemini-2.5-pro', 'gemini-2.5-flash',
+        'gemini-3.1-pro-preview', 'gemini-3.5-flash', 'gemini-3.1-flash-lite',
       ]),
       _ModelProvider('Anthropic', Icons.psychology_rounded, [
-        'claude-opus-4.8', 'claude-opus-4.7', 'claude-opus-4.6',
-        'claude-sonnet-4.6', 'claude-sonnet-4.5', 'claude-haiku-4.5',
+        'claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5',
       ]),
     ];
 
@@ -895,6 +842,8 @@ class _ModelPickerSheetState extends State<_ModelPickerSheet> {
                                 ),
                               ),
                             ),
+                            _TierTag(free: isFreeModel(model)),
+                            const SizedBox(width: 10),
                             if (isSelected)
                               Container(
                                 width: 24,
@@ -908,7 +857,9 @@ class _ModelPickerSheetState extends State<_ModelPickerSheet> {
                                   color: AppColors.success,
                                   size: 16,
                                 ),
-                              ),
+                              )
+                            else
+                              const SizedBox(width: 24),
                           ],
                         ),
                       ),
@@ -916,6 +867,41 @@ class _ModelPickerSheetState extends State<_ModelPickerSheet> {
                   ),
                 );
               },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Small "Free" / "Premium" tag shown next to each model.
+class _TierTag extends StatelessWidget {
+  final bool free;
+  const _TierTag({required this.free});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = free ? AppColors.success : AppColors.warning;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!free) ...[
+            Icon(Icons.lock_rounded, size: 10, color: color),
+            const SizedBox(width: 3),
+          ],
+          Text(
+            free ? 'Free' : 'Premium',
+            style: GoogleFonts.inter(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: color,
             ),
           ),
         ],
