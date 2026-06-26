@@ -875,14 +875,15 @@ class _ModelPickerSheetState extends State<_ModelPickerSheet> {
   }
 }
 
-/// Small "Free" / "Premium" tag shown next to each model.
+/// "Premium" tag (star) shown next to premium models. Free models get no tag.
 class _TierTag extends StatelessWidget {
   final bool free;
   const _TierTag({required this.free});
 
   @override
   Widget build(BuildContext context) {
-    final color = free ? AppColors.success : AppColors.warning;
+    if (free) return const SizedBox.shrink();
+    const color = AppColors.warning;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
@@ -892,12 +893,10 @@ class _TierTag extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (!free) ...[
-            Icon(Icons.lock_rounded, size: 10, color: color),
-            const SizedBox(width: 3),
-          ],
+          const Icon(Icons.star_rounded, size: 11, color: color),
+          const SizedBox(width: 3),
           Text(
-            free ? 'Free' : 'Premium',
+            'Premium',
             style: GoogleFonts.inter(
               fontSize: 10,
               fontWeight: FontWeight.w600,
