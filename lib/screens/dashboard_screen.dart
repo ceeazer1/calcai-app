@@ -10,8 +10,7 @@ import 'link_device_screen.dart';
 
 /// Model IDs usable on the free plan. Everything else is premium.
 const Set<String> kFreeModels = {
-  'gpt-5.4-mini',
-  'gpt-5.4-nano',
+  'gpt-5-mini',
   'gemini-3.5-flash',
   'gemini-3.1-flash-lite',
   'claude-haiku-4-5',
@@ -578,10 +577,10 @@ class _DashboardScreenState extends State<DashboardScreen>
   void _showModelPicker(CloudService cloud) {
     final providers = [
       _ModelProvider('OpenAI', Icons.auto_awesome_rounded, [
-        'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-nano',
+        'gpt-5', 'gpt-5-mini',
       ]),
       _ModelProvider('Google', Icons.cloud_rounded, [
-        'gemini-3.1-pro-preview', 'gemini-3.5-flash', 'gemini-3.1-flash-lite',
+        'gemini-3.5-flash', 'gemini-3.1-flash-lite',
       ]),
       _ModelProvider('Anthropic', Icons.psychology_rounded, [
         'claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5',
