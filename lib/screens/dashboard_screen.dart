@@ -190,6 +190,25 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
+  /// Returns the display provider name (e.g. "OpenAI") if the current model's
+  /// provider has a saved API key — i.e. the user's own key is in use.
+  String? _byokProvider(CloudService cloud) {
+    final model = cloud.currentModel ?? '';
+    String? key, label;
+    if (model.startsWith('claude')) {
+      key = 'anthropic';
+      label = 'Anthropic';
+    } else if (model.startsWith('gemini')) {
+      key = 'google';
+      label = 'Google';
+    } else if (model.startsWith('gpt') || model.startsWith('o')) {
+      key = 'openai';
+      label = 'OpenAI';
+    }
+    if (key != null && cloud.hasApiKey(key)) return label;
+    return null;
+  }
+
   Widget _buildModelSelector() {
     return Consumer<CloudService>(
       builder: (context, cloud, _) {
@@ -232,6 +251,24 @@ class _DashboardScreenState extends State<DashboardScreen>
                         color: AppColors.textPrimary,
                       ),
                     ),
+                    if (_byokProvider(cloud) != null) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(Icons.vpn_key_rounded,
+                              size: 11, color: AppColors.electricBlue),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Using your ${_byokProvider(cloud)} key',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: AppColors.electricBlue,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
