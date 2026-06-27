@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -28,6 +30,9 @@ class _WifiScreenState extends State<WifiScreen> {
   /// Guards against calling connectToDevice more than once per scan.
   bool _connectStarted = false;
 
+  /// Fallback timer that gives up auto-connect if nothing connects in time.
+  Timer? _connectTimeout;
+
   @override
   void initState() {
     super.initState();
@@ -48,8 +53,15 @@ class _WifiScreenState extends State<WifiScreen> {
 
   @override
   void dispose() {
+    _connectTimeout?.cancel();
     context.read<BleService>().removeListener(_onBle);
     super.dispose();
+  }
+
+  void _stopAutoConnecting() {
+    _connectTimeout?.cancel();
+    _connectStarted = false;
+    if (mounted) setState(() => _autoConnecting = false);
   }
 
   /// Side-effect listener: connect to the first CalcAI found during an
@@ -58,30 +70,26 @@ class _WifiScreenState extends State<WifiScreen> {
     if (!mounted || !_autoConnecting) return;
     final ble = context.read<BleService>();
 
+    // Connected → done.
     if (ble.connectionState.isConnected) {
-      _connectStarted = false;
-      setState(() => _autoConnecting = false);
+      _stopAutoConnecting();
       return;
     }
 
     // A started connect attempt failed → stop showing the connecting state.
     if (_connectStarted &&
         ble.connectionState == DeviceConnectionState.error) {
-      _connectStarted = false;
-      setState(() => _autoConnecting = false);
+      _stopAutoConnecting();
       return;
     }
 
+    // First device found during the scan → connect to it.
     if (!_connectStarted && ble.devices.isNotEmpty) {
       _connectStarted = true;
       ble.connectToDevice(ble.devices.first);
-      return;
     }
-
-    // Scan finished with nothing found → stop showing the connecting state.
-    if (!_connectStarted && !ble.isScanning && ble.devices.isEmpty) {
-      setState(() => _autoConnecting = false);
-    }
+    // Note: "nothing found" is handled by the timeout timer, not here, so we
+    // don't give up before the scan has had time to discover the device.
   }
 
   /// Scans for a nearby CalcAI and connects to it. Safe to call repeatedly.
@@ -97,16 +105,23 @@ class _WifiScreenState extends State<WifiScreen> {
     final granted = await ble.requestPermissions();
     final on = granted && await ble.isBluetoothOn();
     if (!granted || !on) {
-      if (mounted) setState(() => _autoConnecting = false);
+      _stopAutoConnecting();
       return;
     }
 
-    await ble.startScan();
+    // Give up if nothing connects within the window (covers "no device
+    // nearby" and failed connects). Drives state off _onBle, not the scan
+    // await — which returns early and would otherwise cancel us too soon.
+    _connectTimeout?.cancel();
+    _connectTimeout = Timer(const Duration(seconds: 15), () {
+      if (mounted && _autoConnecting && !ble.connectionState.isConnected) {
+        ble.stopScan();
+        _stopAutoConnecting();
+      }
+    });
 
-    // If the scan ended without connecting, drop back to the idle banner.
-    if (mounted && !ble.connectionState.isConnected && !_connectStarted) {
-      setState(() => _autoConnecting = false);
-    }
+    // Fire the scan — _onBle handles connecting when a device appears.
+    ble.startScan();
   }
 
   @override
