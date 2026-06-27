@@ -439,6 +439,43 @@ class CloudService extends ChangeNotifier {
     return info?['last4']?.toString();
   }
 
+  /// Whether the saved key for [provider] is currently enabled (in use).
+  /// Defaults to true when a key exists but no flag is present.
+  bool apiKeyEnabled(String provider) {
+    final info = _apiKeys[provider.toLowerCase()];
+    if (info == null) return false;
+    return info['enabled'] != false;
+  }
+
+  /// Turns usage of a saved key on/off without deleting it.
+  Future<bool> toggleApiKey(String token, String provider, bool enabled) async {
+    final p = provider.toLowerCase();
+    // Optimistic update.
+    if (_apiKeys[p] is Map) {
+      (_apiKeys[p] as Map)['enabled'] = enabled;
+      notifyListeners();
+    }
+    try {
+      final resp = await http.post(
+        Uri.parse('$_baseUrl/ai/apikey/toggle'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'provider': p, 'enabled': enabled}),
+      );
+      if (resp.statusCode == 200) return true;
+    } catch (e) {
+      debugPrint('toggleApiKey error: $e');
+    }
+    // Revert on failure.
+    if (_apiKeys[p] is Map) {
+      (_apiKeys[p] as Map)['enabled'] = !enabled;
+      notifyListeners();
+    }
+    return false;
+  }
+
   /// List all saved API keys. Returns provider → { active, last4 }.
   Future<Map<String, dynamic>> listApiKeys(String token) async {
     try {
@@ -448,9 +485,10 @@ class CloudService extends ChangeNotifier {
       );
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body);
-        if (data is Map<String, dynamic>) {
-          // Remove non-provider keys like 'ok'
-          _apiKeys = Map.from(data)..remove('ok');
+        // Worker returns { ok, keys: { openai: {...}, ... } }.
+        final keysMap = (data is Map) ? data['keys'] : null;
+        if (keysMap is Map) {
+          _apiKeys = Map<String, dynamic>.from(keysMap);
           notifyListeners();
         }
       }
@@ -478,6 +516,7 @@ class CloudService extends ChangeNotifier {
           _apiKeys[provider.toLowerCase()] = {
             'active': true,
             'last4': data['last4'],
+            'enabled': true,
           };
           notifyListeners();
           return true;

@@ -439,6 +439,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _providerSection(String provider, IconData icon) {
     return Consumer<CloudService>(
       builder: (context, cloud, _) {
+        final hasKey = cloud.hasApiKey(provider);
+        final enabled = cloud.apiKeyEnabled(provider);
         return Column(
           children: [
             _ApiKeyRow(
@@ -446,13 +448,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
               icon: icon,
               onTap: () => _showApiKeyDialog(context, provider),
             ),
-            if (cloud.hasApiKey(provider)) ...[
+            if (hasKey) ...[
               Divider(color: AppColors.glassBorder, height: 1, indent: 56),
-              _customModelRow(context, cloud, provider),
+              _useKeyToggle(context, cloud, provider, enabled),
+              if (enabled) ...[
+                Divider(color: AppColors.glassBorder, height: 1, indent: 56),
+                _customModelRow(context, cloud, provider),
+              ],
             ],
           ],
         );
       },
+    );
+  }
+
+  Widget _useKeyToggle(
+      BuildContext context, CloudService cloud, String provider, bool enabled) {
+    final auth = context.read<AuthService>();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(56, 2, 8, 2),
+      child: Row(
+        children: [
+          const Icon(Icons.vpn_key_rounded,
+              color: AppColors.textTertiary, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Use my key',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+          Switch(
+            value: enabled,
+            onChanged: (v) {
+              if (auth.token != null) {
+                cloud.toggleApiKey(auth.token!, provider, v);
+              }
+            },
+            activeColor: AppColors.electricBlue,
+            inactiveThumbColor: AppColors.textTertiary,
+            inactiveTrackColor: AppColors.surfaceHighlight,
+          ),
+        ],
+      ),
     );
   }
 
