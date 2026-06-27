@@ -1,7 +1,7 @@
 name: calcai_app
 description: CalcAI - ESP32 WiFi Provisioning App
 publish_to: 'none'
-version: 1.0.0+51
+version: 1.0.0+52
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -25,6 +25,16 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.4
+
+# App icon generation. Put your 1024x1024 logo at the image_path below, then
+# run:  dart run flutter_launcher_icons
+flutter_launcher_icons:
+  image_path: "assets/icon/app_icon.png"
+  ios: true
+  android: false
+  remove_alpha_ios: true        # iOS icons must be opaque (no transparency)
+  background_color_ios: "#FFFFFF"  # fill behind a transparent logo — change to taste
 
 flutter:
   uses-material-design: true
