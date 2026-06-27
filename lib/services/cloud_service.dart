@@ -78,7 +78,7 @@ class CloudService extends ChangeNotifier {
   int get premiumUsage => (_usage?['expensiveCount'] as num?)?.toInt() ?? 0;
 
   /// Daily limit for cheap calls (-1 = unlimited/pro).
-  int get cheapLimit => (_usage?['cheapLimit'] as num?)?.toInt() ?? 30;
+  int get cheapLimit => (_usage?['cheapLimit'] as num?)?.toInt() ?? 50;
 
   /// Daily limit for premium calls (-1 = unlimited/pro).
   int get premiumLimit => (_usage?['expensiveLimit'] as num?)?.toInt() ?? 10;
