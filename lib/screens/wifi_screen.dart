@@ -128,102 +128,26 @@ class _WifiScreenState extends State<WifiScreen> {
                 // ── Header ──────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                  child: Row(
-                    children: [
-                      Text(
-                        'WiFi Networks',
-                        style: GoogleFonts.outfit(
-                          fontSize: 28,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
-                        ),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'WiFi Networks',
+                      style: GoogleFonts.outfit(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
                       ),
-                      const Spacer(),
-                      _BleStatusChip(isConnected: isConnected),
-                    ],
+                    ),
                   ),
                 ),
 
                 const SizedBox(height: 20),
 
-                // ── Offline / connecting banner ───────────────
-                if (!isConnected)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceLight,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.glassBorder),
-                      ),
-                      child: Row(
-                        children: [
-                          if (_autoConnecting)
-                            const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation(
-                                    AppColors.electricBlue),
-                              ),
-                            )
-                          else
-                            const Icon(
-                              Icons.bluetooth_disabled_rounded,
-                              color: AppColors.textTertiary,
-                              size: 16,
-                            ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              _autoConnecting
-                                  ? 'Connecting to your CalcAI…'
-                                  : 'Bring your CalcAI nearby to manage networks',
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                          ),
-                          if (!_autoConnecting) ...[
-                            const SizedBox(width: 8),
-                            GestureDetector(
-                              onTap: _attemptAutoConnect,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: AppColors.electricBlue,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  'Connect',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-
-                // ── Network list (grayed when offline) ──────
+                // Connected → network list. Otherwise a simple connect prompt.
                 Expanded(
-                  child: AbsorbPointer(
-                    absorbing: !isConnected,
-                    child: Opacity(
-                      opacity: isConnected ? 1.0 : 0.4,
-                      child: _buildNetworkList(ble),
-                    ),
-                  ),
+                  child: isConnected
+                      ? _buildNetworkList(ble)
+                      : _buildDisconnectedView(ble),
                 ),
               ],
             );
@@ -233,93 +157,119 @@ class _WifiScreenState extends State<WifiScreen> {
     );
   }
 
+  Widget _buildDisconnectedView(BleService ble) {
+    return Column(
+      children: [
+        // ── Saved Networks on top, read-only, fading out at the bottom ──
+        Expanded(
+          flex: 3,
+          child: ShaderMask(
+            shaderCallback: (rect) => const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Colors.white, Colors.white, Colors.transparent],
+              stops: [0.0, 0.5, 1.0],
+            ).createShader(rect),
+            blendMode: BlendMode.dstIn,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+              children: [
+                _savedNetworksHeader(),
+                const SizedBox(height: 10),
+                Opacity(
+                  opacity: 0.6,
+                  child: Column(
+                    children: _savedNetworkTiles(ble, readOnly: true),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // ── Bluetooth not connected, around the middle (no box) ──
+        Padding(
+          padding: const EdgeInsets.fromLTRB(32, 0, 32, 0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                _autoConnecting
+                    ? Icons.bluetooth_searching_rounded
+                    : Icons.bluetooth_disabled_rounded,
+                color: AppColors.textTertiary,
+                size: 36,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                _autoConnecting ? 'Connecting…' : 'Bluetooth not connected',
+                style: GoogleFonts.outfit(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Turn on Bluetooth from CalcAI Settings to manage Wi-Fi.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Settings > Bluetooth > On',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.textTertiary,
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: _autoConnecting ? null : _attemptAutoConnect,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.electricBlue,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: AppColors.surfaceHighlight,
+                    disabledForegroundColor: AppColors.textTertiary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: Text(
+                    _autoConnecting ? 'Connecting…' : 'Connect',
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Empty space below so the prompt sits around the middle.
+        const Expanded(flex: 2, child: SizedBox()),
+      ],
+    );
+  }
+
   Widget _buildNetworkList(BleService ble) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
       children: [
-        // ── Saved Networks ───────────────────────────
-        Text(
-          'Saved Networks',
-          style: GoogleFonts.inter(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textSecondary,
-            letterSpacing: 0.5,
-          ),
-        ),
+        _savedNetworksHeader(),
         const SizedBox(height: 10),
-
-        if (ble.savedNetworks.isEmpty)
-          GlassCard(
-            padding: const EdgeInsets.all(20),
-            child: Center(
-              child: Text(
-                'No networks saved yet',
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  color: AppColors.textTertiary,
-                ),
-              ),
-            ),
-          )
-        else
-          ...ble.savedNetworks.map((ssid) {
-            final isCurrentlyConnected = ssid == ble.connectedSsid;
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: GlassCard(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.wifi_rounded,
-                      color: isCurrentlyConnected
-                          ? AppColors.success
-                          : AppColors.textSecondary,
-                      size: 22,
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            ssid,
-                            style: GoogleFonts.inter(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                          Text(
-                            isCurrentlyConnected ? 'Connected' : 'Saved',
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              color: isCurrentlyConnected
-                                  ? AppColors.success
-                                  : AppColors.textTertiary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => _removeNetwork(ssid),
-                      icon: const Icon(
-                        Icons.close_rounded,
-                        color: AppColors.textTertiary,
-                        size: 20,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }),
-
+        ..._savedNetworkTiles(ble, readOnly: false),
         const SizedBox(height: 16),
 
         // ── Add Network Button ───────────────────────
@@ -346,6 +296,93 @@ class _WifiScreenState extends State<WifiScreen> {
         ),
       ],
     );
+  }
+
+  Widget _savedNetworksHeader() {
+    return Text(
+      'Saved Networks',
+      style: GoogleFonts.inter(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        color: AppColors.textSecondary,
+        letterSpacing: 0.5,
+      ),
+    );
+  }
+
+  /// Saved-network tiles. When [readOnly] (Bluetooth disconnected) the remove
+  /// button is hidden so the list is view-only.
+  List<Widget> _savedNetworkTiles(BleService ble, {required bool readOnly}) {
+    if (ble.savedNetworks.isEmpty) {
+      return [
+        GlassCard(
+          padding: const EdgeInsets.all(20),
+          child: Center(
+            child: Text(
+              'No networks saved yet',
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                color: AppColors.textTertiary,
+              ),
+            ),
+          ),
+        ),
+      ];
+    }
+    return ble.savedNetworks.map((ssid) {
+      final isCurrentlyConnected = ssid == ble.connectedSsid;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: GlassCard(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Icon(
+                Icons.wifi_rounded,
+                color: isCurrentlyConnected
+                    ? AppColors.success
+                    : AppColors.textSecondary,
+                size: 22,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      ssid,
+                      style: GoogleFonts.inter(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    Text(
+                      isCurrentlyConnected ? 'Connected' : 'Saved',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: isCurrentlyConnected
+                            ? AppColors.success
+                            : AppColors.textTertiary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (!readOnly)
+                IconButton(
+                  onPressed: () => _removeNetwork(ssid),
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    color: AppColors.textTertiary,
+                    size: 20,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    }).toList();
   }
 
   Future<void> _addNetwork(BleService ble) async {
@@ -710,49 +747,6 @@ class _WifiScreenState extends State<WifiScreen> {
             child: Text(
               'Remove',
               style: GoogleFonts.inter(color: AppColors.error),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BleStatusChip extends StatelessWidget {
-  final bool isConnected;
-
-  const _BleStatusChip({required this.isConnected});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: (isConnected ? AppColors.success : AppColors.textTertiary)
-            .withOpacity(0.12),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: (isConnected ? AppColors.success : AppColors.textTertiary)
-              .withOpacity(0.2),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            isConnected
-                ? Icons.bluetooth_connected_rounded
-                : Icons.bluetooth_disabled_rounded,
-            size: 14,
-            color: isConnected ? AppColors.success : AppColors.textTertiary,
-          ),
-          const SizedBox(width: 5),
-          Text(
-            isConnected ? 'Connected' : 'Not Connected',
-            style: GoogleFonts.inter(
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-              color: isConnected ? AppColors.success : AppColors.textTertiary,
             ),
           ),
         ],

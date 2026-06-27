@@ -10,6 +10,11 @@ import 'services/ble_service.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
 
+/// UI-only preview flag. Enable with `--dart-define=UI_PREVIEW=true` to boot
+/// straight into the main app (skipping auth/pairing) for live UI editing on
+/// desktop/web. Defaults to false, so production builds are unaffected.
+const bool kUiPreview = bool.fromEnvironment('UI_PREVIEW');
+
 /// Root widget for the CalcAI application.
 ///
 /// Applies the dark theme and delegates the initial route decision to
@@ -72,6 +77,9 @@ class _AppGateState extends State<_AppGate> {
 
   @override
   Widget build(BuildContext context) {
+    // UI preview: skip auth/pairing and jump straight into the app shell.
+    if (kUiPreview) return const MainShell();
+
     final auth = context.watch<AuthService>();
 
     // ── Still loading persisted session (initial app boot only) ────────

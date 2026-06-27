@@ -21,7 +21,28 @@ class _HistoryScreenState extends State<HistoryScreen> {
   String _searchQuery = '';
   final _searchController = TextEditingController();
 
-  final _ranges = ['10m', '1h', '24h', '72h'];
+  final _ranges = ['24h', '72h', '1w', '2w', '1mo', '6mo', 'all'];
+
+  String _rangeLabel(String r) {
+    switch (r) {
+      case '24h':
+        return '24h';
+      case '72h':
+        return '3d';
+      case '1w':
+        return '1w';
+      case '2w':
+        return '2w';
+      case '1mo':
+        return '1mo';
+      case '6mo':
+        return '6mo';
+      case 'all':
+        return 'All';
+      default:
+        return r;
+    }
+  }
 
   @override
   void initState() {
@@ -33,7 +54,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final auth = context.read<AuthService>();
     final cloud = context.read<CloudService>();
     if (auth.token != null && auth.primaryMac != null) {
-      await cloud.getHistory(auth.token!, auth.primaryMac!, limit: 50);
+      await cloud.getHistory(auth.token!, auth.primaryMac!, limit: 200);
     }
   }
 
@@ -47,10 +68,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
   DateTime? _cutoff() {
     final now = DateTime.now();
     switch (_selectedRange) {
-      case '10m': return now.subtract(const Duration(minutes: 10));
-      case '1h':  return now.subtract(const Duration(hours: 1));
       case '24h': return now.subtract(const Duration(hours: 24));
       case '72h': return now.subtract(const Duration(hours: 72));
+      case '1w':  return now.subtract(const Duration(days: 7));
+      case '2w':  return now.subtract(const Duration(days: 14));
+      case '1mo': return now.subtract(const Duration(days: 30));
+      case '6mo': return now.subtract(const Duration(days: 180));
+      case 'all': return null; // no time limit
       default:    return null;
     }
   }
@@ -122,10 +146,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
               ),
             ),
 
-            // ── Time range chips ──────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-              child: Row(
+            // ── Time range chips (horizontally scrollable) ──
+            SizedBox(
+              height: 52,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
                 children: _ranges.map((range) {
                   final isSelected = range == _selectedRange;
                   return Padding(
@@ -136,6 +162,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         duration: const Duration(milliseconds: 200),
                         padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 8),
+                        alignment: Alignment.center,
                         decoration: BoxDecoration(
                           color: isSelected
                               ? AppColors.electricBlue.withOpacity(0.15)
@@ -148,7 +175,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           ),
                         ),
                         child: Text(
-                          range,
+                          _rangeLabel(range),
                           style: GoogleFonts.inter(
                             fontSize: 13,
                             fontWeight: isSelected
