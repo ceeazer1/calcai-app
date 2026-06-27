@@ -109,11 +109,18 @@ class _WifiScreenState extends State<WifiScreen> {
       return;
     }
 
-    // Give up if nothing connects within the window (covers "no device
-    // nearby" and failed connects). Drives state off _onBle, not the scan
-    // await — which returns early and would otherwise cancel us too soon.
+    // Fast path: reconnect straight to the last paired device (no scan).
+    final reconnected = await ble.reconnectKnownDevice();
+    if (!mounted) return;
+    if (reconnected || ble.connectionState.isConnected) {
+      _stopAutoConnecting();
+      return;
+    }
+
+    // Fall back to scanning for the device.
+    _connectStarted = false;
     _connectTimeout?.cancel();
-    _connectTimeout = Timer(const Duration(seconds: 15), () {
+    _connectTimeout = Timer(const Duration(seconds: 20), () {
       if (mounted && _autoConnecting && !ble.connectionState.isConnected) {
         ble.stopScan();
         _stopAutoConnecting();
@@ -143,16 +150,20 @@ class _WifiScreenState extends State<WifiScreen> {
                 // ── Header ──────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'WiFi Networks',
-                      style: GoogleFonts.outfit(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
+                  child: Row(
+                    children: [
+                      Text(
+                        'WiFi Networks',
+                        style: GoogleFonts.outfit(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
                       ),
-                    ),
+                      const Spacer(),
+                      // Glowing Bluetooth icon = device connected.
+                      if (isConnected) const _GlowingBleIcon(),
+                    ],
                   ),
                 ),
 
@@ -766,6 +777,65 @@ class _WifiScreenState extends State<WifiScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// A small Bluetooth icon with a softly pulsing glow — shown when the device
+/// is connected over BLE.
+class _GlowingBleIcon extends StatefulWidget {
+  const _GlowingBleIcon();
+
+  @override
+  State<_GlowingBleIcon> createState() => _GlowingBleIconState();
+}
+
+class _GlowingBleIconState extends State<_GlowingBleIcon>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const color = AppColors.electricBlue;
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (_, __) {
+        final t = _c.value;
+        return Container(
+          padding: const EdgeInsets.all(7),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.12),
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: color.withOpacity(0.25 + 0.40 * t),
+                blurRadius: 6 + 12 * t,
+                spreadRadius: 1 + 2 * t,
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.bluetooth_connected_rounded,
+            color: color,
+            size: 16,
+          ),
+        );
+      },
     );
   }
 }

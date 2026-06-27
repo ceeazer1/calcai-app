@@ -215,7 +215,43 @@ class BleService extends ChangeNotifier {
   // ── Connection ─────────────────────────────────────────────────────
 
   /// Connects to the given [device] and discovers provisioning services.
-  Future<void> connectToDevice(CalcAiDevice device) async {
+  static const String _kLastDeviceIdKey = 'last_ble_device_id';
+
+  Future<void> _saveLastDeviceId(String id) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kLastDeviceIdKey, id);
+    } catch (_) {}
+  }
+
+  /// Fast path: reconnect straight to the last paired peripheral by its id,
+  /// skipping the scan entirely. iOS remembers the peripheral, so this is
+  /// near-instant vs. waiting for a scan to rediscover it. Uses a short
+  /// timeout so a "device not here" case falls back to scanning quickly.
+  /// Returns true if it connected.
+  Future<bool> reconnectKnownDevice() async {
+    if (connectionState.isConnected) return true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final id = prefs.getString(_kLastDeviceIdKey);
+      if (id == null || id.isEmpty) return false;
+      final dev = CalcAiDevice(
+        device: BluetoothDevice.fromId(id),
+        rssi: 0,
+        advertisementName: 'CalcAI',
+      );
+      await connectToDevice(dev, timeout: const Duration(seconds: 8));
+      return connectionState.isConnected;
+    } catch (e) {
+      debugPrint('reconnectKnownDevice error: $e');
+      return false;
+    }
+  }
+
+  Future<void> connectToDevice(
+    CalcAiDevice device, {
+    Duration timeout = const Duration(seconds: 15),
+  }) async {
     _clearError();
     _setConnectionState(DeviceConnectionState.connecting);
     _connectedDevice = device;
@@ -235,18 +271,19 @@ class BleService extends ChangeNotifier {
 
       // Connect with a timeout
       await device.device.connect(
-        timeout: const Duration(seconds: 15),
+        timeout: timeout,
         autoConnect: false,
       );
 
-      // Request larger MTU for WiFi scan results (ESP32 sends ~500 bytes)
+      // Larger MTU for WiFi scan results (~500 bytes). Android only —
+      // iOS negotiates automatically and requestMtu just errors/stalls there.
       if (Platform.isAndroid) {
         await device.device.requestMtu(517);
       }
-      // iOS negotiates MTU automatically but we still request it
-      try { await device.device.requestMtu(517); } catch (_) {}
 
       _setConnectionState(DeviceConnectionState.connected);
+      // Remember this peripheral for fast direct reconnects next time.
+      _saveLastDeviceId(device.device.remoteId.str);
 
       // Discover services
       _setConnectionState(DeviceConnectionState.discovering);
