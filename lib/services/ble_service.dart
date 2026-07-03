@@ -261,19 +261,48 @@ class BleService extends ChangeNotifier {
       // Stop scanning to save power
       await stopScan();
 
-      // Listen for connection state changes
+      // Connect, with retries. On iOS the FIRST connect to a freshly-
+      // discovered peripheral very often hangs to timeout while an immediate
+      // retry succeeds — so instead of one long (15s) hang that forces the
+      // user to tap Connect again, we try a few short attempts and self-heal.
+      final perAttempt = Duration(
+        seconds: (timeout.inSeconds ~/ 3).clamp(5, 8),
+      );
+      const maxAttempts = 3;
+      Object? lastError;
+      var didConnect = false;
+      for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          await device.device.connect(
+            timeout: perAttempt,
+            autoConnect: false,
+          );
+          didConnect = true;
+          break;
+        } catch (e) {
+          lastError = e;
+          debugPrint('connect attempt $attempt/$maxAttempts failed: $e');
+          // Make sure we're fully torn down before retrying, then settle.
+          try {
+            await device.device.disconnect();
+          } catch (_) {}
+          if (attempt < maxAttempts) {
+            await Future.delayed(const Duration(milliseconds: 500));
+          }
+        }
+      }
+      if (!didConnect) {
+        throw lastError ?? Exception('Could not connect to the device');
+      }
+
+      // Now that we're connected, watch for real disconnections. (Set up
+      // AFTER the retry loop so a failed attempt's teardown doesn't trip it.)
       _connectionSub?.cancel();
       _connectionSub = device.device.connectionState.listen((state) {
         if (state == BluetoothConnectionState.disconnected) {
           _handleDisconnection();
         }
       });
-
-      // Connect with a timeout
-      await device.device.connect(
-        timeout: timeout,
-        autoConnect: false,
-      );
 
       // Larger MTU for WiFi scan results (~500 bytes). Android only —
       // iOS negotiates automatically and requestMtu just errors/stalls there.
