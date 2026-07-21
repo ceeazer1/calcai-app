@@ -28,15 +28,19 @@ class _MainShellState extends State<MainShell> {
   static const List<_NavTab> _tabs = [
     _NavTab(icon: Icons.home_rounded, label: 'Home'),
     _NavTab(icon: Icons.history_rounded, label: 'History'),
-    _NavTab(icon: Icons.wifi_rounded, label: 'WiFi'),
     _NavTab(icon: Icons.settings_rounded, label: 'Settings'),
   ];
 
   @override
   Widget build(BuildContext context) {
+    // Wi-Fi management now lives as a full page opened from Home rather than a
+    // bottom-nav tab. Any [SwitchToWifiTabNotification] still opens it, pushed
+    // on top of the shell.
     return NotificationListener<SwitchToWifiTabNotification>(
       onNotification: (notification) {
-        setState(() => _currentIndex = 2); // WiFi tab
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const WifiScreen()),
+        );
         return true;
       },
       child: Scaffold(
@@ -44,13 +48,10 @@ class _MainShellState extends State<MainShell> {
         extendBody: true,
         body: IndexedStack(
           index: _currentIndex,
-          children: [
-            const DashboardScreen(),
-            const HistoryScreen(),
-            // Pass tab-active state so the WiFi screen can auto-connect over
-            // BLE whenever the user opens this tab.
-            WifiScreen(isActive: _currentIndex == 2),
-            const SettingsScreen(),
+          children: const [
+            DashboardScreen(),
+            HistoryScreen(),
+            SettingsScreen(),
           ],
         ),
         bottomNavigationBar: _buildBottomBar(context),

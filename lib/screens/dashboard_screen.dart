@@ -3,10 +3,12 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../services/auth_service.dart';
+import '../services/ble_service.dart';
 import '../services/cloud_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glass_card.dart';
 import 'link_device_screen.dart';
+import 'wifi_screen.dart';
 
 /// Model IDs usable on the free plan. Everything else is premium.
 const Set<String> kFreeModels = {
@@ -37,6 +39,9 @@ class _DashboardScreenState extends State<DashboardScreen>
   late final AnimationController _enterController;
   late final Animation<double> _fadeIn;
   bool _isLoadingModel = false;
+
+  /// Collapsed (skinny bar) vs expanded (original two-column card) usage view.
+  bool _usageExpanded = false;
 
   @override
   void initState() {
@@ -86,22 +91,25 @@ class _DashboardScreenState extends State<DashboardScreen>
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
               children: [
-                _buildHeader(),
-                const SizedBox(height: 24),
+                _buildTopBar(),
                 _buildPairBanner(),
-                _buildSectionTitle('Today'),
+                _buildSectionHeader('Today', Icons.calendar_today_rounded),
                 const SizedBox(height: 12),
-                _buildUsageCard(),
-                const SizedBox(height: 24),
-                _buildSectionTitle('AI Settings'),
+                _buildUsage(),
+                const SizedBox(height: 16),
+                _buildSectionHeader('AI', Icons.auto_awesome_rounded),
                 const SizedBox(height: 12),
                 _buildModelSelector(),
-                const SizedBox(height: 12),
-                _buildStyleSelector(),
+                const SizedBox(height: 10),
+                _buildStyleDropdown(),
                 const SizedBox(height: 24),
-                _buildSectionTitle('Recent Activity'),
+                _buildSectionHeader('Recent', Icons.history_rounded),
                 const SizedBox(height: 12),
                 _buildLastPromptCard(),
+                const SizedBox(height: 24),
+                _buildSectionHeader('Wi-Fi', Icons.wifi_rounded),
+                const SizedBox(height: 12),
+                _buildWifiCard(),
               ],
             ),
           ),
@@ -110,32 +118,10 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  Widget _buildHeader() {
-    return Row(
-      children: [
-        Expanded(
-          child: ShaderMask(
-            shaderCallback: (bounds) =>
-                AppColors.accentGradient.createShader(bounds),
-            child: Text(
-              'CalcAI',
-              style: GoogleFonts.outfit(
-                fontSize: 28,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        // Calculator icon = device is online.
-        const Icon(
-          Icons.calculate_rounded,
-          color: AppColors.electricBlue,
-          size: 26,
-        ),
-      ],
-    );
+  /// Minimal top spacer. The old "CalcAI" logo + calculator icon were removed;
+  /// this reserves a little breathing room for a future centered element.
+  Widget _buildTopBar() {
+    return const SizedBox(height: 8);
   }
 
   /// Slim "pair your device" prompt, shown only when no device is linked
@@ -178,14 +164,22 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  Widget _buildSectionTitle(String title) {
-    return Text(
-      title,
-      style: GoogleFonts.outfit(
-        fontSize: 18,
-        fontWeight: FontWeight.w600,
-        color: AppColors.textPrimary,
-      ),
+  /// Section heading with a small leading icon (calendar / sparkles / history /
+  /// wifi) sitting before the title.
+  Widget _buildSectionHeader(String title, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: AppColors.electricBlue),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: GoogleFonts.outfit(
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
+          ),
+        ),
+      ],
     );
   }
 
@@ -292,118 +286,58 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  Widget _buildStyleSelector() {
+  /// Response-style presets, shared by the dropdown row and its picker sheet.
+  static const List<(String, String, String, IconData)> _styles = [
+    ('answer', 'Answers only', 'Just the final answers', Icons.bolt_rounded),
+    ('small', 'Brief explanation', 'Answers with short work', Icons.notes_rounded),
+    ('detailed', 'Detailed explanation', 'Full step-by-step work',
+        Icons.menu_book_rounded),
+  ];
+
+  /// Compact "Response style" dropdown row: shows the current preset and opens
+  /// a picker sheet on tap (instead of listing all presets inline).
+  Widget _buildStyleDropdown() {
     return Consumer<CloudService>(
       builder: (context, cloud, _) {
-        const styles = [
-          ('answer', 'Answers only', 'Just the final answers', Icons.bolt_rounded),
-          ('small', 'Brief explanation', 'Answers with short work', Icons.notes_rounded),
-          ('detailed', 'Detailed explanation', 'Full step-by-step work', Icons.menu_book_rounded),
-        ];
         final current = cloud.responseStyle;
-
+        final match = _styles.firstWhere(
+          (s) => s.$1 == current,
+          orElse: () => _styles[1],
+        );
         return GlassCard(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          onTap: () => _showStylePicker(current),
+          child: Row(
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceHighlight,
-                      borderRadius: BorderRadius.circular(12),
+              Icon(match.$4, size: 20, color: AppColors.textSecondary),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Response style',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.tune_rounded,
-                      color: AppColors.textPrimary,
-                      size: 20,
+                    const SizedBox(height: 2),
+                    Text(
+                      match.$2,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 14),
-                  Text(
-                    'Response Style',
-                    style: GoogleFonts.inter(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-              const SizedBox(height: 14),
-              ...styles.map((s) {
-                final value = s.$1;
-                final isSelected = value == current;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: GestureDetector(
-                    onTap: () => _setStyle(value),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 12,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? AppColors.electricBlue.withOpacity(0.12)
-                            : AppColors.surfaceHighlight.withOpacity(0.5),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: isSelected
-                              ? AppColors.electricBlue.withOpacity(0.3)
-                              : Colors.transparent,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            s.$4,
-                            size: 20,
-                            color: isSelected
-                                ? AppColors.electricBlue
-                                : AppColors.textTertiary,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  s.$2,
-                                  style: GoogleFonts.inter(
-                                    fontSize: 14,
-                                    fontWeight: isSelected
-                                        ? FontWeight.w600
-                                        : FontWeight.w500,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                ),
-                                Text(
-                                  s.$3,
-                                  style: GoogleFonts.inter(
-                                    fontSize: 12,
-                                    color: AppColors.textTertiary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (isSelected)
-                            const Icon(
-                              Icons.check_circle_rounded,
-                              color: AppColors.electricBlue,
-                              size: 20,
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              }),
+              const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: AppColors.textSecondary,
+              ),
             ],
           ),
         );
@@ -411,42 +345,425 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  Widget _buildUsageCard() {
+  void _showStylePicker(String current) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Container(
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border.all(color: AppColors.glassBorder, width: 0.5),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.textTertiary,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+                child: Row(
+                  children: [
+                    Text(
+                      'Response style',
+                      style: GoogleFonts.outfit(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ..._styles.map((s) {
+                final isSelected = s.$1 == current;
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _setStyle(s.$1);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 14,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? AppColors.electricBlue.withOpacity(0.1)
+                              : AppColors.surfaceLight,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: isSelected
+                                ? AppColors.electricBlue.withOpacity(0.3)
+                                : AppColors.glassBorder,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              s.$4,
+                              size: 20,
+                              color: isSelected
+                                  ? AppColors.electricBlue
+                                  : AppColors.textTertiary,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    s.$2,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                  Text(
+                                    s.$3,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      color: AppColors.textTertiary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (isSelected)
+                              const Icon(
+                                Icons.check_circle_rounded,
+                                color: AppColors.electricBlue,
+                                size: 20,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }),
+              const SizedBox(height: 12),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Opens the full Wi-Fi management page, which connects to the CalcAI over
+  /// Bluetooth and walks the user through adding a network.
+  void _openWifi() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const WifiScreen()),
+    );
+  }
+
+  /// Home-screen Wi-Fi section: the saved networks sit inside a boxed card, and
+  /// a bare "Add or manage networks" row (no box, no chevron) sits below it and
+  /// opens the Bluetooth provisioning page.
+  Widget _buildWifiCard() {
+    return Consumer<BleService>(
+      builder: (context, ble, _) {
+        final saved = ble.savedNetworks;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Boxed saved-networks list ─────────────────────
+            GlassCard(
+              padding: EdgeInsets.zero,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: saved.isEmpty
+                    ? [
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.wifi_off_rounded,
+                                  color: AppColors.textTertiary, size: 20),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'No networks saved yet',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 14,
+                                    color: AppColors.textTertiary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ]
+                    : saved.asMap().entries.map((e) {
+                        final ssid = e.value;
+                        final isConnected = ssid == ble.connectedSsid;
+                        final isLast = e.key == saved.length - 1;
+                        return Column(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 13),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.wifi_rounded,
+                                    color: isConnected
+                                        ? AppColors.success
+                                        : AppColors.textSecondary,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          ssid,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppColors.textPrimary,
+                                          ),
+                                        ),
+                                        Text(
+                                          isConnected ? 'Connected' : 'Saved',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 12,
+                                            color: isConnected
+                                                ? AppColors.success
+                                                : AppColors.textTertiary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (!isLast)
+                              Container(
+                                height: 0.5,
+                                margin: const EdgeInsets.symmetric(
+                                    horizontal: 16),
+                                color: AppColors.glassBorder,
+                              ),
+                          ],
+                        );
+                      }).toList(),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // ── Bare "Add or manage networks" row (no box, no chevron) ──
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: _openWifi,
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: AppColors.electricBlue.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(
+                          Icons.add_rounded,
+                          color: AppColors.electricBlue,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        saved.isEmpty ? 'Add network' : 'Add or manage networks',
+                        style: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Collapsible usage indicator. Collapsed = a bare skinny bar showing the two
+  /// remaining counts (silver standard → blue premium). Tapping expands it back
+  /// to the original two-column card, and tapping again collapses it.
+  Widget _buildUsage() {
     return Consumer<CloudService>(
       builder: (context, cloud, _) {
         final isPro = cloud.planType?.toLowerCase() == 'pro';
-        return GlassCard(
-          padding: const EdgeInsets.all(18),
-          child: IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: _UsageStat(
-                    label: 'Standard',
-                    used: cloud.cheapUsage,
-                    limit: isPro ? -1 : cloud.cheapLimit,
-                    accent: AppColors.electricBlue,
-                  ),
-                ),
-                Container(
-                  width: 1,
-                  margin: const EdgeInsets.symmetric(horizontal: 18),
-                  color: AppColors.glassBorder,
-                ),
-                Expanded(
-                  child: _UsageStat(
-                    label: 'Premium',
-                    used: cloud.premiumUsage,
-                    limit: isPro ? -1 : cloud.premiumLimit,
-                    accent: AppColors.cyan,
-                  ),
-                ),
-              ],
-            ),
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => setState(() => _usageExpanded = !_usageExpanded),
+          child: Column(
+            children: [
+              _usageExpanded
+                  ? _usageExpandedCard(cloud, isPro)
+                  : _usageCollapsedBar(cloud, isPro),
+              const SizedBox(height: 4),
+              Icon(
+                _usageExpanded
+                    ? Icons.keyboard_arrow_up_rounded
+                    : Icons.keyboard_arrow_down_rounded,
+                size: 20,
+                color: AppColors.textTertiary,
+              ),
+            ],
           ),
         );
       },
+    );
+  }
+
+  /// Bare skinny bar: numbers on top, a silver standard segment easing into a
+  /// blue premium segment below. No card/box.
+  Widget _usageCollapsedBar(CloudService cloud, bool isPro) {
+    const premiumBlue = Color(0xFF9DB6DA);
+    const premiumBlueDark = Color(0xFF6E8FBE);
+
+    final sLeft = isPro
+        ? -1
+        : (cloud.cheapLimit - cloud.cheapUsage)
+            .clamp(0, cloud.cheapLimit > 0 ? cloud.cheapLimit : 0);
+    final pLeft = isPro
+        ? -1
+        : (cloud.premiumLimit - cloud.premiumUsage)
+            .clamp(0, cloud.premiumLimit > 0 ? cloud.premiumLimit : 0);
+
+    final sFlex = isPro ? 1 : (sLeft > 0 ? sLeft : 1);
+    final pFlex = isPro ? 0 : (pLeft > 0 ? pLeft : 1);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                isPro ? '∞' : '$sLeft',
+                style: GoogleFonts.outfit(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              Text(
+                isPro ? '∞' : '$pLeft',
+                style: GoogleFonts.outfit(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  color: premiumBlue,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          SizedBox(
+            height: 10,
+            child: Row(
+              children: [
+                Expanded(
+                  flex: sFlex,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(6),
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFE8E8F0), AppColors.electricBlue],
+                      ),
+                    ),
+                  ),
+                ),
+                if (!isPro) const SizedBox(width: 4),
+                if (!isPro)
+                  Expanded(
+                    flex: pFlex,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(6),
+                        gradient: const LinearGradient(
+                          colors: [
+                            AppColors.electricBlue,
+                            premiumBlue,
+                            premiumBlueDark,
+                          ],
+                          stops: [0.0, 0.6, 1.0],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Original two-column usage card (expanded state).
+  Widget _usageExpandedCard(CloudService cloud, bool isPro) {
+    return GlassCard(
+      padding: const EdgeInsets.all(18),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: _UsageStat(
+                label: 'Standard',
+                used: cloud.cheapUsage,
+                limit: isPro ? -1 : cloud.cheapLimit,
+                accent: AppColors.electricBlue,
+              ),
+            ),
+            Container(
+              width: 1,
+              margin: const EdgeInsets.symmetric(horizontal: 18),
+              color: AppColors.glassBorder,
+            ),
+            Expanded(
+              child: _UsageStat(
+                label: 'Premium',
+                used: cloud.premiumUsage,
+                limit: isPro ? -1 : cloud.premiumLimit,
+                accent: const Color(0xFF9DB6DA),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -618,7 +935,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     final cloud = context.read<CloudService>();
     if (auth.token != null && auth.primaryMac != null) {
       await cloud.setModel(auth.token!, auth.primaryMac!,
-          cloud.currentModel ?? 'gpt-5.4-mini', style);
+          cloud.currentModel ?? 'gpt-5-mini', style);
     }
   }
 }

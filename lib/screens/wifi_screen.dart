@@ -10,11 +10,14 @@ import '../theme/app_colors.dart';
 import '../widgets/glass_card.dart';
 
 /// WiFi management screen — BLE-dependent, requires nearby CalcAI device.
+///
+/// Opened as a full page from the Home screen (no longer a bottom-nav tab).
+/// Auto-connects to the device over BLE as soon as it opens.
 class WifiScreen extends StatefulWidget {
-  const WifiScreen({super.key, this.isActive = false});
+  const WifiScreen({super.key, this.isActive = true});
 
-  /// Whether this tab is currently the visible one. The shell flips this so
-  /// the screen can auto-connect over BLE when the user opens the tab.
+  /// Whether the screen is currently visible. Defaults to true because the
+  /// screen is now pushed on demand, so opening it should auto-connect.
   final bool isActive;
 
   @override
@@ -133,51 +136,61 @@ class _WifiScreenState extends State<WifiScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: AppColors.backgroundGradient,
-      ),
-      child: SafeArea(
-        child: Consumer<BleService>(
-          builder: (context, ble, _) {
-            final isConnected =
-                ble.connectionState == DeviceConnectionState.connected ||
-                ble.connectionState == DeviceConnectionState.ready ||
-                ble.connectionState == DeviceConnectionState.discovering;
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: AppColors.backgroundGradient,
+        ),
+        child: SafeArea(
+          child: Consumer<BleService>(
+            builder: (context, ble, _) {
+              final isConnected =
+                  ble.connectionState == DeviceConnectionState.connected ||
+                  ble.connectionState == DeviceConnectionState.ready ||
+                  ble.connectionState == DeviceConnectionState.discovering;
 
-            return Column(
-              children: [
-                // ── Header ──────────────────────────────────
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                  child: Row(
-                    children: [
-                      Text(
-                        'WiFi Networks',
-                        style: GoogleFonts.outfit(
-                          fontSize: 28,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
+              return Column(
+                children: [
+                  // ── Header ──────────────────────────────────
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 8, 20, 0),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          onPressed: () => Navigator.of(context).maybePop(),
+                          icon: const Icon(
+                            Icons.arrow_back_rounded,
+                            color: AppColors.textPrimary,
+                          ),
                         ),
-                      ),
-                      const Spacer(),
-                      // Glowing Bluetooth icon = device connected.
-                      if (isConnected) const _GlowingBleIcon(),
-                    ],
+                        Text(
+                          'WiFi Networks',
+                          style: GoogleFonts.outfit(
+                            fontSize: 26,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const Spacer(),
+                        // Glowing Bluetooth icon = device connected.
+                        if (isConnected) const _GlowingBleIcon(),
+                      ],
+                    ),
                   ),
-                ),
 
-                const SizedBox(height: 20),
+                  const SizedBox(height: 20),
 
-                // Connected → network list. Otherwise a simple connect prompt.
-                Expanded(
-                  child: isConnected
-                      ? _buildNetworkList(ble)
-                      : _buildDisconnectedView(ble),
-                ),
-              ],
-            );
-          },
+                  // Connected → network list. Otherwise a connect prompt.
+                  Expanded(
+                    child: isConnected
+                        ? _buildNetworkList(ble)
+                        : _buildDisconnectedView(ble),
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
