@@ -33,12 +33,19 @@ class _WifiScreenState extends State<WifiScreen> {
   /// Guards against calling connectToDevice more than once per scan.
   bool _connectStarted = false;
 
+  /// True when the last attempt failed because Bluetooth is off/unavailable
+  /// (vs. the device simply not being found nearby).
+  bool _btOff = false;
+
   /// Fallback timer that gives up auto-connect if nothing connects in time.
   Timer? _connectTimeout;
 
   @override
   void initState() {
     super.initState();
+    // Show "Connecting…" from the first frame (no "disconnected" flash) when
+    // the screen opens and immediately tries to reach the device.
+    if (widget.isActive) _autoConnecting = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<BleService>().addListener(_onBle);
       if (widget.isActive) _attemptAutoConnect();
@@ -103,11 +110,13 @@ class _WifiScreenState extends State<WifiScreen> {
     setState(() {
       _autoConnecting = true;
       _connectStarted = false;
+      _btOff = false;
     });
 
     final granted = await ble.requestPermissions();
     final on = granted && await ble.isBluetoothOn();
     if (!granted || !on) {
+      _btOff = true;
       _stopAutoConnecting();
       return;
     }
@@ -123,7 +132,9 @@ class _WifiScreenState extends State<WifiScreen> {
     // Fall back to scanning for the device.
     _connectStarted = false;
     _connectTimeout?.cancel();
-    _connectTimeout = Timer(const Duration(seconds: 20), () {
+    // Short timeout so a missing device drops to "Bluetooth disconnected"
+    // quickly instead of leaving the user on "Connecting…".
+    _connectTimeout = Timer(const Duration(seconds: 10), () {
       if (mounted && _autoConnecting && !ble.connectionState.isConnected) {
         ble.stopScan();
         _stopAutoConnecting();
@@ -196,109 +207,76 @@ class _WifiScreenState extends State<WifiScreen> {
     );
   }
 
+  /// Shown until the device is connected. The screen is just the Bluetooth
+  /// symbol plus "Searching…" while looking for the CalcAI, switching to
+  /// "Connecting…" once one is found. If it can't be found, it drops straight
+  /// to "Bluetooth disconnected" with a retry.
   Widget _buildDisconnectedView(BleService ble) {
-    return Column(
-      children: [
-        // ── Saved Networks on top, read-only, fading out at the bottom ──
-        Expanded(
-          flex: 3,
-          child: ShaderMask(
-            shaderCallback: (rect) => const LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Colors.white, Colors.white, Colors.transparent],
-              stops: [0.0, 0.5, 1.0],
-            ).createShader(rect),
-            blendMode: BlendMode.dstIn,
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-              children: [
-                _savedNetworksHeader(),
-                const SizedBox(height: 10),
-                Opacity(
-                  opacity: 0.6,
-                  child: Column(
-                    children: _savedNetworkTiles(ble, readOnly: true),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+    // A device has been found and we're establishing the link.
+    final isLinking = _connectStarted ||
+        ble.connectionState == DeviceConnectionState.connecting;
 
-        // ── Bluetooth not connected, around the middle (no box) ──
-        Padding(
-          padding: const EdgeInsets.fromLTRB(32, 0, 32, 0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                _autoConnecting
-                    ? Icons.bluetooth_searching_rounded
-                    : Icons.bluetooth_disabled_rounded,
-                color: AppColors.textTertiary,
-                size: 36,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                _autoConnecting ? 'Connecting…' : 'Bluetooth not connected',
-                style: GoogleFonts.outfit(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Turn on Bluetooth from CalcAI Settings to manage Wi-Fi.',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  color: AppColors.textSecondary,
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                'Settings > Bluetooth > On',
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.textTertiary,
-                ),
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: _autoConnecting ? null : _attemptAutoConnect,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.electricBlue,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: AppColors.surfaceHighlight,
-                    disabledForegroundColor: AppColors.textTertiary,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: Text(
-                    _autoConnecting ? 'Connecting…' : 'Connect',
-                    style: GoogleFonts.inter(
-                      fontSize: 15,
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: _autoConnecting
+              ? [
+                  const _SearchingBleIcon(),
+                  const SizedBox(height: 18),
+                  Text(
+                    isLinking ? 'Connecting…' : 'Searching…',
+                    style: GoogleFonts.outfit(
+                      fontSize: 18,
                       fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
                     ),
                   ),
-                ),
-              ),
-            ],
-          ),
+                ]
+              : [
+                  Icon(
+                    _btOff
+                        ? Icons.bluetooth_disabled_rounded
+                        : Icons.search_off_rounded,
+                    color: AppColors.textTertiary,
+                    size: 40,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    _btOff ? 'Bluetooth disconnected' : 'Calc not found',
+                    style: GoogleFonts.outfit(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: _attemptAutoConnect,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.electricBlue,
+                        foregroundColor: AppColors.textOnAccent,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: Text(
+                        'Try again',
+                        style: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
         ),
-
-        // Empty space below so the prompt sits around the middle.
-        const Expanded(flex: 2, child: SizedBox()),
-      ],
+      ),
     );
   }
 
@@ -902,6 +880,64 @@ class _WifiScreenState extends State<WifiScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Large Bluetooth symbol that pulses while we search for the CalcAI device.
+class _SearchingBleIcon extends StatefulWidget {
+  const _SearchingBleIcon();
+
+  @override
+  State<_SearchingBleIcon> createState() => _SearchingBleIconState();
+}
+
+class _SearchingBleIconState extends State<_SearchingBleIcon>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const color = AppColors.electricBlue;
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (_, __) {
+        final t = _c.value;
+        return Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.06 + 0.06 * t),
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: color.withOpacity(0.10 + 0.22 * t),
+                blurRadius: 12 + 20 * t,
+                spreadRadius: 1 + 4 * t,
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.bluetooth_searching_rounded,
+            color: color,
+            size: 40,
+          ),
+        );
+      },
     );
   }
 }
