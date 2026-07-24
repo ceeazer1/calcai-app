@@ -100,55 +100,8 @@ class _AuthScreenState extends State<AuthScreen>
                   opacity: _fadeIn,
                   child: Column(
                     children: [
-                      // Glow effect behind logo
-                      Container(
-                        width: 80,
-                        height: 80,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: RadialGradient(
-                            colors: [
-                              AppColors.electricBlue.withOpacity(0.15),
-                              Colors.transparent,
-                            ],
-                            radius: 1.5,
-                          ),
-                        ),
-                        child: Center(
-                          child: Container(
-                            width: 64,
-                            height: 64,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: AppColors.surfaceLight,
-                              border: Border.all(
-                                color: AppColors.glassBorder,
-                                width: 1,
-                              ),
-                            ),
-                            child: Icon(
-                              Icons.calculate_rounded,
-                              color: AppColors.textPrimary,
-                              size: 32,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      ShaderMask(
-                        shaderCallback: (bounds) =>
-                            AppColors.accentGradient.createShader(bounds),
-                        child: Text(
-                          'CalcAI',
-                          style: GoogleFonts.outfit(
-                            fontSize: 42,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            letterSpacing: -1,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
+                      // Your logo will go here — space reserved for now.
+                      const SizedBox(height: 96),
                       Text(
                         'Your Calculator, Reimagined with AI.',
                         style: GoogleFonts.inter(

@@ -173,7 +173,7 @@ class _SuccessScreenState extends State<SuccessScreen>
                             shape: BoxShape.circle,
                             gradient: LinearGradient(
                               colors: [
-                                AppColors.success.withOpacity(0.15),
+                                AppColors.accentBlue.withOpacity(0.15),
                                 AppColors.electricBlue.withOpacity(0.08),
                               ],
                               begin: Alignment.topLeft,
@@ -181,7 +181,7 @@ class _SuccessScreenState extends State<SuccessScreen>
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: AppColors.success.withOpacity(0.2),
+                                color: AppColors.accentBlue.withOpacity(0.2),
                                 blurRadius: 40,
                                 spreadRadius: 10,
                               ),
@@ -190,7 +190,7 @@ class _SuccessScreenState extends State<SuccessScreen>
                           child: CustomPaint(
                             painter: _CheckmarkPainter(
                               progress: _strokeProgress.value,
-                              color: AppColors.success,
+                              color: AppColors.accentBlue,
                               strokeWidth: 4,
                             ),
                           ),
@@ -213,7 +213,7 @@ class _SuccessScreenState extends State<SuccessScreen>
                           shaderCallback: (bounds) =>
                               AppColors.accentGradient.createShader(bounds),
                           child: Text(
-                            'Device Linked!',
+                            'Device Paired',
                             style: GoogleFonts.outfit(
                               fontSize: 32,
                               fontWeight: FontWeight.w700,
@@ -245,30 +245,6 @@ class _SuccessScreenState extends State<SuccessScreen>
                           ),
                         ),
 
-                        const SizedBox(height: 8),
-
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: const BoxDecoration(
-                                color: AppColors.success,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Setup Complete',
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                color: AppColors.success,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
                       ],
                     ),
                   ),

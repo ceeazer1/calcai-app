@@ -43,6 +43,9 @@ class _DashboardScreenState extends State<DashboardScreen>
   /// Collapsed (skinny bar) vs expanded (original two-column card) usage view.
   bool _usageExpanded = false;
 
+  /// Whether the response-style inline dropdown is open.
+  bool _styleExpanded = false;
+
   @override
   void initState() {
     super.initState();
@@ -294,8 +297,8 @@ class _DashboardScreenState extends State<DashboardScreen>
         Icons.menu_book_rounded),
   ];
 
-  /// Compact "Response style" dropdown row: shows the current preset and opens
-  /// a picker sheet on tap (instead of listing all presets inline).
+  /// "Response style" inline dropdown: a compact row that, on tap, animates
+  /// open to reveal the presets right below it (chevron rotates, list expands).
   Widget _buildStyleDropdown() {
     return Consumer<CloudService>(
       builder: (context, cloud, _) {
@@ -305,38 +308,82 @@ class _DashboardScreenState extends State<DashboardScreen>
           orElse: () => _styles[1],
         );
         return GlassCard(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-          onTap: () => _showStylePicker(current),
-          child: Row(
+          padding: EdgeInsets.zero,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Icon(match.$4, size: 20, color: AppColors.textSecondary),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Response style',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                      ),
+              // ── Header row (tap to toggle) ────────────────
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () =>
+                      setState(() => _styleExpanded = !_styleExpanded),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 13),
+                    child: Row(
+                      children: [
+                        Icon(match.$4,
+                            size: 20, color: AppColors.textSecondary),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Response style',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                match.$2,
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        AnimatedRotation(
+                          turns: _styleExpanded ? 0.5 : 0.0,
+                          duration: const Duration(milliseconds: 220),
+                          child: const Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      match.$2,
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-              const Icon(
-                Icons.keyboard_arrow_down_rounded,
-                color: AppColors.textSecondary,
+
+              // ── Animated options list ─────────────────────
+              AnimatedSize(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOut,
+                alignment: Alignment.topCenter,
+                child: _styleExpanded
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Container(
+                            height: 0.5,
+                            margin:
+                                const EdgeInsets.symmetric(horizontal: 14),
+                            color: AppColors.glassBorder,
+                          ),
+                          ..._styles.map((s) => _styleOption(s, current)),
+                          const SizedBox(height: 6),
+                        ],
+                      )
+                    : const SizedBox(width: double.infinity),
               ),
             ],
           ),
@@ -345,120 +392,58 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  void _showStylePicker(String current) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => Container(
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          border: Border.all(color: AppColors.glassBorder, width: 0.5),
-        ),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+  /// A single option row inside the response-style dropdown.
+  Widget _styleOption(
+      (String, String, String, IconData) s, String current) {
+    final isSelected = s.$1 == current;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          _setStyle(s.$1);
+          setState(() => _styleExpanded = false);
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          child: Row(
             children: [
-              const SizedBox(height: 12),
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.textTertiary,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+              Icon(
+                s.$4,
+                size: 20,
+                color: isSelected
+                    ? AppColors.electricBlue
+                    : AppColors.textTertiary,
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-                child: Row(
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Response style',
-                      style: GoogleFonts.outfit(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
+                      s.$2,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight:
+                            isSelected ? FontWeight.w600 : FontWeight.w500,
                         color: AppColors.textPrimary,
+                      ),
+                    ),
+                    Text(
+                      s.$3,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textTertiary,
                       ),
                     ),
                   ],
                 ),
               ),
-              ..._styles.map((s) {
-                final isSelected = s.$1 == current;
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(14),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        _setStyle(s.$1);
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 14,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? AppColors.electricBlue.withOpacity(0.1)
-                              : AppColors.surfaceLight,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: isSelected
-                                ? AppColors.electricBlue.withOpacity(0.3)
-                                : AppColors.glassBorder,
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              s.$4,
-                              size: 20,
-                              color: isSelected
-                                  ? AppColors.electricBlue
-                                  : AppColors.textTertiary,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    s.$2,
-                                    style: GoogleFonts.inter(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.textPrimary,
-                                    ),
-                                  ),
-                                  Text(
-                                    s.$3,
-                                    style: GoogleFonts.inter(
-                                      fontSize: 12,
-                                      color: AppColors.textTertiary,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (isSelected)
-                              const Icon(
-                                Icons.check_circle_rounded,
-                                color: AppColors.electricBlue,
-                                size: 20,
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }),
-              const SizedBox(height: 12),
+              if (isSelected)
+                const Icon(
+                  Icons.check_circle_rounded,
+                  color: AppColors.electricBlue,
+                  size: 20,
+                ),
             ],
           ),
         ),
@@ -628,16 +613,29 @@ class _DashboardScreenState extends State<DashboardScreen>
           onTap: () => setState(() => _usageExpanded = !_usageExpanded),
           child: Column(
             children: [
-              _usageExpanded
-                  ? _usageExpandedCard(cloud, isPro)
-                  : _usageCollapsedBar(cloud, isPro),
+              // Blend between the skinny bar and the full card: cross-fade the
+              // contents while animating the height between the two.
+              AnimatedCrossFade(
+                firstChild: _usageCollapsedBar(cloud, isPro),
+                secondChild: _usageExpandedCard(cloud, isPro),
+                crossFadeState: _usageExpanded
+                    ? CrossFadeState.showSecond
+                    : CrossFadeState.showFirst,
+                duration: const Duration(milliseconds: 300),
+                sizeCurve: Curves.easeInOutCubic,
+                firstCurve: Curves.easeOut,
+                secondCurve: Curves.easeIn,
+                alignment: Alignment.topCenter,
+              ),
               const SizedBox(height: 4),
-              Icon(
-                _usageExpanded
-                    ? Icons.keyboard_arrow_up_rounded
-                    : Icons.keyboard_arrow_down_rounded,
-                size: 20,
-                color: AppColors.textTertiary,
+              AnimatedRotation(
+                turns: _usageExpanded ? 0.5 : 0.0,
+                duration: const Duration(milliseconds: 300),
+                child: const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 20,
+                  color: AppColors.textTertiary,
+                ),
               ),
             ],
           ),
@@ -1062,7 +1060,7 @@ class _ModelPickerSheetState extends State<_ModelPickerSheet> {
     final provider = widget.providers[_selectedTab];
 
     return Container(
-      height: MediaQuery.of(context).size.height * 0.65,
+      height: MediaQuery.of(context).size.height * 0.5,
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -1236,24 +1234,27 @@ class _TierTag extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (free) return const SizedBox.shrink();
-    const color = AppColors.warning;
+    // Whitish → blue gradient pill, matching the premium end of the usage bar.
+    const textColor = Color(0xFF2F4E75);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
         borderRadius: BorderRadius.circular(6),
+        gradient: const LinearGradient(
+          colors: [Color(0xFFE8E8F0), Color(0xFF9DB6DA)],
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.star_rounded, size: 11, color: color),
+          const Icon(Icons.star_rounded, size: 11, color: textColor),
           const SizedBox(width: 3),
           Text(
             'Premium',
             style: GoogleFonts.inter(
               fontSize: 10,
               fontWeight: FontWeight.w600,
-              color: color,
+              color: textColor,
             ),
           ),
         ],

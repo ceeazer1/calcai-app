@@ -17,6 +17,10 @@ abstract final class AppColors {
   static const Color cyan = Color(0xFFE8E8F0);            // Bright silver
   static const Color magenta = Color(0xFFA1A1AB);         // Warm silver
 
+  // Whitish-blue accent (matches the premium end of the usage bar). Used for
+  // "connected / paired" states in the setup flow instead of a green.
+  static const Color accentBlue = Color(0xFF9DB6DA);
+
   // ── Semantic Colors ────────────────────────────────────────────────
   static const Color success = Color(0xFF00E676);
   static const Color error = Color(0xFFFF5252);

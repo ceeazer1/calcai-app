@@ -185,8 +185,6 @@ class _ScanScreenState extends State<ScanScreen>
                           size: 20,
                         ),
                       ),
-                      const Spacer(),
-                      _PhaseChip(phase: _phase),
                     ],
                   ),
                 ),
@@ -209,7 +207,7 @@ class _ScanScreenState extends State<ScanScreen>
                               isScanning: _isActive,
                               size: 300,
                               color: _phase == _ScanPhase.connecting
-                                  ? AppColors.success
+                                  ? AppColors.accentBlue
                                   : AppColors.electricBlue,
                               child: _CenterIcon(phase: _phase),
                             ),
@@ -230,7 +228,7 @@ class _ScanScreenState extends State<ScanScreen>
                         fontSize: 15,
                         fontWeight: FontWeight.w500,
                         color: _phase == _ScanPhase.connected
-                            ? AppColors.success
+                            ? AppColors.accentBlue
                             : AppColors.textSecondary,
                         height: 1.4,
                       ),
@@ -252,7 +250,7 @@ class _ScanScreenState extends State<ScanScreen>
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _phase == _ScanPhase.connected
-                            ? AppColors.success
+                            ? AppColors.accentBlue
                             : AppColors.electricBlue,
                         foregroundColor: Colors.white,
                         disabledBackgroundColor:
@@ -297,7 +295,7 @@ class _CenterIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     final isConnecting = phase == _ScanPhase.connecting;
     final color =
-        isConnecting ? AppColors.success : AppColors.electricBlue;
+        isConnecting ? AppColors.accentBlue : AppColors.electricBlue;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 400),
@@ -334,15 +332,15 @@ class _ConnectedIcon extends StatelessWidget {
         width: 110,
         height: 110,
         decoration: BoxDecoration(
-          color: AppColors.success.withOpacity(0.12),
+          color: AppColors.accentBlue.withOpacity(0.12),
           shape: BoxShape.circle,
           border: Border.all(
-            color: AppColors.success.withOpacity(0.4),
+            color: AppColors.accentBlue.withOpacity(0.4),
             width: 2,
           ),
           boxShadow: [
             BoxShadow(
-              color: AppColors.success.withOpacity(0.2),
+              color: AppColors.accentBlue.withOpacity(0.2),
               blurRadius: 40,
               spreadRadius: 8,
             ),
@@ -350,54 +348,9 @@ class _ConnectedIcon extends StatelessWidget {
         ),
         child: const Icon(
           Icons.check_rounded,
-          color: AppColors.success,
+          color: AppColors.accentBlue,
           size: 52,
         ),
-      ),
-    );
-  }
-}
-
-/// Small chip in the top-right showing current phase.
-class _PhaseChip extends StatelessWidget {
-  const _PhaseChip({required this.phase});
-  final _ScanPhase phase;
-
-  @override
-  Widget build(BuildContext context) {
-    final (label, color) = switch (phase) {
-      _ScanPhase.scanning => ('Scanning', AppColors.electricBlue),
-      _ScanPhase.connecting => ('Connecting', AppColors.warning),
-      _ScanPhase.connected => ('Connected', AppColors.success),
-      _ScanPhase.failed => ('Not found', AppColors.textTertiary),
-    };
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.25)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 6,
-            height: 6,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: color,
-            ),
-          ),
-        ],
       ),
     );
   }

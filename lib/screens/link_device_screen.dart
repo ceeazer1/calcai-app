@@ -109,7 +109,7 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen>
                   const SizedBox(height: 10),
 
                   Text(
-                    'Power on your CalcAI and tap\nConnect to get started.',
+                    'Settings > Bluetooth on your CalcAI Device',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.inter(
                       fontSize: 15,
