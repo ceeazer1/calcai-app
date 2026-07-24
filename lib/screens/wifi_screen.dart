@@ -311,7 +311,7 @@ class _WifiScreenState extends State<WifiScreen> {
         ..._savedNetworkTiles(ble, readOnly: false),
         const SizedBox(height: 16),
 
-        // ── Add Network Button ───────────────────────
+        // ── Scan for networks ────────────────────────
         SizedBox(
           height: 52,
           child: ElevatedButton.icon(
@@ -326,14 +326,126 @@ class _WifiScreenState extends State<WifiScreen> {
                           AlwaysStoppedAnimation(AppColors.textOnAccent),
                     ),
                   )
-                : const Icon(Icons.add_rounded),
+                : const Icon(Icons.wifi_find_rounded),
             label: Text(
-              _isAddingNetwork ? 'Scanning...' : 'Add Network',
+              _isAddingNetwork ? 'Scanning…' : 'Scan network',
               style: GoogleFonts.inter(fontWeight: FontWeight.w600),
             ),
           ),
         ),
+
+        // ── Manual entry — plain text, no box ────────
+        const SizedBox(height: 10),
+        Center(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _isAddingNetwork ? null : _showManualNetworkDialog,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+              child: Text(
+                'Add network manually',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.textTertiary,
+                ),
+              ),
+            ),
+          ),
+        ),
       ],
+    );
+  }
+
+  /// Manual SSID + password entry, for hidden networks or when the scan can't
+  /// see the network.
+  void _showManualNetworkDialog() {
+    final ssidController = TextEditingController();
+    final passwordController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: AppColors.glassBorder),
+        ),
+        title: Text(
+          'Add Network',
+          style: GoogleFonts.outfit(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Enter the network name exactly as it appears.',
+              style: GoogleFonts.inter(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: ssidController,
+              autocorrect: false,
+              autofocus: true,
+              style: GoogleFonts.inter(color: AppColors.textPrimary),
+              decoration: InputDecoration(
+                hintText: 'Network name (SSID)',
+                hintStyle: GoogleFonts.inter(color: AppColors.textTertiary),
+                filled: true,
+                fillColor: AppColors.surfaceLight,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: passwordController,
+              obscureText: true,
+              style: GoogleFonts.inter(color: AppColors.textPrimary),
+              decoration: InputDecoration(
+                hintText: 'Password (leave blank if open)',
+                hintStyle: GoogleFonts.inter(color: AppColors.textTertiary),
+                filled: true,
+                fillColor: AppColors.surfaceLight,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.inter(color: AppColors.textSecondary),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final ssid = ssidController.text.trim();
+              if (ssid.isEmpty) return;
+              Navigator.pop(ctx);
+              _attemptConnect(ssid, passwordController.text);
+            },
+            child: Text(
+              'Connect',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

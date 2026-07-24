@@ -583,7 +583,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ),
                       const SizedBox(width: 12),
                       Text(
-                        saved.isEmpty ? 'Add network' : 'Add or manage networks',
+                        'Edit network',
                         style: GoogleFonts.inter(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
