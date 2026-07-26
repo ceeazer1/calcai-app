@@ -69,6 +69,13 @@ class _WifiScreenState extends State<WifiScreen> {
     super.dispose();
   }
 
+  /// User tapped "skip" — stop searching and show the not-found state now.
+  void _skipSearch() {
+    context.read<BleService>().stopScan();
+    _btOff = false; // skip is only offered while Bluetooth is on
+    _stopAutoConnecting();
+  }
+
   void _stopAutoConnecting() {
     _connectTimeout?.cancel();
     _connectStarted = false;
@@ -243,6 +250,25 @@ class _WifiScreenState extends State<WifiScreen> {
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
                       color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  // Plain "skip" link — stop waiting and jump to the not-found
+                  // state instead of sitting through the timeout.
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _skipSearch,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 6, horizontal: 16),
+                      child: Text(
+                        'skip',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
                     ),
                   ),
                 ]
