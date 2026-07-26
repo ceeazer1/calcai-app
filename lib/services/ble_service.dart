@@ -240,7 +240,10 @@ class BleService extends ChangeNotifier {
         rssi: 0,
         advertisementName: 'CalcAI',
       );
-      await connectToDevice(dev, timeout: const Duration(seconds: 8));
+      // Single short attempt: if the known device isn't right there, fail fast
+      // (~4s) so the caller falls back to scanning instead of retrying for 15s.
+      await connectToDevice(dev,
+          timeout: const Duration(seconds: 4), attempts: 1);
       return connectionState.isConnected;
     } catch (e) {
       debugPrint('reconnectKnownDevice error: $e');
@@ -251,6 +254,7 @@ class BleService extends ChangeNotifier {
   Future<void> connectToDevice(
     CalcAiDevice device, {
     Duration timeout = const Duration(seconds: 15),
+    int attempts = 3,
   }) async {
     _clearError();
     _setConnectionState(DeviceConnectionState.connecting);
@@ -265,10 +269,12 @@ class BleService extends ChangeNotifier {
       // discovered peripheral very often hangs to timeout while an immediate
       // retry succeeds — so instead of one long (15s) hang that forces the
       // user to tap Connect again, we try a few short attempts and self-heal.
+      // The reconnect fast-path passes attempts:1 so a stale/absent device
+      // fails fast and the caller can fall back to scanning.
+      final maxAttempts = attempts.clamp(1, 5);
       final perAttempt = Duration(
-        seconds: (timeout.inSeconds ~/ 3).clamp(5, 8),
+        seconds: (timeout.inSeconds ~/ maxAttempts).clamp(4, 8),
       );
-      const maxAttempts = 3;
       Object? lastError;
       var didConnect = false;
       for (var attempt = 1; attempt <= maxAttempts; attempt++) {
