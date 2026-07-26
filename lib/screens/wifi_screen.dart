@@ -37,15 +37,16 @@ class _WifiScreenState extends State<WifiScreen> {
   /// (vs. the device simply not being found nearby).
   bool _btOff = false;
 
+  /// Whether a connect attempt has finished at least once. Until then we show
+  /// "Searching…" instead of the failed state, so there's no initial flash.
+  bool _attempted = false;
+
   /// Fallback timer that gives up auto-connect if nothing connects in time.
   Timer? _connectTimeout;
 
   @override
   void initState() {
     super.initState();
-    // Show "Connecting…" from the first frame (no "disconnected" flash) when
-    // the screen opens and immediately tries to reach the device.
-    if (widget.isActive) _autoConnecting = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<BleService>().addListener(_onBle);
       if (widget.isActive) _attemptAutoConnect();
@@ -71,7 +72,15 @@ class _WifiScreenState extends State<WifiScreen> {
   void _stopAutoConnecting() {
     _connectTimeout?.cancel();
     _connectStarted = false;
-    if (mounted) setState(() => _autoConnecting = false);
+    if (mounted) {
+      setState(() {
+        _autoConnecting = false;
+        _attempted = true;
+      });
+    } else {
+      _autoConnecting = false;
+      _attempted = true;
+    }
   }
 
   /// Side-effect listener: connect to the first CalcAI found during an
@@ -215,13 +224,16 @@ class _WifiScreenState extends State<WifiScreen> {
     // A device has been found and we're establishing the link.
     final isLinking = _connectStarted ||
         ble.connectionState == DeviceConnectionState.connecting;
+    // Show the searching UI while connecting, or before the first attempt has
+    // resolved (avoids a "Calc not found" flash on open).
+    final searching = _autoConnecting || !_attempted;
 
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          children: _autoConnecting
+          children: searching
               ? [
                   const _SearchingBleIcon(),
                   const SizedBox(height: 18),
