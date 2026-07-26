@@ -223,32 +223,59 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   }).toList();
 
                   if (filtered.isEmpty) {
+                    final auth = context.read<AuthService>();
+                    final mac = auth.primaryMac;
+                    final err = cloud.error;
                     return Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.history_rounded,
-                              color: AppColors.textTertiary, size: 48),
-                          const SizedBox(height: 12),
-                          Text(
-                            cloud.history.isEmpty
-                                ? 'No prompts yet'
-                                : 'Nothing in this time range',
-                            style: GoogleFonts.inter(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 32),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              err != null
+                                  ? Icons.cloud_off_rounded
+                                  : Icons.history_rounded,
                               color: AppColors.textTertiary,
+                              size: 48,
                             ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Use CalcAI on your calculator to see history',
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              color: AppColors.textTertiary.withOpacity(0.6),
+                            const SizedBox(height: 12),
+                            Text(
+                              err != null
+                                  ? "Couldn't load history"
+                                  : cloud.history.isEmpty
+                                      ? 'No prompts yet'
+                                      : 'Nothing in this time range',
+                              style: GoogleFonts.inter(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                                color: AppColors.textTertiary,
+                              ),
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 4),
+                            Text(
+                              err ??
+                                  (mac == null || mac.isEmpty
+                                      ? 'No device paired yet'
+                                      : 'Use CalcAI on your calculator to see history'),
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                color: AppColors.textTertiary.withOpacity(0.6),
+                              ),
+                            ),
+                            if (mac != null && mac.isNotEmpty) ...[
+                              const SizedBox(height: 10),
+                              Text(
+                                'device: $mac',
+                                style: GoogleFonts.robotoMono(
+                                  fontSize: 11,
+                                  color: AppColors.textTertiary.withOpacity(0.5),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
                     );
                   }
