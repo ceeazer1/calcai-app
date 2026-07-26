@@ -65,7 +65,11 @@ class _WifiScreenState extends State<WifiScreen> {
   @override
   void dispose() {
     _connectTimeout?.cancel();
-    context.read<BleService>().removeListener(_onBle);
+    final ble = context.read<BleService>();
+    ble.removeListener(_onBle);
+    // Cut the BLE link entirely when leaving this screen so the app isn't
+    // left silently connected to the calculator after WiFi management is done.
+    ble.disconnect();
     super.dispose();
   }
 
@@ -208,10 +212,14 @@ class _WifiScreenState extends State<WifiScreen> {
 
                   const SizedBox(height: 20),
 
-                  // Connected → network list. Otherwise a connect prompt.
+                  // Connected → show the saved-network list. While the list is
+                  // still being fetched (first load), show a connected phase
+                  // with the device name instead of a premature empty list.
                   Expanded(
                     child: isConnected
-                        ? _buildNetworkList(ble)
+                        ? (ble.savedNetworksLoading && ble.savedNetworks.isEmpty
+                            ? _buildConnectedLoading(ble)
+                            : _buildNetworkList(ble))
                         : _buildDisconnectedView(ble),
                   ),
                 ],
@@ -313,6 +321,69 @@ class _WifiScreenState extends State<WifiScreen> {
                     ),
                   ),
                 ],
+        ),
+      ),
+    );
+  }
+
+  /// Connected, but the saved-network list is still loading over BLE. Shows the
+  /// device it linked to so the user sees the connection succeeded.
+  Widget _buildConnectedLoading(BleService ble) {
+    final name = ble.connectedDevice?.name ?? 'your CalcAI';
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: AppColors.accentBlue.withOpacity(0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.bluetooth_connected_rounded,
+                color: AppColors.accentBlue,
+                size: 36,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'Connected',
+              style: GoogleFonts.outfit(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              name,
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.accentBlue,
+              ),
+            ),
+            const SizedBox(height: 22),
+            const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Loading networks…',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
         ),
       ),
     );

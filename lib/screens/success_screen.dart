@@ -111,6 +111,9 @@ class _SuccessScreenState extends State<SuccessScreen>
     // Android). Fall back to remoteId only on Android where it is the real MAC.
     final mac = ble.deviceMac ?? ble.connectedDevice?.id;
     final proof = ble.devicePairProof;
+    // Persist the network(s) saved during setup under this device's MAC so the
+    // home page shows them (and they survive restarts).
+    if (mac != null) await ble.setPersistMac(mac);
     ble.disconnect();
 
     // Register the device with the cloud and set it as the primary device

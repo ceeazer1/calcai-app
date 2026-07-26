@@ -62,6 +62,31 @@ class BleService extends ChangeNotifier {
   final List<String> _savedNetworks = [];
   List<String> get savedNetworks => List.unmodifiable(_savedNetworks);
 
+  /// True while fetching the saved-network list from the device over BLE, so
+  /// the UI can show a "loading networks…" state instead of a premature empty.
+  bool _savedNetworksLoading = false;
+  bool get savedNetworksLoading => _savedNetworksLoading;
+
+  /// Stable key used to persist saved networks (the user's primary device MAC),
+  /// so they survive restarts and match what the home page loads. Set via
+  /// [setPersistMac] / [loadPersistedNetworks].
+  String? _persistMac;
+
+  static String? _normMac(String? mac) {
+    final n = mac?.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toLowerCase();
+    return (n == null || n.isEmpty) ? null : n;
+  }
+
+  /// Sets the persistence key (normally the user's primary device MAC) and
+  /// re-persists the current list under it, so networks saved before the device
+  /// was claimed still land under the key the home page loads from.
+  Future<void> setPersistMac(String? mac) async {
+    final norm = _normMac(mac);
+    if (norm == null) return;
+    _persistMac = norm;
+    if (_savedNetworks.isNotEmpty) await _persistSavedNetworks();
+  }
+
   /// Current WiFi provisioning state.
   ProvisioningState _provisioningState = ProvisioningState.idle;
   ProvisioningState get provisioningState => _provisioningState;
@@ -556,6 +581,8 @@ class BleService extends ChangeNotifier {
   Future<void> requestSavedNetworks() async {
     if (_scanChar == null) return;
 
+    _savedNetworksLoading = true;
+    notifyListeners();
     try {
       await _scanChar!.write(
         utf8.encode(jsonEncode({'cmd': 'list'})),
@@ -566,26 +593,31 @@ class BleService extends ChangeNotifier {
       await Future.delayed(const Duration(milliseconds: 500));
 
       final response = await _scanChar!.read();
-      if (response.isNotEmpty && response.length > 2) {
-        final json = utf8.decode(response);
-        final parsed = jsonDecode(json);
-        _savedNetworks.clear();
-        if (parsed is List) {
-          for (final item in parsed) {
-            if (item is Map<String, dynamic>) {
-              final ssid = item['ssid'] as String? ?? '';
-              if (ssid.isNotEmpty) _savedNetworks.add(ssid);
+      if (response.isNotEmpty) {
+        try {
+          final parsed = jsonDecode(utf8.decode(response));
+          if (parsed is List) {
+            // Replace the list (handles going down to zero saved networks).
+            _savedNetworks.clear();
+            for (final item in parsed) {
+              if (item is Map<String, dynamic>) {
+                final ssid = item['ssid'] as String? ?? '';
+                if (ssid.isNotEmpty) _savedNetworks.add(ssid);
+              }
             }
+            debugPrint(
+                'CalcAI BLE: got ${_savedNetworks.length} saved networks');
+            await _persistSavedNetworks();
           }
+        } catch (_) {
+          // Non-JSON / partial read — keep the existing list.
         }
-        debugPrint('CalcAI BLE: got ${_savedNetworks.length} saved networks');
-
-        // Persist locally for offline display
-        await _persistSavedNetworks();
-        notifyListeners();
       }
     } catch (e) {
       debugPrint('CalcAI BLE: Error fetching saved networks: $e');
+    } finally {
+      _savedNetworksLoading = false;
+      notifyListeners();
     }
   }
 
@@ -593,14 +625,17 @@ class BleService extends ChangeNotifier {
   /// Call this on app startup so the WiFi screen can show networks
   /// even when BLE is not connected.
   Future<void> loadPersistedNetworks(String? deviceMac) async {
-    if (deviceMac == null || deviceMac.isEmpty) return;
+    final norm = _normMac(deviceMac);
+    if (norm == null) return;
+    _persistMac = norm; // keep persist + load keyed identically
     try {
       final prefs = await SharedPreferences.getInstance();
-      final json = prefs.getString('saved_networks_$deviceMac');
+      final json = prefs.getString('saved_networks_$norm');
       if (json != null) {
         final list = jsonDecode(json) as List;
-        _savedNetworks.clear();
-        _savedNetworks.addAll(list.cast<String>());
+        _savedNetworks
+          ..clear()
+          ..addAll(list.cast<String>());
         notifyListeners();
       }
     } catch (e) {
@@ -609,7 +644,11 @@ class BleService extends ChangeNotifier {
   }
 
   Future<void> _persistSavedNetworks() async {
-    final mac = _connectedDevice?.device.remoteId.str;
+    // Prefer the app's primary MAC (matches what the home page loads); fall
+    // back to the device's reported WiFi MAC, then the BLE remote id.
+    final mac = _persistMac ??
+        _normMac(_deviceMac) ??
+        _normMac(_connectedDevice?.device.remoteId.str);
     if (mac == null) return;
     try {
       final prefs = await SharedPreferences.getInstance();
