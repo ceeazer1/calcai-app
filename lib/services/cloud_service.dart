@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import 'resilient_http_client.dart';
+
 /// Cloud service for the CalcAI REST API at [_baseUrl].
 ///
 /// Uses [ChangeNotifier] so the UI can reactively rebuild via [Provider].
@@ -16,6 +18,10 @@ class CloudService extends ChangeNotifier {
 
   /// Base URL for all CalcAI cloud endpoints.
   static const String _baseUrl = 'https://ai.calcai.cc';
+
+  /// Shared client that resolves the API host over DoH, so requests work even
+  /// on networks whose router DNS blocks the domain.
+  final http.Client _client = createResilientClient();
 
   // ── State ───────────────────────────────────────────────────────────
 
@@ -93,7 +99,7 @@ class CloudService extends ChangeNotifier {
       _setLoading(true);
       _clearError();
 
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse('$_baseUrl/ai/user/devices'),
         headers: _authHeaders(token),
       );
@@ -127,7 +133,7 @@ class CloudService extends ChangeNotifier {
       _setLoading(true);
       _clearError();
 
-      final response = await http.post(
+      final response = await _client.post(
         Uri.parse('$_baseUrl/ai/pair/claim'),
         headers: _jsonAuthHeaders(token),
         body: jsonEncode({
@@ -155,7 +161,7 @@ class CloudService extends ChangeNotifier {
       _setLoading(true);
       _clearError();
 
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse('$_baseUrl/ai/device/info?mac=$mac'),
         headers: _authHeaders(token),
       );
@@ -183,7 +189,7 @@ class CloudService extends ChangeNotifier {
       _setLoading(true);
       _clearError();
 
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse('$_baseUrl/ai/model/get?mac=$mac'),
         headers: _authHeaders(token),
       );
@@ -214,7 +220,7 @@ class CloudService extends ChangeNotifier {
       _setLoading(true);
       _clearError();
 
-      final response = await http.post(
+      final response = await _client.post(
         Uri.parse('$_baseUrl/ai/model/set'),
         headers: _jsonAuthHeaders(token),
         body: jsonEncode({
@@ -246,7 +252,7 @@ class CloudService extends ChangeNotifier {
       _setLoading(true);
       _clearError();
 
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse('$_baseUrl/ai/notes/get?mac=$mac'),
         headers: _authHeaders(token),
       );
@@ -273,7 +279,7 @@ class CloudService extends ChangeNotifier {
       _setLoading(true);
       _clearError();
 
-      final response = await http.post(
+      final response = await _client.post(
         Uri.parse('$_baseUrl/ai/notes/set'),
         headers: _jsonAuthHeaders(token),
         body: jsonEncode({'mac': mac, 'text': text}),
@@ -304,7 +310,7 @@ class CloudService extends ChangeNotifier {
       _setLoading(true);
       _clearError();
 
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse('$_baseUrl/ai/logs/recent?mac=$mac&limit=$limit'),
         headers: _authHeaders(token),
       );
@@ -336,7 +342,7 @@ class CloudService extends ChangeNotifier {
       _setLoading(true);
       _clearError();
 
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse('$_baseUrl/ai/usage/status?mac=$mac'),
         headers: _authHeaders(token),
       );
@@ -456,7 +462,7 @@ class CloudService extends ChangeNotifier {
       notifyListeners();
     }
     try {
-      final resp = await http.post(
+      final resp = await _client.post(
         Uri.parse('$_baseUrl/ai/apikey/toggle'),
         headers: {
           'Authorization': 'Bearer $token',
@@ -479,7 +485,7 @@ class CloudService extends ChangeNotifier {
   /// List all saved API keys. Returns provider → { active, last4 }.
   Future<Map<String, dynamic>> listApiKeys(String token) async {
     try {
-      final resp = await http.get(
+      final resp = await _client.get(
         Uri.parse('$_baseUrl/ai/apikey/list'),
         headers: {'Authorization': 'Bearer $token'},
       );
@@ -502,7 +508,7 @@ class CloudService extends ChangeNotifier {
   /// Save an API key for a provider. Backend validates the key first.
   Future<bool> saveApiKey(String token, String provider, String key) async {
     try {
-      final resp = await http.post(
+      final resp = await _client.post(
         Uri.parse('$_baseUrl/ai/apikey/save'),
         headers: {
           'Authorization': 'Bearer $token',
@@ -532,7 +538,7 @@ class CloudService extends ChangeNotifier {
   /// Delete a saved API key for a provider.
   Future<bool> deleteApiKey(String token, String provider) async {
     try {
-      final resp = await http.post(
+      final resp = await _client.post(
         Uri.parse('$_baseUrl/ai/apikey/delete'),
         headers: {
           'Authorization': 'Bearer $token',

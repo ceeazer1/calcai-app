@@ -10,6 +10,8 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
+import 'resilient_http_client.dart';
+
 /// Manages authentication state for the CalcAI app.
 ///
 /// Handles sign-in / sign-out, token persistence via [FlutterSecureStorage],
@@ -109,7 +111,7 @@ class AuthService extends ChangeNotifier {
     FlutterSecureStorage? secureStorage,
     http.Client? httpClient,
   })  : _secureStorage = secureStorage ?? const FlutterSecureStorage(),
-        _httpClient = httpClient ?? http.Client();
+        _httpClient = httpClient ?? createResilientClient();
 
   // ── Initialisation ────────────────────────────────────────────────────
 
@@ -186,7 +188,7 @@ class AuthService extends ChangeNotifier {
       }
 
       // Exchange token with backend
-      final response = await http.post(
+      final response = await _httpClient.post(
         Uri.parse('$_baseUrl/auth/apple'),
         headers: {
           'Content-Type': 'application/json',
