@@ -64,6 +64,74 @@ class _HistoryScreenState extends State<HistoryScreen> {
     super.dispose();
   }
 
+  /// Confirms, then permanently deletes all activity for this device.
+  Future<void> _confirmClearHistory() async {
+    final auth = context.read<AuthService>();
+    final cloud = context.read<CloudService>();
+    if (auth.token == null || auth.primaryMac == null) return;
+    if (cloud.history.isEmpty) return;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: AppColors.glassBorder),
+        ),
+        title: Text(
+          'Clear history?',
+          style: GoogleFonts.outfit(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          'This permanently deletes every saved prompt and photo for this '
+          'device. It cannot be undone.',
+          style: GoogleFonts.inter(
+            color: AppColors.textSecondary,
+            fontSize: 14,
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.inter(color: AppColors.textSecondary),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              'Clear',
+              style: GoogleFonts.inter(
+                color: AppColors.error,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    final cleared = await cloud.clearHistory(auth.token!, auth.primaryMac!);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(cleared ? 'History cleared' : 'Could not clear history'),
+        backgroundColor: AppColors.surfaceLight,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+      ),
+    );
+  }
+
   // Returns the earliest allowed timestamp for the selected range.
   DateTime? _cutoff() {
     final now = DateTime.now();
@@ -100,6 +168,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     ),
                   ),
                   const Spacer(),
+                  IconButton(
+                    onPressed: _confirmClearHistory,
+                    tooltip: 'Clear history',
+                    icon: const Icon(
+                      Icons.delete_outline_rounded,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
                   IconButton(
                     onPressed: _loadHistory,
                     icon: const Icon(

@@ -332,6 +332,32 @@ class CloudService extends ChangeNotifier {
     }
   }
 
+  /// Permanently deletes all activity history for a device.
+  ///
+  /// DELETE /ai/logs/clear?mac=
+  Future<bool> clearHistory(String token, String mac) async {
+    try {
+      _setLoading(true);
+      _clearError();
+
+      final response = await _client.delete(
+        Uri.parse('$_baseUrl/ai/logs/clear?mac=$mac'),
+        headers: _authHeaders(token),
+      );
+
+      _assertSuccess(response);
+
+      _history = [];
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _setError('Failed to clear history: ${_friendlyError(e)}');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
   // ── Usage ─────────────────────────────────────────────────────────
 
   /// Gets token / usage status for a device.
