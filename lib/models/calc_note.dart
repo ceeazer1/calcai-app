@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:math';
 
-/// Maximum notes per plan. Matches the web dashboard so both clients agree.
-const int kMaxNotesFree = 2;
+/// Maximum notes per plan.
+const int kMaxNotesFree = 5;
 const int kMaxNotesPro = 10;
 
 /// A single note synced to the CalcAI device.

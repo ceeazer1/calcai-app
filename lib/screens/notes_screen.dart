@@ -111,6 +111,11 @@ class _NotesScreenState extends State<NotesScreen> {
           bottom: MediaQuery.of(ctx).viewInsets.bottom,
         ),
         child: Container(
+          // Cap the height so the taller body field still fits with the
+          // keyboard up, and let the content scroll if it doesn't.
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(ctx).size.height * 0.9,
+          ),
           decoration: BoxDecoration(
             color: AppColors.surface,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -118,7 +123,7 @@ class _NotesScreenState extends State<NotesScreen> {
           ),
           child: SafeArea(
             top: false,
-            child: Padding(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -163,8 +168,10 @@ class _NotesScreenState extends State<NotesScreen> {
                   TextField(
                     controller: bodyCtrl,
                     autofocus: isNew,
-                    maxLines: 5,
-                    minLines: 3,
+                    maxLines: 14,
+                    minLines: 9,
+                    keyboardType: TextInputType.multiline,
+                    textCapitalization: TextCapitalization.sentences,
                     style: GoogleFonts.inter(color: AppColors.textPrimary),
                     decoration: InputDecoration(
                       hintText: 'e.g. QUADRATIC: X=(-B±√(B²-4AC))/2A',
