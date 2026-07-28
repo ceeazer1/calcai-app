@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 
@@ -92,7 +93,14 @@ Future<String?> _resolveViaDoh(String host) async {
 /// to it over a socket TLS-wrapped with the real hostname as SNI. This is
 /// immune to routers/ISPs that hijack or block the domain at the DNS layer
 /// (Dart's HttpClient can't do DoH + custom SNI, so we do the request by hand).
-http.Client createResilientClient() => _ResilientClient();
+http.Client createResilientClient() {
+  // dart:io (HttpClient / Socket / IOClient) doesn't exist on web — touching it
+  // throws `Unsupported operation: Platform._version` and takes down every
+  // screen that reads CloudService. Browsers also do their own DNS (often
+  // already DoH), so the custom resolver isn't needed there anyway.
+  if (kIsWeb) return http.Client();
+  return _ResilientClient();
+}
 
 class _ResilientClient extends http.BaseClient {
   final http.Client _fallback = IOClient();
