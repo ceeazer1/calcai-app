@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_colors.dart';
 import 'dashboard_screen.dart';
 import 'history_screen.dart';
+import 'notes_screen.dart';
 import 'settings_screen.dart';
 import 'wifi_screen.dart';
 
@@ -28,6 +29,7 @@ class _MainShellState extends State<MainShell> {
   static const List<_NavTab> _tabs = [
     _NavTab(icon: Icons.home_rounded, label: 'Home'),
     _NavTab(icon: Icons.history_rounded, label: 'History'),
+    _NavTab(icon: Icons.edit_note_rounded, label: 'Notes'),
     _NavTab(icon: Icons.settings_rounded, label: 'Settings'),
   ];
 
@@ -51,6 +53,7 @@ class _MainShellState extends State<MainShell> {
           children: const [
             DashboardScreen(),
             HistoryScreen(),
+            NotesScreen(),
             SettingsScreen(),
           ],
         ),

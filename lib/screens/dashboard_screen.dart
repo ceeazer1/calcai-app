@@ -8,7 +8,6 @@ import '../services/cloud_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glass_card.dart';
 import 'link_device_screen.dart';
-import 'notes_screen.dart';
 import 'wifi_screen.dart';
 
 /// Model IDs usable on the free plan. Everything else is premium.
@@ -106,10 +105,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                 _buildModelSelector(),
                 const SizedBox(height: 10),
                 _buildStyleDropdown(),
-                const SizedBox(height: 24),
-                _buildSectionHeader('Notes', Icons.sticky_note_2_outlined),
-                const SizedBox(height: 12),
-                _buildNotesCard(),
                 const SizedBox(height: 24),
                 _buildSectionHeader('Recent', Icons.history_rounded),
                 const SizedBox(height: 12),
@@ -452,56 +447,6 @@ class _DashboardScreenState extends State<DashboardScreen>
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  /// Home entry point for notes that sync to the calculator.
-  Widget _buildNotesCard() {
-    return GlassCard(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const NotesScreen()),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: AppColors.surfaceHighlight,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.edit_note_rounded,
-                color: AppColors.textPrimary, size: 20),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Your notes',
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'Formulas and reminders on your calculator',
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Icon(Icons.chevron_right_rounded,
-              color: AppColors.textTertiary),
-        ],
       ),
     );
   }

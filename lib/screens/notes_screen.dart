@@ -256,80 +256,80 @@ class _NotesScreenState extends State<NotesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: Container(
-        decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // ── Header ──────────────────────────────────
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 8, 20, 0),
-                child: Row(
-                  children: [
-                    IconButton(
-                      onPressed: () => Navigator.of(context).maybePop(),
-                      icon: const Icon(Icons.arrow_back_rounded,
-                          color: AppColors.textPrimary),
+    // Rendered inside MainShell's IndexedStack, so no Scaffold/back button —
+    // matches the Home and History tabs.
+    final canAdd = !_loading && _notes.length < _maxNotes;
+    return Container(
+      decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
+      child: SafeArea(
+        child: Column(
+          children: [
+            // ── Header ──────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+              child: Row(
+                children: [
+                  Text(
+                    'Notes',
+                    style: GoogleFonts.outfit(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
                     ),
-                    Text(
-                      'Notes',
-                      style: GoogleFonts.outfit(
-                        fontSize: 26,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const Spacer(),
-                    if (_saving)
-                      const SizedBox(
+                  ),
+                  const Spacer(),
+                  if (_saving)
+                    const Padding(
+                      padding: EdgeInsets.only(right: 8),
+                      child: SizedBox(
                         width: 18,
                         height: 18,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
                           color: AppColors.textSecondary,
                         ),
-                      )
-                    else
-                      Text(
-                        '${_notes.length}/$_maxNotes',
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          color: AppColors.textTertiary,
-                        ),
                       ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Synced to your calculator over WiFi.',
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      color: AppColors.textSecondary,
+                    )
+                  else
+                    Text(
+                      '${_notes.length}/$_maxNotes',
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        color: AppColors.textTertiary,
+                      ),
                     ),
+                  IconButton(
+                    onPressed: canAdd ? () => _editNote() : null,
+                    tooltip: canAdd ? 'Add note' : 'Note limit reached',
+                    icon: Icon(
+                      Icons.add_rounded,
+                      color: canAdd
+                          ? AppColors.textPrimary
+                          : AppColors.textTertiary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Synced to your calculator over WiFi.',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+            ),
+            const SizedBox(height: 16),
 
-              Expanded(child: _buildBody()),
-            ],
-          ),
+            Expanded(child: _buildBody()),
+          ],
         ),
       ),
-      floatingActionButton: (_loading || _notes.length >= _maxNotes)
-          ? null
-          : FloatingActionButton(
-              onPressed: () => _editNote(),
-              backgroundColor: AppColors.electricBlue,
-              foregroundColor: AppColors.textOnAccent,
-              child: const Icon(Icons.add_rounded),
-            ),
     );
   }
 
