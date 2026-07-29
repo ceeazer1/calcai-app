@@ -7,52 +7,51 @@ import 'package:google_fonts/google_fonts.dart';
 /// so text lays out on a 16-column x 8-row grid — which is why the calculator
 /// prompts tell the AI to keep lines to 16 characters.
 const int kTi84Cols = 16;
+
+/// Physical rows on the LCD.
 const int kTi84Rows = 8;
+
+/// Rows available for note text. The BASIC program reserves the bottom row for
+/// its `< | >  Pg:` navigation footer, and the firmware paginates at 7
+/// (`sendPage()` in esp32.ino: `linesPerPage = 7`).
+const int kTi84TextRows = 7;
+
 const double _kCellW = 6;
 const double _kCellH = 8;
 
-/// Wraps [text] to the calculator's 16-column grid.
+/// Wraps [text] the way the firmware does.
 ///
-/// Breaks on whitespace where possible and hard-splits words longer than a
-/// row, mirroring how the text lands on the real screen.
+/// Mirrors `paginateForTI()` in esp32.ino exactly: characters are accumulated
+/// and the line is flushed the moment it reaches [cols] — a **hard wrap that
+/// breaks mid-word**, not a word wrap. Newlines flush early. Matching this is
+/// what makes the preview truthful rather than merely pretty.
 List<String> wrapForTi84(String text, {int cols = kTi84Cols}) {
   final out = <String>[];
-  for (final rawLine in text.replaceAll('\r', '').split('\n')) {
-    final line = rawLine.trimRight();
-    if (line.isEmpty) {
-      out.add('');
-      continue;
-    }
-    var current = '';
-    for (final word in line.split(' ')) {
-      var w = word;
-      // Hard-split anything wider than a full row.
-      while (w.length > cols) {
-        if (current.isNotEmpty) {
-          out.add(current);
-          current = '';
-        }
-        out.add(w.substring(0, cols));
-        w = w.substring(cols);
-      }
-      if (current.isEmpty) {
-        current = w;
-      } else if (current.length + 1 + w.length <= cols) {
-        current = '$current $w';
-      } else {
-        out.add(current);
-        current = w;
-      }
-    }
-    if (current.isNotEmpty) out.add(current);
+  var curr = StringBuffer();
+
+  void flush() {
+    out.add(curr.toString());
+    curr = StringBuffer();
   }
+
+  final s = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+  for (final rune in s.runes) {
+    final c = String.fromCharCode(rune);
+    if (c == '\n') {
+      flush();
+    } else {
+      curr.write(c);
+      if (curr.length >= cols) flush();
+    }
+  }
+  if (curr.isNotEmpty) flush();
   return out;
 }
 
 /// A 1:1 mock of the TI-84 Plus screen, scaled up by [scale].
 ///
-/// Renders [text] the way the calculator would: uppercase, monospaced, wrapped
-/// to 16 columns and clipped to 8 rows, on the classic grey-green LCD.
+/// Renders [text] the way the calculator does: monospaced, hard-wrapped to 16
+/// columns, 7 text rows plus the BASIC nav footer, on the grey-green LCD.
 class Ti84Screen extends StatelessWidget {
   const Ti84Screen({
     super.key,
@@ -60,7 +59,12 @@ class Ti84Screen extends StatelessWidget {
     this.scale = 3,
     this.showOverflowHint = true,
     this.lines,
+    this.footerPage,
   });
+
+  /// 1-based page number drawn in the nav footer, matching what the BASIC
+  /// program shows.
+  final int? footerPage;
 
   final String text;
 
@@ -71,7 +75,7 @@ class Ti84Screen extends StatelessWidget {
   /// Pixel multiplier. 3 renders the 96x64 panel at 288x192.
   final double scale;
 
-  /// Whether to note that content ran past the 8 visible rows.
+  /// Whether to note that content ran past the 7 visible text rows.
   final bool showOverflowHint;
 
   // Classic monochrome TI LCD.
@@ -80,10 +84,11 @@ class Ti84Screen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // The calculator renders plain uppercase text.
-    final allLines = lines ?? wrapForTi84(text.toUpperCase());
-    final visible = allLines.take(kTi84Rows).toList();
-    final overflowed = allLines.length > kTi84Rows;
+    // The firmware does not change case (sanitizeForTI84 leaves it alone), so
+    // neither do we.
+    final allLines = lines ?? wrapForTi84(text);
+    final visible = allLines.take(kTi84TextRows).toList();
+    final overflowed = allLines.length > kTi84TextRows;
 
     // RobotoMono advances 0.6em per glyph, so this fontSize makes one glyph
     // exactly one 6px cell at the given scale.
@@ -106,7 +111,11 @@ class Ti84Screen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: List.generate(kTi84Rows, (i) {
-                final line = i < visible.length ? visible[i] : '';
+                // Bottom row is the BASIC program's nav footer:
+                // Output(8,1,"< | >  Pg:") / Output(8,11,V+1)
+                final line = i == kTi84TextRows
+                    ? '< | >  Pg:${footerPage ?? 1}'
+                    : (i < visible.length ? visible[i] : '');
                 return SizedBox(
                   height: _kCellH * scale,
                   child: Align(
@@ -131,7 +140,7 @@ class Ti84Screen extends StatelessWidget {
         if (showOverflowHint && overflowed) ...[
           const SizedBox(height: 6),
           Text(
-            'Too long — ${allLines.length - kTi84Rows} line(s) run off screen',
+            'Too long — ${allLines.length - kTi84TextRows} line(s) run off screen',
             style: GoogleFonts.inter(
               fontSize: 11,
               color: const Color(0xFFFFAB40),
@@ -143,15 +152,16 @@ class Ti84Screen extends StatelessWidget {
   }
 }
 
-/// Splits [text] into calculator-sized pages of [kTi84Rows] lines each.
+/// Splits [text] into calculator-sized pages of [kTi84TextRows] lines each,
+/// matching `sendPage()`'s `linesPerPage = 7` in the firmware.
 List<List<String>> paginateForTi84(String text) {
-  final lines = wrapForTi84(text.toUpperCase());
+  final lines = wrapForTi84(text);
   if (lines.isEmpty) return [<String>[]];
   final pages = <List<String>>[];
-  for (var i = 0; i < lines.length; i += kTi84Rows) {
+  for (var i = 0; i < lines.length; i += kTi84TextRows) {
     pages.add(lines.sublist(
       i,
-      i + kTi84Rows > lines.length ? lines.length : i + kTi84Rows,
+      i + kTi84TextRows > lines.length ? lines.length : i + kTi84TextRows,
     ));
   }
   return pages;
@@ -186,6 +196,7 @@ class _Ti84PagerState extends State<Ti84Pager> {
           lines: pages[page],
           scale: widget.scale,
           showOverflowHint: false,
+          footerPage: page + 1,
         ),
         const SizedBox(height: 8),
         Row(
@@ -200,7 +211,7 @@ class _Ti84PagerState extends State<Ti84Pager> {
               disabledColor: const Color(0xFF52525B),
             ),
             Text(
-              'Screen ${page + 1} of ${pages.length}  ·  $usedOnPage/$kTi84Rows lines',
+              'Screen ${page + 1} of ${pages.length}  ·  $usedOnPage/$kTi84TextRows lines',
               style: GoogleFonts.inter(
                 fontSize: 11,
                 color: const Color(0xFF8E8E96),
