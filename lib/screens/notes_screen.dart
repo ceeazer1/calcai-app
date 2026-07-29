@@ -7,6 +7,7 @@ import '../services/auth_service.dart';
 import '../services/cloud_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glass_card.dart';
+import '../widgets/ti84_screen.dart';
 
 /// Notes screen — short reference notes synced to the calculator.
 ///
@@ -185,11 +186,43 @@ class _NotesScreenState extends State<NotesScreen> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 16),
+
+                  // ── Live 1:1 TI-84 Plus screen preview ──────────
+                  Row(
+                    children: [
+                      const Icon(Icons.calculate_outlined,
+                          size: 15, color: AppColors.textTertiary),
+                      const SizedBox(width: 6),
+                      Text(
+                        'On your calculator',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Center(
+                    child: ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: bodyCtrl,
+                      builder: (_, value, __) => Ti84Screen(
+                        // Scale 2 (192x128) keeps the Save button reachable
+                        // without scrolling on short screens.
+                        scale: 2,
+                        text: value.text.isEmpty
+                            ? 'YOUR NOTE APPEARS HERE'
+                            : value.text,
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   Text(
-                    'Shows on your calculator. Keep it short.',
+                    '96x64 screen — 16 characters per line, 8 lines.',
                     style: GoogleFonts.inter(
-                      fontSize: 12,
+                      fontSize: 11,
                       color: AppColors.textTertiary,
                     ),
                   ),
