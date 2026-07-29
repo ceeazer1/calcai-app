@@ -26,6 +26,10 @@ class _NotesScreenState extends State<NotesScreen> {
   bool _saving = false;
   String? _error;
 
+  /// Whether the calculator preview is expanded in the editor. Remembered
+  /// across opens so the choice sticks.
+  bool _previewExpanded = true;
+
   @override
   void initState() {
     super.initState();
@@ -160,6 +164,8 @@ class _NotesScreenState extends State<NotesScreen> {
     bodyCtrl.selection =
         TextSelection.collapsed(offset: bodyCtrl.text.length);
     _attachAutoNumbering(bodyCtrl);
+    // Whether the calculator preview is expanded, remembered for this session.
+    final showPreview = ValueNotifier<bool>(_previewExpanded);
 
     final saved = await showModalBottomSheet<bool>(
       context: context,
@@ -227,8 +233,8 @@ class _NotesScreenState extends State<NotesScreen> {
                   TextField(
                     controller: bodyCtrl,
                     autofocus: isNew,
-                    maxLines: 14,
-                    minLines: 9,
+                    maxLines: 16,
+                    minLines: 11,
                     keyboardType: TextInputType.multiline,
                     textCapitalization: TextCapitalization.sentences,
                     style: GoogleFonts.inter(color: AppColors.textPrimary),
@@ -244,44 +250,80 @@ class _NotesScreenState extends State<NotesScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 14),
 
-                  // ── Live 1:1 TI-84 Plus screen preview ──────────
-                  Row(
-                    children: [
-                      const Icon(Icons.calculate_outlined,
-                          size: 15, color: AppColors.textTertiary),
-                      const SizedBox(width: 6),
-                      Text(
-                        'On your calculator',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.textTertiary,
+                  // ── Collapsible 1:1 TI-84 Plus screen preview ──────
+                  ValueListenableBuilder<bool>(
+                    valueListenable: showPreview,
+                    builder: (_, expanded, __) => Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        InkWell(
+                          onTap: () => showPreview.value = !expanded,
+                          borderRadius: BorderRadius.circular(8),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.calculate_rounded,
+                                    size: 16, color: AppColors.textSecondary),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Calc preview',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                                const Spacer(),
+                                AnimatedRotation(
+                                  turns: expanded ? 0.5 : 0.0,
+                                  duration: const Duration(milliseconds: 200),
+                                  child: const Icon(
+                                    Icons.keyboard_arrow_down_rounded,
+                                    size: 20,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Center(
-                    child: ValueListenableBuilder<TextEditingValue>(
-                      valueListenable: bodyCtrl,
-                      builder: (_, value, __) => Ti84Pager(
-                        // Scale 2 (192x128) keeps the Save button reachable
-                        // without scrolling on short screens.
-                        scale: 2,
-                        text: _isBlankBody(value.text)
-                            ? 'YOUR NOTE APPEARS HERE'
-                            : value.text,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '96x64 screen — 16 characters per line, 8 lines each.',
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      color: AppColors.textTertiary,
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 200),
+                          curve: Curves.easeOut,
+                          alignment: Alignment.topCenter,
+                          child: expanded
+                              ? Column(
+                                  children: [
+                                    const SizedBox(height: 8),
+                                    Center(
+                                      child: ValueListenableBuilder<
+                                          TextEditingValue>(
+                                        valueListenable: bodyCtrl,
+                                        builder: (_, value, __) => Ti84Pager(
+                                          scale: 2,
+                                          text: _isBlankBody(value.text)
+                                              ? 'YOUR NOTE APPEARS HERE'
+                                              : value.text,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '96x64 screen — 16 chars per line, '
+                                      '8 lines each.',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        color: AppColors.textTertiary,
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : const SizedBox(width: double.infinity),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -313,6 +355,9 @@ class _NotesScreenState extends State<NotesScreen> {
         ),
       ),
     );
+
+    // Remember the preview choice even if the user cancelled.
+    _previewExpanded = showPreview.value;
 
     if (saved != true || !mounted) return;
     final body = bodyCtrl.text.trimRight();
