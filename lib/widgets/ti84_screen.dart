@@ -59,9 +59,14 @@ class Ti84Screen extends StatelessWidget {
     required this.text,
     this.scale = 3,
     this.showOverflowHint = true,
+    this.lines,
   });
 
   final String text;
+
+  /// Pre-wrapped lines to render instead of wrapping [text]. Used by
+  /// [Ti84Pager] to draw one page at a time.
+  final List<String>? lines;
 
   /// Pixel multiplier. 3 renders the 96x64 panel at 288x192.
   final double scale;
@@ -76,9 +81,9 @@ class Ti84Screen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // The calculator renders plain uppercase text.
-    final lines = wrapForTi84(text.toUpperCase());
-    final visible = lines.take(kTi84Rows).toList();
-    final overflowed = lines.length > kTi84Rows;
+    final allLines = lines ?? wrapForTi84(text.toUpperCase());
+    final visible = allLines.take(kTi84Rows).toList();
+    final overflowed = allLines.length > kTi84Rows;
 
     // RobotoMono advances 0.6em per glyph, so this fontSize makes one glyph
     // exactly one 6px cell at the given scale.
@@ -124,15 +129,94 @@ class Ti84Screen extends StatelessWidget {
           ),
         ),
         if (showOverflowHint && overflowed) ...[
-          SizedBox(height: 6),
+          const SizedBox(height: 6),
           Text(
-            'Too long — ${lines.length - kTi84Rows} line(s) run off screen',
+            'Too long — ${allLines.length - kTi84Rows} line(s) run off screen',
             style: GoogleFonts.inter(
               fontSize: 11,
               color: const Color(0xFFFFAB40),
             ),
           ),
         ],
+      ],
+    );
+  }
+}
+
+/// Splits [text] into calculator-sized pages of [kTi84Rows] lines each.
+List<List<String>> paginateForTi84(String text) {
+  final lines = wrapForTi84(text.toUpperCase());
+  if (lines.isEmpty) return [<String>[]];
+  final pages = <List<String>>[];
+  for (var i = 0; i < lines.length; i += kTi84Rows) {
+    pages.add(lines.sublist(
+      i,
+      i + kTi84Rows > lines.length ? lines.length : i + kTi84Rows,
+    ));
+  }
+  return pages;
+}
+
+/// A TI-84 screen preview that pages through longer notes, so you can see how
+/// many calculator screens the note actually takes.
+class Ti84Pager extends StatefulWidget {
+  const Ti84Pager({super.key, required this.text, this.scale = 2});
+
+  final String text;
+  final double scale;
+
+  @override
+  State<Ti84Pager> createState() => _Ti84PagerState();
+}
+
+class _Ti84PagerState extends State<Ti84Pager> {
+  int _page = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final pages = paginateForTi84(widget.text);
+    // Keep the index valid as the user edits the text.
+    final page = _page.clamp(0, pages.length - 1);
+    final usedOnPage = pages[page].length;
+
+    return Column(
+      children: [
+        Ti84Screen(
+          text: '',
+          lines: pages[page],
+          scale: widget.scale,
+          showOverflowHint: false,
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            IconButton(
+              onPressed:
+                  page > 0 ? () => setState(() => _page = page - 1) : null,
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.chevron_left_rounded, size: 20),
+              color: const Color(0xFFF4F4F5),
+              disabledColor: const Color(0xFF52525B),
+            ),
+            Text(
+              'Screen ${page + 1} of ${pages.length}  ·  $usedOnPage/$kTi84Rows lines',
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                color: const Color(0xFF8E8E96),
+              ),
+            ),
+            IconButton(
+              onPressed: page < pages.length - 1
+                  ? () => setState(() => _page = page + 1)
+                  : null,
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.chevron_right_rounded, size: 20),
+              color: const Color(0xFFF4F4F5),
+              disabledColor: const Color(0xFF52525B),
+            ),
+          ],
+        ),
       ],
     );
   }

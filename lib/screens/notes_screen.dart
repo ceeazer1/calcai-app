@@ -82,6 +82,12 @@ class _NotesScreenState extends State<NotesScreen> {
     return ok;
   }
 
+  /// True when the body holds nothing but empty list markers (e.g. the seeded
+  /// "1. "), so we don't save or preview an empty numbered note.
+  static bool _isBlankBody(String body) => body
+      .split('\n')
+      .every((l) => l.replaceAll(RegExp(r'^\s*\d+[.)]\s*'), '').trim().isEmpty);
+
   void _toast(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -93,6 +99,54 @@ class _NotesScreenState extends State<NotesScreen> {
     );
   }
 
+  /// Keeps the body field behaving like a numbered document: pressing Enter
+  /// after "3. foo" starts "4. ", and pressing Enter on an empty numbered line
+  /// ends the list instead of adding another number.
+  void _attachAutoNumbering(TextEditingController ctrl) {
+    var previous = ctrl.text;
+    ctrl.addListener(() {
+      final text = ctrl.text;
+      final sel = ctrl.selection;
+      // Only react to a single character being typed at the caret.
+      if (text.length != previous.length + 1 ||
+          !sel.isCollapsed ||
+          sel.baseOffset <= 0 ||
+          text[sel.baseOffset - 1] != '\n') {
+        previous = text;
+        return;
+      }
+
+      final priorLine =
+          text.substring(0, sel.baseOffset - 1).split('\n').last;
+      final numbered = RegExp(r'^(\d+)[.)]\s*(.*)$').firstMatch(priorLine);
+      if (numbered == null) {
+        previous = text;
+        return;
+      }
+
+      String newText;
+      int caret;
+      if (numbered.group(2)!.trim().isEmpty) {
+        // Enter on an empty numbered line → drop the number, end the list.
+        final start = sel.baseOffset - 1 - priorLine.length;
+        newText = text.substring(0, start) + text.substring(sel.baseOffset - 1);
+        caret = start;
+      } else {
+        final next = '${int.parse(numbered.group(1)!) + 1}. ';
+        newText = text.substring(0, sel.baseOffset) +
+            next +
+            text.substring(sel.baseOffset);
+        caret = sel.baseOffset + next.length;
+      }
+
+      previous = newText;
+      ctrl.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: caret),
+      );
+    });
+  }
+
   Future<void> _editNote({CalcNote? existing}) async {
     final isNew = existing == null;
     if (isNew && _notes.length >= _maxNotes) {
@@ -101,7 +155,11 @@ class _NotesScreenState extends State<NotesScreen> {
     }
 
     final titleCtrl = TextEditingController(text: existing?.title ?? '');
-    final bodyCtrl = TextEditingController(text: existing?.body ?? '');
+    // New notes start the numbered list off at "1. ".
+    final bodyCtrl = TextEditingController(text: existing?.body ?? '1. ');
+    bodyCtrl.selection =
+        TextSelection.collapsed(offset: bodyCtrl.text.length);
+    _attachAutoNumbering(bodyCtrl);
 
     final saved = await showModalBottomSheet<bool>(
       context: context,
@@ -208,19 +266,19 @@ class _NotesScreenState extends State<NotesScreen> {
                   Center(
                     child: ValueListenableBuilder<TextEditingValue>(
                       valueListenable: bodyCtrl,
-                      builder: (_, value, __) => Ti84Screen(
+                      builder: (_, value, __) => Ti84Pager(
                         // Scale 2 (192x128) keeps the Save button reachable
                         // without scrolling on short screens.
                         scale: 2,
-                        text: value.text.isEmpty
+                        text: _isBlankBody(value.text)
                             ? 'YOUR NOTE APPEARS HERE'
                             : value.text,
                       ),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 4),
                   Text(
-                    '96x64 screen — 16 characters per line, 8 lines.',
+                    '96x64 screen — 16 characters per line, 8 lines each.',
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       color: AppColors.textTertiary,
@@ -257,8 +315,8 @@ class _NotesScreenState extends State<NotesScreen> {
     );
 
     if (saved != true || !mounted) return;
-    final body = bodyCtrl.text.trim();
-    if (body.isEmpty) {
+    final body = bodyCtrl.text.trimRight();
+    if (_isBlankBody(body)) {
       _toast('Note is empty');
       return;
     }
