@@ -643,3 +643,78 @@ class CloudException implements Exception {
   @override
   String toString() => 'CloudException($statusCode): $message';
 }
+
+/// Preview-only [CloudService] backed by in-memory state instead of the API.
+///
+/// Active **only** under `--dart-define=UI_PREVIEW=true`; release builds pass no
+/// dart-defines, so this never ships. It starts **empty** — no fabricated notes
+/// or history — but lets notes be created, edited and deleted so the feature can
+/// actually be exercised in a browser.
+class PreviewCloudService extends CloudService {
+  /// Notes envelope, exactly as the real backend would store it.
+  String _notesPayload = '';
+
+  PreviewCloudService() {
+    _usage = {
+      'plan': 'free',
+      'cheapCount': 0,
+      'expensiveCount': 0,
+      'cheapLimit': 50,
+      'expensiveLimit': 10,
+    };
+    _modelInfo = {'model': 'gpt-5-mini', 'style': 'small'};
+    _deviceInfo = {'calcModel': 'TI-84 Plus', 'firmware': '1.0.0'};
+    _devices = ['ca1ca1000001'];
+  }
+
+  @override
+  Future<void> loadDashboard(String token, String mac) async {
+    _currentMac = mac;
+    notifyListeners();
+  }
+
+  @override
+  Future<String> getNotes(String token, String mac) async {
+    _notes = _notesPayload;
+    _clearError();
+    notifyListeners();
+    return _notesPayload;
+  }
+
+  @override
+  Future<void> setNotes(String token, String mac, String text) async {
+    _notesPayload = text;
+    _notes = text;
+    _clearError();
+    notifyListeners();
+  }
+
+  // ── Everything else stays local so preview never hits the network ──
+
+  @override
+  Future<List<Map<String, dynamic>>> getHistory(String token, String mac,
+      {int limit = 50}) async => _history;
+
+  @override
+  Future<bool> clearHistory(String token, String mac) async {
+    _history = [];
+    notifyListeners();
+    return true;
+  }
+
+  @override
+  Future<List<String>> getDevices(String token) async => _devices;
+
+  @override
+  Future<void> claimDevice(String token, String mac, {String? proof}) async {}
+
+  @override
+  Future<Map<String, dynamic>> listApiKeys(String token) async => _apiKeys;
+
+  @override
+  Future<void> setModel(
+      String token, String mac, String model, String style) async {
+    _modelInfo = {'model': model, 'style': style};
+    notifyListeners();
+  }
+}

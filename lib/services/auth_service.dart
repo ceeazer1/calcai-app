@@ -539,3 +539,38 @@ class AuthService extends ChangeNotifier {
     super.dispose();
   }
 }
+
+/// Preview-only [AuthService] that boots signed-in with a paired device.
+///
+/// Active **only** under `--dart-define=UI_PREVIEW=true`. Release builds pass
+/// no dart-defines (see codemagic.yaml), so this is unreachable in production.
+/// It fakes the session + pairing so features can be exercised in a browser; it
+/// does not fabricate any user content.
+class PreviewAuthService extends AuthService {
+  @override
+  Future<void> init() async {
+    _isAuthenticated = true;
+    _username = 'Preview';
+    _email = 'preview@calcai.cc';
+    _token = 'preview-token';
+    _deviceMacs = ['ca1ca1000001'];
+    _primaryMac = 'ca1ca1000001';
+    _error = null;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> fetchDevices() async {}
+
+  @override
+  Future<String?> signInWithApple() async {
+    await init();
+    return null;
+  }
+
+  @override
+  Future<bool> signInWithGoogle() async {
+    await init();
+    return true;
+  }
+}
