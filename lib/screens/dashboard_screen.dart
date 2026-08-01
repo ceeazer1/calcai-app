@@ -9,6 +9,7 @@ import '../theme/app_colors.dart';
 import '../widgets/glass_card.dart';
 import 'link_device_screen.dart';
 import 'wifi_screen.dart';
+import '../utils/latex_readable.dart';
 
 /// Model IDs usable on the free plan. Everything else is premium.
 const Set<String> kFreeModels = {
@@ -809,7 +810,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         final question = isImage
             ? 'Photo'
             : (last['question'] ?? last['prompt'] ?? '').toString();
-        final response = (last['response'] ?? '').toString();
+        final response = latexToReadable((last['response'] ?? '').toString());
         final imageUrl = last['imageUrl']?.toString();
 
         return GlassCard(

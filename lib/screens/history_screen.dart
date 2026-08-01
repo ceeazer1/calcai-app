@@ -6,6 +6,7 @@ import '../services/auth_service.dart';
 import '../services/cloud_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glass_card.dart';
+import '../utils/latex_readable.dart';
 
 /// History screen — shows all AI interactions from the calculator,
 /// including camera photos and text prompts.
@@ -294,7 +295,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     // Search filter
                     if (q.isEmpty) return true;
                     final text = _questionOf(entry).toLowerCase();
-                    final resp = (entry['response'] ?? '').toString().toLowerCase();
+                    final resp =
+                        latexToReadable((entry['response'] ?? '').toString())
+                            .toLowerCase();
                     return text.contains(q) || resp.contains(q);
                   }).toList();
 
@@ -386,7 +389,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final isImage = _isImageEntry(entry);
     final imageUrl = entry['imageUrl']?.toString();
     final question = _questionOf(entry);
-    final response = (entry['response'] ?? '').toString();
+    // Logged answers are LaTeX (the calculator renders them as an image).
+    // Show a readable version; this is local string work, so it costs the
+    // calculator's response path nothing.
+    final response = latexToReadable((entry['response'] ?? '').toString());
 
     showModalBottomSheet(
       context: context,
@@ -550,7 +556,10 @@ class _HistoryCard extends StatelessWidget {
     final isImage = _isImageEntry(entry);
     final imageUrl = entry['imageUrl']?.toString();
     final question = _questionOf(entry);
-    final response = (entry['response'] ?? '').toString();
+    // Logged answers are LaTeX (the calculator renders them as an image).
+    // Show a readable version; this is local string work, so it costs the
+    // calculator's response path nothing.
+    final response = latexToReadable((entry['response'] ?? '').toString());
     final model = (entry['model'] ?? '').toString();
 
     return Padding(
