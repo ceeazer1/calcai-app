@@ -61,6 +61,15 @@ class CloudService extends ChangeNotifier {
   String? _error;
   String? get error => _error;
 
+  /// Per-feature errors. [error] is shared by every call, so without these a
+  /// failing notes fetch made the History tab report "Couldn't load history".
+  /// Screens should prefer the specific one.
+  String? _historyError;
+  String? get historyError => _historyError;
+
+  String? _notesError;
+  String? get notesError => _notesError;
+
   // ── Convenience Getters ─────────────────────────────────────────────
 
   /// The display name for the device (e.g. "TI-84 Plus").
@@ -246,29 +255,46 @@ class CloudService extends ChangeNotifier {
 
   /// Retrieves user notes for a device.
   ///
-  /// GET /ai/notes/get?mac=
+  /// GET /ai/notes/raw?mac= — the app-facing JSON endpoint, which returns the
+  /// stored `calcai-notes-v1` envelope verbatim.
+  ///
+  /// Deliberately *not* /ai/notes/get: that one belongs to the firmware. It
+  /// answers `text/plain`, replies 204 with an empty body when there are no
+  /// notes, and flattens the envelope into " | "-joined bodies for the
+  /// calculator LCD — none of which the app can parse.
   Future<String> getNotes(String token, String mac) async {
     try {
       _setLoading(true);
       _clearError();
 
       final response = await _client.get(
-        Uri.parse('$_baseUrl/ai/notes/get?mac=$mac'),
+        Uri.parse('$_baseUrl/ai/notes/raw?mac=$mac'),
         headers: _authHeaders(token),
       );
 
       _assertSuccess(response);
+      _notesError = null;
 
-      final data = jsonDecode(response.body);
-      _notes = (data is Map ? data['text'] : data).toString();
+      // An empty body is "no notes", not a failure.
+      final body = response.body.trim();
+      _notes = body.isEmpty ? '' : (_decodeJson(body)['text'] ?? '').toString();
       notifyListeners();
       return _notes!;
     } catch (e) {
-      _setError('Failed to load notes: ${_friendlyError(e)}');
+      _notesError = 'Failed to load notes: ${_friendlyError(e)}';
+      _setError(_notesError!);
       return '';
     } finally {
       _setLoading(false);
     }
+  }
+
+  /// Decodes a JSON object body, turning a non-JSON payload into a clear
+  /// message instead of a bare `FormatException`.
+  Map<String, dynamic> _decodeJson(String body) {
+    final data = jsonDecode(body);
+    if (data is Map<String, dynamic>) return data;
+    throw const FormatException('Expected a JSON object');
   }
 
   /// Saves user notes for a device.
@@ -286,11 +312,13 @@ class CloudService extends ChangeNotifier {
       );
 
       _assertSuccess(response);
+      _notesError = null;
 
       _notes = text;
       notifyListeners();
     } catch (e) {
-      _setError('Failed to save notes: ${_friendlyError(e)}');
+      _notesError = 'Failed to save notes: ${_friendlyError(e)}';
+      _setError(_notesError!);
     } finally {
       _setLoading(false);
     }
@@ -316,6 +344,7 @@ class CloudService extends ChangeNotifier {
       );
 
       _assertSuccess(response);
+      _historyError = null;
 
       final data = jsonDecode(response.body);
       // Worker returns { ok, items: [...] }
@@ -325,7 +354,8 @@ class CloudService extends ChangeNotifier {
       notifyListeners();
       return _history;
     } catch (e) {
-      _setError('Failed to load history: ${_friendlyError(e)}');
+      _historyError = 'Failed to load history: ${_friendlyError(e)}';
+      _setError(_historyError!);
       return [];
     } finally {
       _setLoading(false);
@@ -625,6 +655,8 @@ class CloudService extends ChangeNotifier {
     _history = [];
     _usage = null;
     _error = null;
+    _historyError = null;
+    _notesError = null;
     _isLoading = false;
     notifyListeners();
   }

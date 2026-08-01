@@ -60,7 +60,7 @@ class _NotesScreenState extends State<NotesScreen> {
     setState(() {
       _notes = CalcNote.parseStored(raw);
       _loading = false;
-      _error = cloud.error;
+      _error = cloud.notesError;
     });
   }
 
@@ -78,10 +78,10 @@ class _NotesScreenState extends State<NotesScreen> {
       CalcNote.toEnvelope(_notes),
     );
     if (!mounted) return false;
-    final ok = cloud.error == null;
+    final ok = cloud.notesError == null;
     setState(() {
       _saving = false;
-      _error = cloud.error;
+      _error = cloud.notesError;
     });
     return ok;
   }

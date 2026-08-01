@@ -301,7 +301,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   if (filtered.isEmpty) {
                     final auth = context.read<AuthService>();
                     final mac = auth.primaryMac;
-                    final err = cloud.error;
+                    // Only a *history* failure means history failed. The shared
+                    // `error` field also carries notes/model/usage errors.
+                    final err = cloud.historyError;
                     return Center(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 32),
