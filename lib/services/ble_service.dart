@@ -9,6 +9,7 @@ import 'dart:io' show Platform;
 
 import '../models/calcai_device.dart';
 import '../models/wifi_network.dart';
+import '../utils/log.dart';
 
 /// A device's answer to an identity challenge.
 ///
@@ -302,7 +303,7 @@ class BleService extends ChangeNotifier {
           timeout: const Duration(seconds: 4), attempts: 1);
       return connectionState.isConnected;
     } catch (e) {
-      debugPrint('reconnectKnownDevice error: $e');
+      logDebug('reconnectKnownDevice error: $e');
       return false;
     }
   }
@@ -343,7 +344,7 @@ class BleService extends ChangeNotifier {
           break;
         } catch (e) {
           lastError = e;
-          debugPrint('connect attempt $attempt/$maxAttempts failed: $e');
+          logDebug('connect attempt $attempt/$maxAttempts failed: $e');
           // Make sure we're fully torn down before retrying, then settle.
           try {
             await device.device.disconnect();
@@ -465,7 +466,7 @@ class BleService extends ChangeNotifier {
         _handleStatusUpdate(value);
       });
     } catch (e) {
-      debugPrint('CalcAI BLE: Could not subscribe to status: $e');
+      logDebug('CalcAI BLE: Could not subscribe to status: $e');
     }
   }
 
@@ -538,16 +539,16 @@ class BleService extends ChangeNotifier {
       List<int> response = [];
       for (int i = 0; i < 5; i++) {
         response = await _scanChar!.read();
-        debugPrint('CalcAI BLE: scan read attempt ${i + 1}, got ${response.length} bytes');
+        logDebug('CalcAI BLE: scan read attempt ${i + 1}, got ${response.length} bytes');
         if (response.length > 10) break;
         await Future.delayed(const Duration(seconds: 2));
       }
 
       if (response.isNotEmpty && response.length > 4) {
         _parseWifiScanResults(response);
-        debugPrint('CalcAI BLE: parsed ${_wifiNetworks.length} networks');
+        logDebug('CalcAI BLE: parsed ${_wifiNetworks.length} networks');
       } else {
-        debugPrint('CalcAI BLE: no scan results received (${response.length} bytes)');
+        logDebug('CalcAI BLE: no scan results received (${response.length} bytes)');
       }
 
       _provisioningState = ProvisioningState.idle;
@@ -578,7 +579,7 @@ class BleService extends ChangeNotifier {
         _wifiNetworks.sort((a, b) => b.rssi.compareTo(a.rssi));
       }
     } catch (e) {
-      debugPrint('CalcAI BLE: Error parsing WiFi scan results: $e');
+      logDebug('CalcAI BLE: Error parsing WiFi scan results: $e');
       // Try a simpler line-based format as fallback
       _parseFallbackScanResults(data);
     }
@@ -638,7 +639,7 @@ class BleService extends ChangeNotifier {
                 if (ssid.isNotEmpty) _savedNetworks.add(ssid);
               }
             }
-            debugPrint(
+            logDebug(
                 'CalcAI BLE: got ${_savedNetworks.length} saved networks');
             await _persistSavedNetworks();
           }
@@ -647,7 +648,7 @@ class BleService extends ChangeNotifier {
         }
       }
     } catch (e) {
-      debugPrint('CalcAI BLE: Error fetching saved networks: $e');
+      logDebug('CalcAI BLE: Error fetching saved networks: $e');
     } finally {
       _savedNetworksLoading = false;
       notifyListeners();
@@ -672,7 +673,7 @@ class BleService extends ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
-      debugPrint('CalcAI BLE: Error loading persisted networks: $e');
+      logDebug('CalcAI BLE: Error loading persisted networks: $e');
     }
   }
 
@@ -690,7 +691,7 @@ class BleService extends ChangeNotifier {
         jsonEncode(_savedNetworks),
       );
     } catch (e) {
-      debugPrint('CalcAI BLE: Error persisting networks: $e');
+      logDebug('CalcAI BLE: Error persisting networks: $e');
     }
   }
 
@@ -749,7 +750,7 @@ class BleService extends ChangeNotifier {
         }
       }
     } catch (e) {
-      debugPrint('CalcAI BLE: identity challenge failed: $e');
+      logDebug('CalcAI BLE: identity challenge failed: $e');
     }
     return null;
   }
@@ -786,7 +787,7 @@ class BleService extends ChangeNotifier {
     try {
       genuine = await verifier(challenge);
     } catch (e) {
-      debugPrint('CalcAI BLE: verifier error: $e');
+      logDebug('CalcAI BLE: verifier error: $e');
       genuine = false;
     }
 

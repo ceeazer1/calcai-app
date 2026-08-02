@@ -7,6 +7,7 @@ import '../services/cloud_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glass_card.dart';
 import '../utils/latex_readable.dart';
+import '../utils/safe_image.dart';
 
 /// History screen — shows all AI interactions from the calculator,
 /// including camera photos and text prompts.
@@ -387,7 +388,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   void _showDetail(BuildContext context, Map<String, dynamic> entry) {
     final isImage = _isImageEntry(entry);
-    final imageUrl = entry['imageUrl']?.toString();
+    final imageUrl = safeImageUrl(entry['imageUrl']?.toString());
     final question = _questionOf(entry);
     // Logged answers are LaTeX (the calculator renders them as an image).
     // Show a readable version; this is local string work, so it costs the
@@ -554,7 +555,7 @@ class _HistoryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isImage = _isImageEntry(entry);
-    final imageUrl = entry['imageUrl']?.toString();
+    final imageUrl = safeImageUrl(entry['imageUrl']?.toString());
     final question = _questionOf(entry);
     // Logged answers are LaTeX (the calculator renders them as an image).
     // Show a readable version; this is local string work, so it costs the

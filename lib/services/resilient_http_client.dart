@@ -172,10 +172,21 @@ class _ResilientClient extends http.BaseClient {
     return _parse(resBytes, request);
   }
 
+  /// Largest response body we will buffer.
+  ///
+  /// This client reads to EOF into memory, so without a ceiling a server that
+  /// never stops sending would grow the buffer until the app is killed. 24 MB
+  /// is far above anything the API returns (the biggest is a few hundred KB of
+  /// history) while still bounding the damage.
+  static const int _maxResponseBytes = 24 * 1024 * 1024;
+
   static Future<Uint8List> _readAll(Stream<List<int>> s) async {
     final b = BytesBuilder(copy: false);
     await for (final chunk in s) {
       b.add(chunk);
+      if (b.length > _maxResponseBytes) {
+        throw const HttpException('Response too large');
+      }
     }
     return b.takeBytes();
   }

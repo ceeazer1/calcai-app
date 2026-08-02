@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'resilient_http_client.dart';
+import '../utils/log.dart';
 
 /// Cloud service for the CalcAI REST API at [_baseUrl].
 ///
@@ -160,13 +161,13 @@ class CloudService extends ChangeNotifier {
           )
           .timeout(const Duration(seconds: 15));
       if (resp.statusCode != 200) {
-        debugPrint('verifyDevice rejected: ${resp.statusCode}');
+        logDebug('verifyDevice rejected: ${resp.statusCode}');
         return false;
       }
       final data = jsonDecode(resp.body);
       return data is Map && data['ok'] == true;
     } catch (e) {
-      debugPrint('verifyDevice error: $e');
+      logDebug('verifyDevice error: $e');
       return false;
     }
   }
@@ -490,7 +491,7 @@ class CloudService extends ChangeNotifier {
         eagerError: false,
       );
 
-      debugPrint(
+      logDebug(
         'CalcAI Cloud: Dashboard loaded — '
         'model=${(results[0] as Map).length} keys, '
         'usage=${(results[1] as Map).length} keys, '
@@ -576,7 +577,7 @@ class CloudService extends ChangeNotifier {
       );
       if (resp.statusCode == 200) return true;
     } catch (e) {
-      debugPrint('toggleApiKey error: $e');
+      logDebug('toggleApiKey error: $e');
     }
     // Revert on failure.
     if (_apiKeys[p] is Map) {
@@ -604,7 +605,7 @@ class CloudService extends ChangeNotifier {
       }
       return _apiKeys;
     } catch (e) {
-      debugPrint('listApiKeys error: $e');
+      logDebug('listApiKeys error: $e');
       return _apiKeys;
     }
   }
@@ -634,7 +635,7 @@ class CloudService extends ChangeNotifier {
       }
       return false;
     } catch (e) {
-      debugPrint('saveApiKey error: $e');
+      logDebug('saveApiKey error: $e');
       return false;
     }
   }
@@ -657,7 +658,7 @@ class CloudService extends ChangeNotifier {
       }
       return false;
     } catch (e) {
-      debugPrint('deleteApiKey error: $e');
+      logDebug('deleteApiKey error: $e');
       return false;
     }
   }
@@ -669,7 +670,7 @@ class CloudService extends ChangeNotifier {
 
   void _setError(String message) {
     _error = message;
-    debugPrint('CalcAI Cloud: $message');
+    logDebug('CalcAI Cloud: $message');
     notifyListeners();
   }
 

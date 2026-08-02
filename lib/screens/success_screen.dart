@@ -119,9 +119,10 @@ class _SuccessScreenState extends State<SuccessScreen>
     if (mac != null) await ble.setPersistMac(mac);
     ble.disconnect();
 
-    // Register the device with the cloud and set it as the primary device
-    // so the home page can load cloud data immediately. The proof (read over
-    // BLE) proves to the worker this is a genuine, physically-present device.
+    // Register the device with the cloud and set it as the primary device so
+    // the home page can load cloud data immediately. The challenge answer
+    // (read over BLE) proves to the worker this is a genuine, physically
+    // present device rather than a guessed MAC.
     if (mac != null && auth.token != null) {
       await cloud.claimDevice(
         auth.token!,

@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import 'resilient_http_client.dart';
+import '../utils/log.dart';
 
 /// Manages authentication state for the CalcAI app.
 ///
@@ -169,7 +170,7 @@ class AuthService extends ChangeNotifier {
 
       _isAuthenticated = _token != null;
     } catch (e) {
-      debugPrint('AuthService.init error: $e');
+      logDebug('AuthService.init error: $e');
       _error = 'Failed to load saved session.';
     } finally {
       _isLoading = false;
@@ -239,7 +240,7 @@ class AuthService extends ChangeNotifier {
     } on TimeoutException {
       return 'Connection timed out. Please try again.';
     } catch (e) {
-      debugPrint('signInWithApple error: $e');
+      logDebug('signInWithApple error: $e');
       return 'Sign-in failed. Please try again.';
     } finally {
       _setLoading(false);
@@ -297,7 +298,7 @@ class AuthService extends ChangeNotifier {
       await fetchDevices();
       return true;
     } catch (e) {
-      debugPrint('signInWithGoogle error: $e');
+      logDebug('signInWithGoogle error: $e');
       _error = 'Google sign-in failed. Please try again.';
       return false;
     } finally {
@@ -355,7 +356,7 @@ class AuthService extends ChangeNotifier {
       _error = 'Network error: ${e.message}';
       return false;
     } catch (e) {
-      debugPrint('signInWithCredentials error: $e');
+      logDebug('signInWithCredentials error: $e');
       _error = 'Could not sign in. Please try again.';
       return false;
     } finally {
@@ -412,12 +413,12 @@ class AuthService extends ChangeNotifier {
         await _saveToStorage();
         notifyListeners();
       } else {
-        debugPrint(
+        logDebug(
           'AuthService.fetchDevices failed: ${response.statusCode}',
         );
       }
     } catch (e) {
-      debugPrint('AuthService.fetchDevices error: $e');
+      logDebug('AuthService.fetchDevices error: $e');
     }
   }
 
@@ -426,7 +427,11 @@ class AuthService extends ChangeNotifier {
   /// This is a **local-only** operation — call [fetchDevices] afterwards if
   /// the device also needs to be registered server-side.
   Future<void> addDevice(String mac) async {
-    final normalised = mac.toUpperCase();
+    // Lowercase, no separators — the backend's canonical form. This used to
+    // uppercase, which meant the value written here never matched the list
+    // /ai/user/devices returns, so primaryMac silently reset on the next
+    // fetch. Storing it the same way everywhere removes that round trip.
+    final normalised = mac.replaceAll(RegExp(r'[^0-9a-zA-Z]'), '').toLowerCase();
 
     if (!_deviceMacs.contains(normalised)) {
       _deviceMacs.add(normalised);
@@ -474,7 +479,7 @@ class AuthService extends ChangeNotifier {
     } on TimeoutException {
       return 'Request timed out. Please try again.';
     } catch (e) {
-      debugPrint('deleteAccount error: $e');
+      logDebug('deleteAccount error: $e');
       return 'Could not delete account. Please try again.';
     } finally {
       _setLoading(false);
