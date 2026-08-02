@@ -4,6 +4,12 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<!-- Export compliance. CalcAI's only cryptography is HTTPS/TLS to
+	     ai.calcai.cc plus HMAC-SHA256 authentication, both of which are exempt
+	     under Category 5 Part 2 note 4. Declaring it here stops App Store
+	     Connect asking on every single upload. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
