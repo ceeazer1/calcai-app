@@ -124,12 +124,21 @@ class _SuccessScreenState extends State<SuccessScreen>
     // (read over BLE) proves to the worker this is a genuine, physically
     // present device rather than a guessed MAC.
     if (mac != null && auth.token != null) {
-      await cloud.claimDevice(
+      final claimed = await cloud.claimDevice(
         auth.token!,
         mac,
         nonce: challenge?.nonce,
         challengeResponse: challenge?.response,
       );
+      // Only record the device locally if the backend actually gave it to this
+      // account. Adding it regardless (the old behaviour) let a second account
+      // that connected to an already-owned CalcAI over BLE look paired, while
+      // every server call for that MAC returned 403.
+      if (!claimed) {
+        if (!mounted) return;
+        _showClaimFailed(cloud.error);
+        return;
+      }
       await auth.addDevice(mac);
     }
 
@@ -150,6 +159,50 @@ class _SuccessScreenState extends State<SuccessScreen>
         },
       ),
       (_) => false,
+    );
+  }
+
+  /// Explains why setup stopped, and leaves the user where they are instead of
+  /// dropping them into an app that looks paired but cannot load anything.
+  void _showClaimFailed(String? detail) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: AppColors.glassBorder),
+        ),
+        title: Text(
+          "Couldn't link this CalcAI",
+          style: GoogleFonts.outfit(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          detail ??
+              'This CalcAI is already linked to another account. Sign in with '
+                  'that account, or remove the device from it first.',
+          style: GoogleFonts.inter(
+            color: AppColors.textSecondary,
+            fontSize: 14,
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              'OK',
+              style: GoogleFonts.inter(
+                color: AppColors.electricBlue,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

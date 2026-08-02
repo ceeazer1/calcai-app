@@ -179,7 +179,13 @@ class CloudService extends ChangeNotifier {
   /// [nonce] / [challengeResponse] are the device's answer to the identity
   /// challenge read over BLE, proving the claimer was physically connected to
   /// a real device rather than guessing a MAC.
-  Future<void> claimDevice(
+  /// Returns true only when the device now belongs to this account.
+  ///
+  /// This **must** be checked. A device already claimed by someone else comes
+  /// back 409, and treating that as success leaves the app believing it owns
+  /// hardware the backend will refuse to serve — every history/notes/usage
+  /// call then 403s with no explanation.
+  Future<bool> claimDevice(
     String token,
     String mac, {
     String? nonce,
@@ -200,12 +206,24 @@ class CloudService extends ChangeNotifier {
         }),
       );
 
+      // 409 is the ownership lock doing its job, and the body is plain text,
+      // so spell the message out rather than surfacing "Conflict".
+      if (response.statusCode == 409) {
+        _setError(
+          'This CalcAI is already linked to another account. Sign in with '
+          'that account, or remove the device from it first.',
+        );
+        return false;
+      }
+
       _assertSuccess(response);
 
       // Refresh device list after successful claim.
       await getDevices(token);
+      return true;
     } catch (e) {
       _setError('Failed to claim device: ${_friendlyError(e)}');
+      return false;
     } finally {
       _setLoading(false);
     }
@@ -787,8 +805,8 @@ class PreviewCloudService extends CloudService {
   Future<List<String>> getDevices(String token) async => _devices;
 
   @override
-  Future<void> claimDevice(String token, String mac,
-      {String? nonce, String? challengeResponse}) async {}
+  Future<bool> claimDevice(String token, String mac,
+      {String? nonce, String? challengeResponse}) async => true;
 
   @override
   Future<Map<String, dynamic>> listApiKeys(String token) async => _apiKeys;
