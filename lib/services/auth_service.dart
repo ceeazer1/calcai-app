@@ -306,64 +306,6 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  /// Signs in with an email/username and password against the CalcAI API.
-  ///
-  /// On success the returned JWT is persisted and [fetchDevices] is called
-  /// automatically to hydrate the device list.
-  Future<bool> signInWithCredentials(String username, String password) async {
-    _setLoading(true);
-
-    try {
-      final response = await _httpClient.post(
-        Uri.parse('$_baseUrl/auth/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'email': username,
-          'password': password,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        final body = jsonDecode(response.body) as Map<String, dynamic>;
-
-        _token = body['token'] as String?;
-        _username = body['username'] as String? ?? username;
-        _email = body['email'] as String? ?? username;
-        _isAuthenticated = true;
-        _error = null;
-
-        await _saveToStorage();
-
-        // Eagerly populate the device list after login.
-        await fetchDevices();
-
-        return true;
-      } else {
-        // Attempt to extract a server-provided error message.
-        String message;
-        try {
-          final body = jsonDecode(response.body) as Map<String, dynamic>;
-          message = body['message'] as String? ??
-              body['error'] as String? ??
-              'Login failed (${response.statusCode})';
-        } catch (_) {
-          message = 'Login failed (${response.statusCode})';
-        }
-        _error = message;
-        return false;
-      }
-    } on http.ClientException catch (e) {
-      _error = 'Network error: ${e.message}';
-      return false;
-    } catch (e) {
-      logDebug('signInWithCredentials error: $e');
-      _error = 'Could not sign in. Please try again.';
-      return false;
-    } finally {
-      _setLoading(false);
-    }
-  }
-
   // ── Device Management ─────────────────────────────────────────────────
 
   /// Fetches the list of devices paired to the current user from the API.
