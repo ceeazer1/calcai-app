@@ -48,7 +48,7 @@ class AuthService extends ChangeNotifier {
 
   /// Generate a cryptographically secure nonce for Apple Sign-In.
   static String _generateNonce([int length = 32]) {
-    const charset = '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
+    const charset = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-._';
     final random = Random.secure();
     return List.generate(length, (_) => charset[random.nextInt(charset.length)]).join();
   }
@@ -103,6 +103,21 @@ class AuthService extends ChangeNotifier {
 
   // ── Constructor ───────────────────────────────────────────────────────
 
+  /// Keychain policy for the session token.
+  ///
+  /// `first_unlock_this_device` rather than the package default (`unlocked`):
+  /// the default is not "ThisDeviceOnly", so the token travels in encrypted
+  /// device backups and can be restored onto a *different* phone — and the
+  /// `session_valid` flag restores with it, so [init]'s stale-token check
+  /// wouldn't catch it either. `first_unlock` (not `unlocked`) so a token
+  /// refresh still works if the app is ever woken in the background.
+  static const _tokenStorage = FlutterSecureStorage(
+    iOptions: IOSOptions(
+      accessibility: KeychainAccessibility.first_unlock_this_device,
+    ),
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
+
   /// Creates an [AuthService].
   ///
   /// Accepts optional [secureStorage] and [httpClient] for testability;
@@ -110,7 +125,7 @@ class AuthService extends ChangeNotifier {
   AuthService({
     FlutterSecureStorage? secureStorage,
     http.Client? httpClient,
-  })  : _secureStorage = secureStorage ?? const FlutterSecureStorage(),
+  })  : _secureStorage = secureStorage ?? _tokenStorage,
         _httpClient = httpClient ?? createResilientClient();
 
   // ── Initialisation ────────────────────────────────────────────────────
@@ -224,7 +239,8 @@ class AuthService extends ChangeNotifier {
     } on TimeoutException {
       return 'Connection timed out. Please try again.';
     } catch (e) {
-      return 'Sign-in failed: $e';
+      debugPrint('signInWithApple error: $e');
+      return 'Sign-in failed. Please try again.';
     } finally {
       _setLoading(false);
     }
@@ -281,7 +297,8 @@ class AuthService extends ChangeNotifier {
       await fetchDevices();
       return true;
     } catch (e) {
-      _error = 'Google sign-in failed: $e';
+      debugPrint('signInWithGoogle error: $e');
+      _error = 'Google sign-in failed. Please try again.';
       return false;
     } finally {
       _setLoading(false);
@@ -338,7 +355,8 @@ class AuthService extends ChangeNotifier {
       _error = 'Network error: ${e.message}';
       return false;
     } catch (e) {
-      _error = 'Unexpected error during sign-in: $e';
+      debugPrint('signInWithCredentials error: $e');
+      _error = 'Could not sign in. Please try again.';
       return false;
     } finally {
       _setLoading(false);
@@ -456,7 +474,8 @@ class AuthService extends ChangeNotifier {
     } on TimeoutException {
       return 'Request timed out. Please try again.';
     } catch (e) {
-      return 'Could not delete account: $e';
+      debugPrint('deleteAccount error: $e');
+      return 'Could not delete account. Please try again.';
     } finally {
       _setLoading(false);
     }
@@ -522,7 +541,15 @@ class AuthService extends ChangeNotifier {
       prefs.remove(_keyDeviceMacs),
       prefs.remove(_keyPrimaryMac),
       prefs.remove(_keySessionValid),
+      // Signing out shouldn't leave the last peripheral behind either.
+      prefs.remove('last_ble_device_id'),
     ]);
+
+    // The saved Wi-Fi SSIDs are per-device and were surviving sign-out, so the
+    // next account on this phone inherited the previous user's network names.
+    for (final k in prefs.getKeys().toList()) {
+      if (k.startsWith('saved_networks_')) await prefs.remove(k);
+    }
   }
 
   /// Sets [_isLoading] and notifies listeners in one call.

@@ -7,6 +7,7 @@ import 'screens/link_device_screen.dart';
 import 'screens/main_shell.dart';
 import 'services/auth_service.dart';
 import 'services/ble_service.dart';
+import 'services/cloud_service.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
 
@@ -63,6 +64,24 @@ class _AppGateState extends State<_AppGate> {
   Future<void> _initAuth() async {
     final auth = context.read<AuthService>();
     final ble = context.read<BleService>();
+    final cloud = context.read<CloudService>();
+
+    // Let BleService ask the backend whether a peripheral is a genuine CalcAI
+    // before it sends the user's Wi-Fi password to it. Wired here because this
+    // is the first point where all three services exist; BleService fails
+    // closed if it is missing, so a broken wiring blocks setup rather than
+    // quietly disabling the check.
+    ble.deviceVerifier = (challenge) async {
+      final token = auth.token;
+      if (token == null) return false;
+      return cloud.verifyDevice(
+        token,
+        challenge.mac,
+        challenge.nonce,
+        challenge.response,
+      );
+    };
+
     await auth.init();
 
     // Load persisted WiFi networks so they display offline

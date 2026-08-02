@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../services/auth_service.dart';
+import '../services/cloud_service.dart';
 import '../theme/app_colors.dart';
 import 'scan_screen.dart';
 
@@ -65,8 +66,13 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen>
                   Align(
                     alignment: Alignment.centerRight,
                     child: IconButton(
-                      onPressed: () =>
-                          context.read<AuthService>().signOut(),
+                      // Clear cloud state too, or the next account to sign in
+                      // on this phone sees the previous user's history and
+                      // notes until a refresh lands.
+                      onPressed: () {
+                        context.read<AuthService>().signOut();
+                        context.read<CloudService>().reset();
+                      },
                       icon: const Icon(
                         Icons.logout_rounded,
                         color: AppColors.textTertiary,

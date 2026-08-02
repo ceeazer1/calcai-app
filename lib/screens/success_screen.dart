@@ -109,8 +109,11 @@ class _SuccessScreenState extends State<SuccessScreen>
 
     // Use the WiFi MAC sent by the ESP32 over BLE (reliable on both iOS and
     // Android). Fall back to remoteId only on Android where it is the real MAC.
-    final mac = ble.deviceMac ?? ble.connectedDevice?.id;
-    final proof = ble.devicePairProof;
+    // The verified challenge is authoritative: its MAC came from a device that
+    // proved itself to the backend. Fall back to the status-reported MAC only
+    // if there is no challenge (it is still validated as a real MAC).
+    final challenge = ble.verifiedChallenge;
+    final mac = challenge?.mac ?? ble.deviceMac ?? ble.connectedDevice?.id;
     // Persist the network(s) saved during setup under this device's MAC so the
     // home page shows them (and they survive restarts).
     if (mac != null) await ble.setPersistMac(mac);
@@ -120,7 +123,12 @@ class _SuccessScreenState extends State<SuccessScreen>
     // so the home page can load cloud data immediately. The proof (read over
     // BLE) proves to the worker this is a genuine, physically-present device.
     if (mac != null && auth.token != null) {
-      await cloud.claimDevice(auth.token!, mac, proof: proof);
+      await cloud.claimDevice(
+        auth.token!,
+        mac,
+        nonce: challenge?.nonce,
+        challengeResponse: challenge?.response,
+      );
       await auth.addDevice(mac);
     }
 

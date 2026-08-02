@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -8,6 +9,27 @@ import 'dart:io' show Platform;
 
 import '../models/calcai_device.dart';
 import '../models/wifi_network.dart';
+
+/// A device's answer to an identity challenge.
+///
+/// [response] is HMAC(PAIR_MASTER_SECRET, "mac|nonce") computed by the
+/// firmware. Only the backend holds the secret, so only the backend can judge
+/// it — this class just carries the three values there.
+class DeviceChallenge {
+  const DeviceChallenge({
+    required this.mac,
+    required this.nonce,
+    required this.response,
+  });
+
+  final String mac;
+  final String nonce;
+  final String response;
+}
+
+/// A MAC as the backend keys them: 12 hex characters, no separators.
+bool isValidMacHex(String? mac) =>
+    mac != null && RegExp(r'^[0-9a-f]{12}$').hasMatch(mac);
 
 /// Comprehensive BLE service for CalcAI ESP32 WiFi provisioning.
 ///
@@ -101,10 +123,19 @@ class BleService extends ChangeNotifier {
   String? _deviceMac;
   String? get deviceMac => _deviceMac;
 
-  /// Proof-of-possession token the device sends over BLE (HMAC of its MAC).
-  /// Relayed to the worker on claim to prove this is a genuine device.
-  String? _devicePairProof;
-  String? get devicePairProof => _devicePairProof;
+  /// The verified identity challenge for the current connection, once the
+  /// backend has confirmed the peripheral is genuine. Also relayed on claim, so
+  /// pairing proves possession with the same nonce-bound answer.
+  DeviceChallenge? _verifiedChallenge;
+  DeviceChallenge? get verifiedChallenge => _verifiedChallenge;
+
+  /// Asks the backend whether a challenge answer is genuine.
+  ///
+  /// Injected (rather than calling CloudService directly) to keep this service
+  /// free of auth/HTTP concerns and testable without a network. Wired up in
+  /// `app.dart`. **Leaving it null fails closed** — the WiFi password is not
+  /// sent to an unverified peripheral just because the wiring was forgotten.
+  Future<bool> Function(DeviceChallenge challenge)? deviceVerifier;
 
   /// Human-readable error message (null when there is no error).
   String? _error;
@@ -406,7 +437,8 @@ class BleService extends ChangeNotifier {
     _wifiNetworks.clear();
     _provisioningState = ProvisioningState.idle;
     _deviceMac = null;
-    _devicePairProof = null;
+    // Verification is per-connection: a new link must prove itself again.
+    _verifiedChallenge = null;
     _setConnectionState(DeviceConnectionState.disconnected);
   }
 
@@ -447,14 +479,15 @@ class BleService extends ChangeNotifier {
       final status = data['status'] as String?;
       if (status == 'connected') {
         _connectedSsid = data['ssid'] as String? ?? _connectedSsid;
-        // Normalize MAC: "AA:BB:CC:DD:EE:FF" → "aabbccddeeff"
+        // Normalize MAC: "AA:BB:CC:DD:EE:FF" → "aabbccddeeff".
+        // Strip every separator, not just colons, and only accept the result if
+        // it is a real MAC — this value reaches API query strings, and it comes
+        // from whatever peripheral we are talking to.
         final rawMac = data['mac'] as String?;
         if (rawMac != null && rawMac.isNotEmpty) {
-          _deviceMac = rawMac.replaceAll(':', '').toLowerCase();
-        }
-        final proof = data['proof'] as String?;
-        if (proof != null && proof.isNotEmpty) {
-          _devicePairProof = proof;
+          final norm =
+              rawMac.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toLowerCase();
+          if (isValidMacHex(norm)) _deviceMac = norm;
         }
         _provisioningState = ProvisioningState.success;
       } else if (status == 'failed') {
@@ -661,6 +694,115 @@ class BleService extends ChangeNotifier {
     }
   }
 
+  // ── Device Identity ────────────────────────────────────────────────
+
+  static final _rng = Random.secure();
+
+  /// A fresh 32-character hex nonce (128 bits).
+  static String _newNonce() {
+    const hex = '0123456789abcdef';
+    return List.generate(32, (_) => hex[_rng.nextInt(16)]).join();
+  }
+
+  /// Asks the connected peripheral to answer an identity challenge.
+  ///
+  /// Writes `{"cmd":"auth","nonce":...}` and reads the answer back from the
+  /// same characteristic, the way the saved-network list already works.
+  /// Returns null if the peripheral cannot answer — which is what an impostor,
+  /// or a device on firmware older than the challenge, will do.
+  Future<DeviceChallenge?> requestIdentityChallenge() async {
+    if (_scanChar == null) return null;
+    final nonce = _newNonce();
+
+    try {
+      await _scanChar!.write(
+        utf8.encode(jsonEncode({'cmd': 'auth', 'nonce': nonce})),
+        withoutResponse: _scanChar!.properties.writeWithoutResponse,
+      );
+
+      // The firmware answers inline in its write callback, so the value is
+      // ready almost immediately; a few short retries cover BLE scheduling.
+      for (var attempt = 0; attempt < 4; attempt++) {
+        await Future.delayed(const Duration(milliseconds: 250));
+        final raw = await _scanChar!.read();
+        if (raw.isEmpty) continue;
+        try {
+          final data = jsonDecode(utf8.decode(raw));
+          if (data is! Map) continue;
+
+          final mac = (data['mac'] ?? '')
+              .toString()
+              .replaceAll(RegExp(r'[^0-9a-fA-F]'), '')
+              .toLowerCase();
+          final echoed = (data['nonce'] ?? '').toString().toLowerCase();
+          final answer = (data['response'] ?? '').toString().toLowerCase();
+
+          // The echoed nonce must be the one we just generated. Without this
+          // check a captured answer from an earlier session could be replayed.
+          if (!isValidMacHex(mac)) continue;
+          if (echoed != nonce) continue;
+          if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(answer)) continue;
+
+          return DeviceChallenge(mac: mac, nonce: nonce, response: answer);
+        } catch (_) {
+          // Not the answer yet (could be a stale scan/list payload) — retry.
+        }
+      }
+    } catch (e) {
+      debugPrint('CalcAI BLE: identity challenge failed: $e');
+    }
+    return null;
+  }
+
+  /// Confirms the peripheral is a genuine CalcAI device before anything
+  /// sensitive is written to it.
+  ///
+  /// Cached per connection: the check runs once, so re-sending credentials or
+  /// saving a second network costs nothing extra. Cleared on disconnect.
+  ///
+  /// Public only so tests can assert it fails closed; callers inside this class
+  /// are the real users.
+  @visibleForTesting
+  Future<bool> ensureDeviceVerified() async {
+    if (_verifiedChallenge != null) return true;
+
+    final verifier = deviceVerifier;
+    if (verifier == null) {
+      // Fail closed: an unwired verifier must not silently disable the check.
+      _setError('Cannot verify this device right now. Please try again.');
+      return false;
+    }
+
+    final challenge = await requestIdentityChallenge();
+    if (challenge == null) {
+      _setError(
+        "This device didn't pass the CalcAI security check. If it is your "
+        'CalcAI, update its firmware and try again.',
+      );
+      return false;
+    }
+
+    bool genuine;
+    try {
+      genuine = await verifier(challenge);
+    } catch (e) {
+      debugPrint('CalcAI BLE: verifier error: $e');
+      genuine = false;
+    }
+
+    if (!genuine) {
+      _setError(
+        'Could not confirm this is a genuine CalcAI device, so your Wi-Fi '
+        'password was not sent. Check your internet connection and try again.',
+      );
+      return false;
+    }
+
+    _verifiedChallenge = challenge;
+    if (isValidMacHex(challenge.mac)) _deviceMac = challenge.mac;
+    return true;
+  }
+
   // ── WiFi Provisioning ──────────────────────────────────────────────
 
   /// Sends WiFi credentials to the ESP32 and monitors connection status.
@@ -677,6 +819,15 @@ class BleService extends ChangeNotifier {
     }
 
     _clearError();
+
+    // Never hand the user's Wi-Fi password to a peripheral we haven't proven
+    // is a real CalcAI. Anyone can advertise the name.
+    if (!await ensureDeviceVerified()) {
+      _provisioningState = ProvisioningState.failed;
+      notifyListeners();
+      return false;
+    }
+
     _connectedSsid = ssid;
     _provisioningState = ProvisioningState.sendingCredentials;
     notifyListeners();
@@ -729,6 +880,9 @@ class BleService extends ChangeNotifier {
       _setError('WiFi config characteristic not available.');
       return false;
     }
+
+    // "Save anyway" still sends the password, so it gets the same check.
+    if (!await ensureDeviceVerified()) return false;
 
     try {
       final payload = jsonEncode({

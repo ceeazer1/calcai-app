@@ -133,11 +133,57 @@ class CloudService extends ChangeNotifier {
     }
   }
 
+  /// Asks the backend whether a BLE peripheral is a genuine CalcAI device.
+  ///
+  /// POST /ai/device/verify  body: {mac, nonce, response}
+  ///
+  /// Only the backend holds PAIR_MASTER_SECRET, so only it can judge the
+  /// device's answer. Returns false on any error, including no network —
+  /// callers treat a failure as "do not trust this device", so an attacker
+  /// cannot get past the check by making the request fail.
+  Future<bool> verifyDevice(
+    String token,
+    String mac,
+    String nonce,
+    String response,
+  ) async {
+    try {
+      final resp = await _client
+          .post(
+            Uri.parse('$_baseUrl/ai/device/verify'),
+            headers: _jsonAuthHeaders(token),
+            body: jsonEncode({
+              'mac': mac,
+              'nonce': nonce,
+              'response': response,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+      if (resp.statusCode != 200) {
+        debugPrint('verifyDevice rejected: ${resp.statusCode}');
+        return false;
+      }
+      final data = jsonDecode(resp.body);
+      return data is Map && data['ok'] == true;
+    } catch (e) {
+      debugPrint('verifyDevice error: $e');
+      return false;
+    }
+  }
+
   /// Claims / pairs a new device to the authenticated user's account.
   ///
-  /// POST /ai/pair/claim  body: {mac, proof}
-  /// [proof] is the device's BLE-supplied proof-of-possession token.
-  Future<void> claimDevice(String token, String mac, {String? proof}) async {
+  /// POST /ai/pair/claim  body: {mac, nonce, response}
+  ///
+  /// [nonce] / [challengeResponse] are the device's answer to the identity
+  /// challenge read over BLE, proving the claimer was physically connected to
+  /// a real device rather than guessing a MAC.
+  Future<void> claimDevice(
+    String token,
+    String mac, {
+    String? nonce,
+    String? challengeResponse,
+  }) async {
     try {
       _setLoading(true);
       _clearError();
@@ -147,7 +193,9 @@ class CloudService extends ChangeNotifier {
         headers: _jsonAuthHeaders(token),
         body: jsonEncode({
           'mac': mac,
-          if (proof != null && proof.isNotEmpty) 'proof': proof,
+          if (nonce != null && nonce.isNotEmpty) 'nonce': nonce,
+          if (challengeResponse != null && challengeResponse.isNotEmpty)
+            'response': challengeResponse,
         }),
       );
 
@@ -738,7 +786,8 @@ class PreviewCloudService extends CloudService {
   Future<List<String>> getDevices(String token) async => _devices;
 
   @override
-  Future<void> claimDevice(String token, String mac, {String? proof}) async {}
+  Future<void> claimDevice(String token, String mac,
+      {String? nonce, String? challengeResponse}) async {}
 
   @override
   Future<Map<String, dynamic>> listApiKeys(String token) async => _apiKeys;
