@@ -1,7 +1,7 @@
 name: calcai_app
 description: CalcAI - ESP32 WiFi Provisioning App
 publish_to: 'none'
-version: 1.0.0+71
+version: 1.0.0+72
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -38,3 +38,8 @@ flutter_launcher_icons:
 
 flutter:
   uses-material-design: true
+
+  # The logo, shown on the sign-in screen, the boot screen and in Settings.
+  # Same file flutter_launcher_icons builds the app icon from.
+  assets:
+    - assets/icon/app_icon.png
