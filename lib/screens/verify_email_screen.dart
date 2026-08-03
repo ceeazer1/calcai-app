@@ -1,13 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../services/auth_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/calcai_mark.dart';
+import '../widgets/code_input.dart';
 
 /// Confirms the six-digit code emailed after sign-up.
 ///
@@ -24,8 +24,6 @@ class VerifyEmailScreen extends StatefulWidget {
 }
 
 class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
-  static const _panel = Color(0xFF1B1B1D);
-  static const _page = Color(0xFFF7F7F5);
   static const _cream = Color(0xFFF6EFEA);
   static const _muted = Color(0xFF9A9AA2);
 
@@ -33,7 +31,6 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   static const _resendCooldown = 45;
 
   final _codeCtrl = TextEditingController();
-  final _codeFocus = FocusNode();
 
   bool _isLoading = false;
   String? _error;
@@ -45,15 +42,12 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   void initState() {
     super.initState();
     _startCooldown();
-    WidgetsBinding.instance
-        .addPostFrameCallback((_) => _codeFocus.requestFocus());
   }
 
   @override
   void dispose() {
     _timer?.cancel();
     _codeCtrl.dispose();
-    _codeFocus.dispose();
     super.dispose();
   }
 
@@ -113,7 +107,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _page,
+      backgroundColor: AppColors.background,
       body: SafeArea(
         bottom: false,
         child: Column(
@@ -123,7 +117,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                 IconButton(
                   onPressed: () => Navigator.of(context).maybePop(),
                   icon: const Icon(Icons.arrow_back_rounded,
-                      color: Color(0xFF44444A)),
+                      color: AppColors.textPrimary),
                   tooltip: 'Back',
                 ),
                 const Spacer(),
@@ -133,13 +127,8 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
               ],
             ),
             Expanded(
-              child: Container(
-                width: double.infinity,
-                decoration: const BoxDecoration(
-                  color: _panel,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(38)),
-                ),
-                padding: const EdgeInsets.fromLTRB(26, 34, 26, 0),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(28, 30, 28, 0),
                 child: SingleChildScrollView(
                   padding: EdgeInsets.only(
                     bottom: MediaQuery.of(context).viewInsets.bottom + 24,
@@ -168,44 +157,13 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                       ),
                       const SizedBox(height: 30),
 
-                      TextField(
+                      // Same six boxes as the reset flow, so entering a
+                      // code looks identical wherever it happens.
+                      CodeInput(
                         controller: _codeCtrl,
-                        focusNode: _codeFocus,
-                        keyboardType: TextInputType.number,
-                        textInputAction: TextInputAction.done,
-                        autofillHints: const [AutofillHints.oneTimeCode],
-                        maxLength: 6,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
-                        onChanged: (v) {
-                          // Submit as soon as the sixth digit lands, so the
-                          // SMS/email autofill path needs no extra tap.
-                          if (v.length == 6 && !_isLoading) _verify();
+                        onCompleted: (_) {
+                          if (!_isLoading) _verify();
                         },
-                        onSubmitted: (_) => _verify(),
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.robotoMono(
-                          fontSize: 30,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 10,
-                          color: Colors.white,
-                        ),
-                        cursorColor: Colors.white,
-                        decoration: const InputDecoration(
-                          counterText: '',
-                          hintText: '------',
-                          hintStyle: TextStyle(
-                            color: Color(0xFF44444C),
-                            letterSpacing: 10,
-                          ),
-                          enabledBorder: UnderlineInputBorder(
-                            borderSide: BorderSide(color: Color(0xFF3A3A42)),
-                          ),
-                          focusedBorder: UnderlineInputBorder(
-                            borderSide: BorderSide(color: Color(0xFFBFBFC6)),
-                          ),
-                        ),
                       ),
 
                       const SizedBox(height: 16),

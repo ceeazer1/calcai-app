@@ -480,6 +480,125 @@ class AuthService extends ChangeNotifier {
     }
   }
 
+  /// Asks the backend to email a password-reset code.
+  ///
+  /// POST /ai/auth/forgot. Always reports success: the endpoint answers the
+  /// same way for a registered and an unregistered address, so there is
+  /// nothing to tell the user apart from "check your inbox".
+  Future<void> requestPasswordReset(String email) async {
+    try {
+      await _httpClient
+          .post(
+            Uri.parse('$_baseUrl/auth/forgot'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'email': email.trim()}),
+          )
+          .timeout(const Duration(seconds: 20));
+    } catch (e) {
+      logDebug('requestPasswordReset error: $e');
+    }
+  }
+
+  /// Checks a reset code without spending it.
+  ///
+  /// POST /ai/auth/reset/verify. Lets the app confirm the code before asking
+  /// for a new password, so a wrong code is caught on the step where it was
+  /// typed. Wrong guesses still count against the same attempt budget as the
+  /// real reset, so this is not a free oracle.
+  Future<bool> verifyResetCode(String email, String code) async {
+    _error = null;
+    _setLoading(true);
+    try {
+      final response = await _httpClient
+          .post(
+            Uri.parse('$_baseUrl/auth/reset/verify'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'email': email.trim(), 'code': code}),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      Map<String, dynamic> data = const {};
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) data = decoded;
+      } catch (_) {}
+
+      if (response.statusCode != 200 || data['ok'] != true) {
+        _error = _verifyMessage(data['error']?.toString(), response.statusCode);
+        return false;
+      }
+      return true;
+    } on TimeoutException {
+      _error = 'Connection timed out. Please try again.';
+      return false;
+    } catch (e) {
+      logDebug('verifyResetCode error: $e');
+      _error = 'Network error — check your internet connection.';
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Spends a reset code and sets a new password.
+  ///
+  /// POST /ai/auth/reset. On success the backend returns a session, so the
+  /// user is signed in straight away rather than being bounced back to login.
+  Future<bool> resetPassword(String email, String code, String password) async {
+    _error = null;
+    _setLoading(true);
+    try {
+      final response = await _httpClient
+          .post(
+            Uri.parse('$_baseUrl/auth/reset'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'email': email.trim(),
+              'code': code,
+              'password': password,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      Map<String, dynamic> data = const {};
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) data = decoded;
+      } catch (_) {}
+
+      if (response.statusCode != 200 || data['ok'] != true) {
+        final code = data['error']?.toString();
+        _error = code == 'invalid_password'
+            ? 'Password must be at least 8 characters.'
+            : _verifyMessage(code, response.statusCode);
+        return false;
+      }
+
+      _token = data['token'] as String?;
+      if (_token == null || _token!.isEmpty) {
+        _error = 'Could not finish signing in. Please try again.';
+        return false;
+      }
+      _email = email.trim();
+      _username = _email!.split('@').first;
+      _isAuthenticated = true;
+      _error = null;
+
+      await _saveToStorage();
+      await fetchDevices();
+      return true;
+    } on TimeoutException {
+      _error = 'Connection timed out. Please try again.';
+      return false;
+    } catch (e) {
+      logDebug('resetPassword error: $e');
+      _error = 'Network error — check your internet connection.';
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
   static String _verifyMessage(String? code, int status) {
     switch (code) {
       case 'bad_code':
@@ -791,4 +910,16 @@ class PreviewAuthService extends AuthService {
 
   @override
   Future<void> resendVerificationCode(String email) async {}
+
+  @override
+  Future<void> requestPasswordReset(String email) async {}
+
+  @override
+  Future<bool> verifyResetCode(String email, String code) async => true;
+
+  @override
+  Future<bool> resetPassword(String email, String code, String password) async {
+    await init();
+    return true;
+  }
 }

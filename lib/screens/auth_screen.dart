@@ -4,7 +4,8 @@ import 'package:provider/provider.dart';
 
 import '../services/auth_service.dart';
 import '../theme/app_colors.dart';
-import '../widgets/calcai_mark.dart';
+import '../widgets/calcai_wordmark.dart';
+import 'reset_password_screen.dart';
 import 'verify_email_screen.dart';
 
 /// Sign-in screen.
@@ -21,8 +22,6 @@ class AuthScreen extends StatefulWidget {
 
 class _AuthScreenState extends State<AuthScreen>
     with SingleTickerProviderStateMixin {
-  static const _panel = Color(0xFF1B1B1D);
-  static const _page = Color(0xFFF7F7F5);
   static const _muted = Color(0xFF9A9AA2);
 
   late final AnimationController _animController;
@@ -68,6 +67,16 @@ class _AuthScreenState extends State<AuthScreen>
     _emailFocus.dispose();
     _passwordFocus.dispose();
     super.dispose();
+  }
+
+  Future<void> _openReset() async {
+    FocusScope.of(context).unfocus();
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            ResetPasswordScreen(initialEmail: _emailCtrl.text.trim()),
+      ),
+    );
   }
 
   void _switchMode(bool signUp) {
@@ -166,245 +175,192 @@ class _AuthScreenState extends State<AuthScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _page,
+      backgroundColor: AppColors.background,
       resizeToAvoidBottomInset: true,
       body: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            // ── Logo band ─────────────────────────────────────
-            FadeTransition(
-              opacity: _fadeIn,
-              child: const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: CalcAiMark(size: 50),
+        child: SlideTransition(
+          position: _slideUp,
+          child: FadeTransition(
+            opacity: _fadeIn,
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                28,
+                0,
+                28,
+                MediaQuery.of(context).viewInsets.bottom + 28,
               ),
-            ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Everything sits lower on the screen than it used to.
+                  // The full lockup replaces both the square mark and the
+                  // heading that used to sit under it.
+                  const SizedBox(height: 96),
+                  const Center(child: CalcAiWordmark(width: 200)),
+                  const SizedBox(height: 52),
 
-            // ── Dark panel ────────────────────────────────────
-            Expanded(
-              child: SlideTransition(
-                position: _slideUp,
-                child: FadeTransition(
-                  opacity: _fadeIn,
-                  child: Container(
-                    width: double.infinity,
-                    decoration: const BoxDecoration(
-                      color: _panel,
-                      borderRadius:
-                          BorderRadius.vertical(top: Radius.circular(38)),
-                    ),
-                    padding: const EdgeInsets.fromLTRB(26, 26, 26, 0),
-                    child: SingleChildScrollView(
-                      // Keeps the submit button reachable above the keyboard.
-                      padding: EdgeInsets.only(
-                        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _ModeSwitch(
-                            isSignUp: _isSignUp,
-                            onChanged: _isLoading ? null : _switchMode,
-                          ),
-                          const SizedBox(height: 34),
-
-                          _Field(
-                            label: 'Email',
-                            controller: _emailCtrl,
-                            focusNode: _emailFocus,
-                            keyboardType: TextInputType.emailAddress,
-                            textInputAction: TextInputAction.next,
-                            autofillHints: const [AutofillHints.email],
-                            onSubmitted: (_) => _passwordFocus.requestFocus(),
-                          ),
-                          const SizedBox(height: 26),
-                          _Field(
-                            label: 'Password',
-                            controller: _passwordCtrl,
-                            focusNode: _passwordFocus,
-                            obscure: _obscure,
-                            textInputAction: TextInputAction.done,
-                            autofillHints: [
-                              _isSignUp
-                                  ? AutofillHints.newPassword
-                                  : AutofillHints.password,
-                            ],
-                            onSubmitted: (_) => _submitEmail(),
-                            trailing: IconButton(
-                              onPressed: () =>
-                                  setState(() => _obscure = !_obscure),
-                              icon: Icon(
-                                _obscure
-                                    ? Icons.visibility_off_rounded
-                                    : Icons.visibility_rounded,
-                                size: 18,
-                                color: _muted,
-                              ),
-                              splashRadius: 18,
-                              tooltip: _obscure ? 'Show password' : 'Hide password',
-                            ),
-                          ),
-
-                          const SizedBox(height: 18),
-                          // Fixed slot so the button never jumps as messages
-                          // appear and disappear.
-                          SizedBox(
-                            height: 34,
-                            child: Center(
-                              child: _error == null
-                                  ? const SizedBox.shrink()
-                                  : Text(
-                                      _error!,
-                                      textAlign: TextAlign.center,
-                                      style: GoogleFonts.inter(
-                                        fontSize: 12.5,
-                                        height: 1.3,
-                                        color: AppColors.error,
-                                      ),
-                                    ),
-                            ),
-                          ),
-
-                          _PrimaryButton(
-                            label: _isSignUp ? 'Sign up' : 'Login',
-                            loading: _isLoading,
-                            onTap: _isLoading ? null : _submitEmail,
-                          ),
-
-                          const SizedBox(height: 22),
-                          Row(
-                            children: [
-                              const Expanded(
-                                  child: Divider(color: Color(0xFF32323A))),
-                              Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 12),
-                                child: Text(
-                                  'or',
-                                  style: GoogleFonts.inter(
-                                      fontSize: 12, color: _muted),
-                                ),
-                              ),
-                              const Expanded(
-                                  child: Divider(color: Color(0xFF32323A))),
-                            ],
-                          ),
-                          const SizedBox(height: 18),
-
-                          _SocialButton(
-                            icon: Icons.apple_rounded,
-                            label: 'Continue with Apple',
-                            onTap: _isLoading
-                                ? null
-                                : () => _handleSocial('apple'),
-                          ),
-                          const SizedBox(height: 12),
-                          _SocialButton(
-                            icon: Icons.g_mobiledata_rounded,
-                            label: 'Continue with Google',
-                            onTap: _isLoading
-                                ? null
-                                : () => _handleSocial('google'),
-                          ),
-                          const SizedBox(height: 20),
-                        ],
+                  _Field(
+                    label: 'Email',
+                    controller: _emailCtrl,
+                    focusNode: _emailFocus,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    autofillHints: const [AutofillHints.email],
+                    onSubmitted: (_) => _passwordFocus.requestFocus(),
+                  ),
+                  const SizedBox(height: 26),
+                  _Field(
+                    label: 'Password',
+                    controller: _passwordCtrl,
+                    focusNode: _passwordFocus,
+                    obscure: _obscure,
+                    textInputAction: TextInputAction.done,
+                    autofillHints: [
+                      _isSignUp
+                          ? AutofillHints.newPassword
+                          : AutofillHints.password,
+                    ],
+                    onSubmitted: (_) => _submitEmail(),
+                    trailing: GestureDetector(
+                      onTap: () => setState(() => _obscure = !_obscure),
+                      behavior: HitTestBehavior.opaque,
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 8, bottom: 6),
+                        child: Icon(
+                          _obscure
+                              ? Icons.visibility_off_rounded
+                              : Icons.visibility_rounded,
+                          size: 18,
+                          color: _muted,
+                        ),
                       ),
                     ),
                   ),
-                ),
+
+                  if (!_isSignUp)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: _isLoading ? null : _openReset,
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: Text(
+                          'Forgot password?',
+                          style: GoogleFonts.inter(
+                            fontSize: 12.5,
+                            color: _muted,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                  const SizedBox(height: 12),
+                  // Fixed slot so the button never jumps as messages appear.
+                  SizedBox(
+                    height: 34,
+                    child: Center(
+                      child: _error == null
+                          ? const SizedBox.shrink()
+                          : Text(
+                              _error!,
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.inter(
+                                fontSize: 12.5,
+                                height: 1.3,
+                                color: AppColors.error,
+                              ),
+                            ),
+                    ),
+                  ),
+
+                  _PrimaryButton(
+                    label: _isSignUp ? 'Sign up' : 'Login',
+                    loading: _isLoading,
+                    onTap: _isLoading ? null : _submitEmail,
+                  ),
+
+                  // Replaces the Login / Sign up toggle: one mode is shown at
+                  // a time, and this line switches between them.
+                  const SizedBox(height: 18),
+                  Center(
+                    child: GestureDetector(
+                      onTap: _isLoading ? null : () => _switchMode(!_isSignUp),
+                      behavior: HitTestBehavior.opaque,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: RichText(
+                          text: TextSpan(
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              color: _muted,
+                            ),
+                            children: [
+                              TextSpan(
+                                text: _isSignUp
+                                    ? 'Already have an account? '
+                                    : 'Need an account? ',
+                              ),
+                              TextSpan(
+                                text: _isSignUp ? 'Login' : 'Sign up',
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Social options sit well below the primary action.
+                  const SizedBox(height: 56),
+                  Row(
+                    children: [
+                      const Expanded(child: Divider(color: Color(0xFF2A2A30))),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          'or',
+                          style:
+                              GoogleFonts.inter(fontSize: 12, color: _muted),
+                        ),
+                      ),
+                      const Expanded(child: Divider(color: Color(0xFF2A2A30))),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  _SocialButton(
+                    icon: Icons.apple_rounded,
+                    label: 'Continue with Apple',
+                    onTap: _isLoading ? null : () => _handleSocial('apple'),
+                  ),
+                  const SizedBox(height: 12),
+                  _SocialButton(
+                    icon: Icons.g_mobiledata_rounded,
+                    label: 'Continue with Google',
+                    onTap: _isLoading ? null : () => _handleSocial('google'),
+                  ),
+
+                  const SizedBox(height: 30),
+                  Text(
+                    'By continuing, you agree to our Terms of Service',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: AppColors.textTertiary,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
               ),
             ),
-
-            // ── Footer ────────────────────────────────────────
-            Container(
-              color: _page,
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(28, 12, 28, 16),
-              child: Text(
-                'By continuing, you agree to our Terms of Service',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontSize: 11,
-                  color: const Color(0xFF8A8A90),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The Login / Sign up pill.
-class _ModeSwitch extends StatelessWidget {
-  const _ModeSwitch({required this.isSignUp, required this.onChanged});
-
-  final bool isSignUp;
-  final ValueChanged<bool>? onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 44,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: const Color(0xFF232327),
-        borderRadius: BorderRadius.circular(22),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _Segment(
-              label: 'Login',
-              selected: !isSignUp,
-              onTap: onChanged == null ? null : () => onChanged!(false),
-            ),
-          ),
-          Expanded(
-            child: _Segment(
-              label: 'Sign up',
-              selected: isSignUp,
-              onTap: onChanged == null ? null : () => onChanged!(true),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Segment extends StatelessWidget {
-  const _Segment({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeOut,
-        decoration: BoxDecoration(
-          color: selected ? const Color(0xFFBFBFC6) : Colors.transparent,
-          borderRadius: BorderRadius.circular(18),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: GoogleFonts.inter(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: selected ? const Color(0xFF16161A) : const Color(0xFF77777F),
           ),
         ),
       ),
@@ -450,35 +406,37 @@ class _Field extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 2),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: controller,
-                focusNode: focusNode,
-                obscureText: obscure,
-                keyboardType: keyboardType,
-                textInputAction: textInputAction,
-                autofillHints: autofillHints,
-                onSubmitted: onSubmitted,
-                autocorrect: false,
-                enableSuggestions: !obscure,
-                style: GoogleFonts.inter(fontSize: 15, color: Colors.white),
-                cursorColor: Colors.white,
-                decoration: const InputDecoration(
-                  isDense: true,
-                  contentPadding: EdgeInsets.only(bottom: 8),
-                  enabledBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: Color(0xFF3A3A42)),
-                  ),
-                  focusedBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: Color(0xFFBFBFC6)),
-                  ),
-                ),
-              ),
+        // The show/hide control is a suffixIcon rather than a sibling in a
+        // Row. As a sibling it stole horizontal space, so the password
+        // underline stopped short of the email one; inside the decoration the
+        // bar runs the full width and both fields line up.
+        TextField(
+          controller: controller,
+          focusNode: focusNode,
+          obscureText: obscure,
+          keyboardType: keyboardType,
+          textInputAction: textInputAction,
+          autofillHints: autofillHints,
+          onSubmitted: onSubmitted,
+          autocorrect: false,
+          enableSuggestions: !obscure,
+          style: GoogleFonts.inter(fontSize: 15, color: Colors.white),
+          cursorColor: Colors.white,
+          decoration: InputDecoration(
+            isDense: true,
+            contentPadding: const EdgeInsets.only(bottom: 8),
+            suffixIcon: trailing,
+            suffixIconConstraints: const BoxConstraints(
+              minWidth: 34,
+              minHeight: 24,
             ),
-            if (trailing != null) trailing!,
-          ],
+            enabledBorder: const UnderlineInputBorder(
+              borderSide: BorderSide(color: Color(0xFF3A3A42)),
+            ),
+            focusedBorder: const UnderlineInputBorder(
+              borderSide: BorderSide(color: Color(0xFFBFBFC6)),
+            ),
+          ),
         ),
       ],
     );
