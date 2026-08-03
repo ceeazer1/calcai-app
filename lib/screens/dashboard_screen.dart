@@ -43,7 +43,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   bool _isLoadingModel = false;
 
   /// Collapsed (skinny bar) vs expanded (original two-column card) usage view.
-  bool _usageExpanded = false;
 
   /// Whether the response-style inline dropdown is open.
   bool _styleExpanded = false;
@@ -606,164 +605,95 @@ class _DashboardScreenState extends State<DashboardScreen>
   /// Collapsible usage indicator. Collapsed = a bare skinny bar showing the two
   /// remaining counts (silver standard → blue premium). Tapping expands it back
   /// to the original two-column card, and tapping again collapses it.
+  /// Bare skinny usage bar: the two remaining counts with small labels, over
+  /// a silver standard segment easing into a blue premium one.
+  ///
+  /// There used to be a second, boxed layout you could tap to swap into. It
+  /// showed the same two numbers in a card, so it was a second way to read
+  /// one fact — dropped, along with the toggle chevron.
   Widget _buildUsage() {
     return Consumer<CloudService>(
       builder: (context, cloud, _) {
         final isPro = cloud.planType?.toLowerCase() == 'pro';
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => setState(() => _usageExpanded = !_usageExpanded),
+        const premiumBlue = Color(0xFF9DB6DA);
+        const premiumBlueDark = Color(0xFF6E8FBE);
+
+        final sLeft = isPro
+            ? -1
+            : (cloud.cheapLimit - cloud.cheapUsage)
+                .clamp(0, cloud.cheapLimit > 0 ? cloud.cheapLimit : 0);
+        final pLeft = isPro
+            ? -1
+            : (cloud.premiumLimit - cloud.premiumUsage)
+                .clamp(0, cloud.premiumLimit > 0 ? cloud.premiumLimit : 0);
+
+        // Widths track what's left, so the bar empties as the day is used up.
+        final sFlex = isPro ? 1 : (sLeft > 0 ? sLeft : 1);
+        final pFlex = isPro ? 0 : (pLeft > 0 ? pLeft : 1);
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Blend between the skinny bar and the full card: cross-fade the
-              // contents while animating the height between the two.
-              AnimatedCrossFade(
-                firstChild: _usageCollapsedBar(cloud, isPro),
-                secondChild: _usageExpandedCard(cloud, isPro),
-                crossFadeState: _usageExpanded
-                    ? CrossFadeState.showSecond
-                    : CrossFadeState.showFirst,
-                duration: const Duration(milliseconds: 300),
-                sizeCurve: Curves.easeInOutCubic,
-                firstCurve: Curves.easeOut,
-                secondCurve: Curves.easeIn,
-                alignment: Alignment.topCenter,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  _UsageCount(
+                    value: isPro ? '∞' : '$sLeft',
+                    label: 'Standard',
+                    color: AppColors.textPrimary,
+                  ),
+                  _UsageCount(
+                    value: isPro ? '∞' : '$pLeft',
+                    label: 'Premium',
+                    color: premiumBlue,
+                    trailing: true,
+                  ),
+                ],
               ),
-              const SizedBox(height: 4),
-              AnimatedRotation(
-                turns: _usageExpanded ? 0.5 : 0.0,
-                duration: const Duration(milliseconds: 300),
-                child: const Icon(
-                  Icons.keyboard_arrow_down_rounded,
-                  size: 20,
-                  color: AppColors.textTertiary,
+              const SizedBox(height: 9),
+              SizedBox(
+                height: 10,
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: sFlex,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(6),
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFE8E8F0), AppColors.electricBlue],
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (!isPro) const SizedBox(width: 4),
+                    if (!isPro)
+                      Expanded(
+                        flex: pFlex,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(6),
+                            gradient: const LinearGradient(
+                              colors: [
+                                AppColors.electricBlue,
+                                premiumBlue,
+                                premiumBlueDark,
+                              ],
+                              stops: [0.0, 0.6, 1.0],
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ],
           ),
         );
       },
-    );
-  }
-
-  /// Bare skinny bar: numbers on top, a silver standard segment easing into a
-  /// blue premium segment below. No card/box.
-  Widget _usageCollapsedBar(CloudService cloud, bool isPro) {
-    const premiumBlue = Color(0xFF9DB6DA);
-    const premiumBlueDark = Color(0xFF6E8FBE);
-
-    final sLeft = isPro
-        ? -1
-        : (cloud.cheapLimit - cloud.cheapUsage)
-            .clamp(0, cloud.cheapLimit > 0 ? cloud.cheapLimit : 0);
-    final pLeft = isPro
-        ? -1
-        : (cloud.premiumLimit - cloud.premiumUsage)
-            .clamp(0, cloud.premiumLimit > 0 ? cloud.premiumLimit : 0);
-
-    final sFlex = isPro ? 1 : (sLeft > 0 ? sLeft : 1);
-    final pFlex = isPro ? 0 : (pLeft > 0 ? pLeft : 1);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                isPro ? '∞' : '$sLeft',
-                style: GoogleFonts.outfit(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              Text(
-                isPro ? '∞' : '$pLeft',
-                style: GoogleFonts.outfit(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                  color: premiumBlue,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 9),
-          SizedBox(
-            height: 10,
-            child: Row(
-              children: [
-                Expanded(
-                  flex: sFlex,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(6),
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFFE8E8F0), AppColors.electricBlue],
-                      ),
-                    ),
-                  ),
-                ),
-                if (!isPro) const SizedBox(width: 4),
-                if (!isPro)
-                  Expanded(
-                    flex: pFlex,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(6),
-                        gradient: const LinearGradient(
-                          colors: [
-                            AppColors.electricBlue,
-                            premiumBlue,
-                            premiumBlueDark,
-                          ],
-                          stops: [0.0, 0.6, 1.0],
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Original two-column usage card (expanded state).
-  Widget _usageExpandedCard(CloudService cloud, bool isPro) {
-    return GlassCard(
-      padding: const EdgeInsets.all(18),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: _UsageStat(
-                label: 'Standard',
-                used: cloud.cheapUsage,
-                limit: isPro ? -1 : cloud.cheapLimit,
-                accent: AppColors.electricBlue,
-              ),
-            ),
-            Container(
-              width: 1,
-              margin: const EdgeInsets.symmetric(horizontal: 18),
-              color: AppColors.glassBorder,
-            ),
-            Expanded(
-              child: _UsageStat(
-                label: 'Premium',
-                used: cloud.premiumUsage,
-                limit: isPro ? -1 : cloud.premiumLimit,
-                accent: const Color(0xFF9DB6DA),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -937,82 +867,6 @@ class _DashboardScreenState extends State<DashboardScreen>
       await cloud.setModel(auth.token!, auth.primaryMac!,
           cloud.currentModel ?? 'gpt-5-mini', style);
     }
-  }
-}
-
-class _UsageStat extends StatelessWidget {
-  final String label;
-  final int used;
-  final int limit; // -1 = unlimited
-  final Color accent;
-
-  const _UsageStat({
-    required this.label,
-    required this.used,
-    required this.limit,
-    required this.accent,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final unlimited = limit < 0;
-    final left = unlimited ? 0 : (limit - used).clamp(0, limit > 0 ? limit : 0);
-    final remaining =
-        unlimited ? 1.0 : (limit > 0 ? left / limit : 0.0).clamp(0.0, 1.0);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Big "left" number — the thing a student checks at a glance.
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            Text(
-              unlimited ? '∞' : '$left',
-              style: GoogleFonts.outfit(
-                fontSize: 30,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
-                height: 1.0,
-              ),
-            ),
-            if (!unlimited) ...[
-              const SizedBox(width: 5),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 3),
-                child: Text(
-                  'left',
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: GoogleFonts.inter(
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
-            color: AppColors.textSecondary,
-          ),
-        ),
-        const SizedBox(height: 12),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: LinearProgressIndicator(
-            value: remaining,
-            minHeight: 6,
-            backgroundColor: AppColors.surfaceHighlight,
-            valueColor: AlwaysStoppedAnimation(accent),
-          ),
-        ),
-      ],
-    );
   }
 }
 
@@ -1261,6 +1115,51 @@ class _TierTag extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// One side of the usage bar: the number with a small label beneath it.
+class _UsageCount extends StatelessWidget {
+  const _UsageCount({
+    required this.value,
+    required this.label,
+    required this.color,
+    this.trailing = false,
+  });
+
+  final String value;
+  final String label;
+  final Color color;
+
+  /// Right-hand side of the bar, so the text aligns to its own edge.
+  final bool trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment:
+          trailing ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          value,
+          style: GoogleFonts.outfit(
+            fontSize: 22,
+            fontWeight: FontWeight.w700,
+            color: color,
+          ),
+        ),
+        Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w500,
+            color: AppColors.textTertiary,
+            letterSpacing: 0.2,
+          ),
+        ),
+      ],
     );
   }
 }

@@ -184,6 +184,7 @@ class AuthService extends ChangeNotifier {
   ///
   /// Returns `null` on success, or an error message string on failure.
   Future<String?> signInWithApple() async {
+    _error = null;
     _setLoading(true);
 
     try {
@@ -252,6 +253,7 @@ class AuthService extends ChangeNotifier {
   /// Uses the `google_sign_in` package to get an ID token, then exchanges
   /// it with the CalcAI backend for a server session token.
   Future<bool> signInWithGoogle() async {
+    _error = null;
     _setLoading(true);
 
     try {
@@ -303,6 +305,99 @@ class AuthService extends ChangeNotifier {
       return false;
     } finally {
       _setLoading(false);
+    }
+  }
+
+  /// Signs in with an email and password.
+  ///
+  /// POST /ai/auth/login. Returns true on success; [error] carries a message
+  /// on failure.
+  Future<bool> signInWithEmail(String email, String password) =>
+      _emailAuth('/auth/login', email, password);
+
+  /// Creates an account with an email and password.
+  ///
+  /// POST /ai/auth/register. The backend stores the password as PBKDF2-SHA256
+  /// and returns a session token, so a successful sign-up also signs the user
+  /// in — there is no second round trip.
+  Future<bool> signUpWithEmail(String email, String password) =>
+      _emailAuth('/auth/register', email, password);
+
+  /// Shared body for the two email flows. They differ only by path and by
+  /// which errors the backend can return.
+  Future<bool> _emailAuth(String path, String email, String password) async {
+    _error = null;
+    _setLoading(true);
+    try {
+      final response = await _httpClient
+          .post(
+            Uri.parse('$_baseUrl$path'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'email': email.trim(),
+              'password': password,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      Map<String, dynamic> data = const {};
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) data = decoded;
+      } catch (_) {
+        // Fall through to the status-code message below.
+      }
+
+      if (response.statusCode != 200 || data['ok'] != true) {
+        _error = _emailAuthMessage(data['error']?.toString(), response.statusCode);
+        return false;
+      }
+
+      _token = data['token'] as String?;
+      if (_token == null || _token!.isEmpty) {
+        _error = 'Sign-in failed. Please try again.';
+        return false;
+      }
+      _email = (data['email'] as String?) ?? email.trim();
+      _username = (data['username'] as String?) ?? _email!.split('@').first;
+      _isAuthenticated = true;
+      _error = null;
+
+      await _saveToStorage();
+      await fetchDevices();
+      return true;
+    } on TimeoutException {
+      _error = 'Connection timed out. Please try again.';
+      return false;
+    } catch (e) {
+      logDebug('_emailAuth error: $e');
+      _error = 'Network error — check your internet connection.';
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Turns the backend's error codes into something a person can act on.
+  static String _emailAuthMessage(String? code, int status) {
+    switch (code) {
+      case 'invalid_email':
+        return 'Enter a valid email address.';
+      case 'invalid_password':
+        return 'Password must be at least 8 characters.';
+      case 'exists':
+        return 'An account with that email already exists. Try logging in.';
+      case 'no_account':
+      case 'unauth':
+        // Deliberately identical for both: saying which one is wrong tells an
+        // attacker whether an email is registered.
+        return 'Email or password is incorrect.';
+      case 'registration_disabled':
+        return 'Sign-ups are currently closed.';
+      case 'rate_limited':
+        return 'Too many attempts. Please wait a moment and try again.';
+      default:
+        return 'Something went wrong ($status). Please try again.';
     }
   }
 
@@ -393,6 +488,7 @@ class AuthService extends ChangeNotifier {
   /// Required by App Store Review Guideline 5.1.1(v).
   Future<String?> deleteAccount() async {
     if (_token == null) return 'You are not signed in.';
+    _error = null;
     _setLoading(true);
 
     try {
@@ -500,9 +596,14 @@ class AuthService extends ChangeNotifier {
   }
 
   /// Sets [_isLoading] and notifies listeners in one call.
+  ///
+  /// Deliberately does **not** touch [_error]. It used to clear it, and since
+  /// every operation calls this from its `finally`, the error a `catch` had
+  /// just set was wiped before the caller could read it — which is why failed
+  /// sign-ins only ever showed a generic message. Operations clear the error
+  /// themselves when they start.
   void _setLoading(bool value) {
     _isLoading = value;
-    _error = null;
     notifyListeners();
   }
 
@@ -544,6 +645,18 @@ class PreviewAuthService extends AuthService {
 
   @override
   Future<bool> signInWithGoogle() async {
+    await init();
+    return true;
+  }
+
+  @override
+  Future<bool> signInWithEmail(String email, String password) async {
+    await init();
+    return true;
+  }
+
+  @override
+  Future<bool> signUpWithEmail(String email, String password) async {
     await init();
     return true;
   }

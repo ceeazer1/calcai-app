@@ -106,7 +106,7 @@ class _NotesScreenState extends State<NotesScreen> {
   /// Keeps the body field behaving like a numbered document: pressing Enter
   /// after "3. foo" starts "4. ", and pressing Enter on an empty numbered line
   /// ends the list instead of adding another number.
-  void _attachAutoNumbering(TextEditingController ctrl) {
+  static void _attachAutoNumbering(TextEditingController ctrl) {
     var previous = ctrl.text;
     ctrl.addListener(() {
       final text = ctrl.text;
@@ -158,210 +158,21 @@ class _NotesScreenState extends State<NotesScreen> {
       return;
     }
 
-    final titleCtrl = TextEditingController(text: existing?.title ?? '');
-    // New notes start the numbered list off at "1. ".
-    final bodyCtrl = TextEditingController(text: existing?.body ?? '1. ');
-    bodyCtrl.selection =
-        TextSelection.collapsed(offset: bodyCtrl.text.length);
-    _attachAutoNumbering(bodyCtrl);
-    // Whether the calculator preview is expanded, remembered for this session.
-    final showPreview = ValueNotifier<bool>(_previewExpanded);
-
-    final saved = await showModalBottomSheet<bool>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(ctx).viewInsets.bottom,
-        ),
-        child: Container(
-          // Cap the height so the taller body field still fits with the
-          // keyboard up, and let the content scroll if it doesn't.
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(ctx).size.height * 0.9,
-          ),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            border: Border.all(color: AppColors.glassBorder, width: 0.5),
-          ),
-          child: SafeArea(
-            top: false,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: AppColors.textTertiary,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  Text(
-                    isNew ? 'New note' : 'Edit note',
-                    style: GoogleFonts.outfit(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: titleCtrl,
-                    style: GoogleFonts.inter(color: AppColors.textPrimary),
-                    decoration: InputDecoration(
-                      hintText: 'Title (optional)',
-                      hintStyle:
-                          GoogleFonts.inter(color: AppColors.textTertiary),
-                      filled: true,
-                      fillColor: AppColors.surfaceLight,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: bodyCtrl,
-                    autofocus: isNew,
-                    maxLines: 16,
-                    minLines: 11,
-                    keyboardType: TextInputType.multiline,
-                    textCapitalization: TextCapitalization.sentences,
-                    style: GoogleFonts.inter(color: AppColors.textPrimary),
-                    decoration: InputDecoration(
-                      hintText: 'e.g. QUADRATIC: X=(-B±√(B²-4AC))/2A',
-                      hintStyle:
-                          GoogleFonts.inter(color: AppColors.textTertiary),
-                      filled: true,
-                      fillColor: AppColors.surfaceLight,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-
-                  // ── Collapsible 1:1 TI-84 Plus screen preview ──────
-                  ValueListenableBuilder<bool>(
-                    valueListenable: showPreview,
-                    builder: (_, expanded, __) => Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        InkWell(
-                          onTap: () => showPreview.value = !expanded,
-                          borderRadius: BorderRadius.circular(8),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.calculate_rounded,
-                                    size: 16, color: AppColors.textSecondary),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'Calc preview',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.textSecondary,
-                                  ),
-                                ),
-                                const Spacer(),
-                                AnimatedRotation(
-                                  turns: expanded ? 0.5 : 0.0,
-                                  duration: const Duration(milliseconds: 200),
-                                  child: const Icon(
-                                    Icons.keyboard_arrow_down_rounded,
-                                    size: 20,
-                                    color: AppColors.textSecondary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        AnimatedSize(
-                          duration: const Duration(milliseconds: 200),
-                          curve: Curves.easeOut,
-                          alignment: Alignment.topCenter,
-                          child: expanded
-                              ? Column(
-                                  children: [
-                                    const SizedBox(height: 8),
-                                    Center(
-                                      child: ValueListenableBuilder<
-                                          TextEditingValue>(
-                                        valueListenable: bodyCtrl,
-                                        builder: (_, value, __) => Ti84Pager(
-                                          scale: 2,
-                                          text: _isBlankBody(value.text)
-                                              ? 'YOUR NOTE APPEARS HERE'
-                                              : value.text,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      '96x64 screen — 16 chars per line, '
-                                      '8 lines each.',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 11,
-                                        color: AppColors.textTertiary,
-                                      ),
-                                    ),
-                                  ],
-                                )
-                              : const SizedBox(width: double.infinity),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx, false),
-                        child: Text(
-                          'Cancel',
-                          style: GoogleFonts.inter(
-                              color: AppColors.textSecondary),
-                        ),
-                      ),
-                      const Spacer(),
-                      ElevatedButton(
-                        onPressed: () => Navigator.pop(ctx, true),
-                        child: Text(
-                          'Save',
-                          style:
-                              GoogleFonts.inter(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
+    // Full screen rather than a bottom sheet: the body field, the numbered
+    // list and the calculator preview all want the room, and a back arrow is
+    // a clearer way out than a drag handle.
+    final draft = await Navigator.of(context).push<_NoteDraft>(
+      MaterialPageRoute(
+        builder: (_) => _NoteEditorPage(
+          existing: existing,
+          previewExpanded: _previewExpanded,
+          onPreviewChanged: (v) => _previewExpanded = v,
         ),
       ),
     );
 
-    // Remember the preview choice even if the user cancelled.
-    _previewExpanded = showPreview.value;
-
-    if (saved != true || !mounted) return;
-    final body = bodyCtrl.text.trimRight();
-    if (_isBlankBody(body)) {
+    if (draft == null || !mounted) return;
+    if (_isBlankBody(draft.body)) {
       _toast('Note is empty');
       return;
     }
@@ -370,18 +181,73 @@ class _NotesScreenState extends State<NotesScreen> {
       if (isNew) {
         _notes = [
           ..._notes,
-          CalcNote.create(body: body, title: titleCtrl.text.trim()),
+          CalcNote.create(body: draft.body, title: draft.title),
         ];
       } else {
         _notes = _notes
             .map((n) => n.id == existing.id
-                ? n.copyWith(body: body, title: titleCtrl.text.trim())
+                ? n.copyWith(body: draft.body, title: draft.title)
                 : n)
             .toList();
       }
     });
     final ok = await _save();
     if (mounted) _toast(ok ? 'Synced to your CalcAI' : 'Could not save');
+  }
+
+  /// Confirms before deleting.
+  ///
+  /// A note only exists here and in the cloud copy, so a mis-tap on a small
+  /// icon would lose the text for good.
+  Future<void> _confirmDelete(CalcNote note) async {
+    final label = note.displayTitle.trim();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: AppColors.glassBorder),
+        ),
+        title: Text(
+          'Delete note?',
+          style: GoogleFonts.outfit(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          label.isEmpty
+              ? 'This note will be removed from your CalcAI. This cannot be '
+                  'undone.'
+              : '"$label" will be removed from your CalcAI. This cannot be '
+                  'undone.',
+          style: GoogleFonts.inter(
+            color: AppColors.textSecondary,
+            fontSize: 14,
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel',
+                style: GoogleFonts.inter(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              'Delete',
+              style: GoogleFonts.inter(
+                color: AppColors.error,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && mounted) await _deleteNote(note);
   }
 
   Future<void> _deleteNote(CalcNote note) async {
@@ -568,8 +434,8 @@ class _NotesScreenState extends State<NotesScreen> {
                     ),
                   ),
                   IconButton(
-                    onPressed: () => _deleteNote(note),
-                    icon: const Icon(Icons.close_rounded,
+                    onPressed: () => _confirmDelete(note),
+                    icon: const Icon(Icons.delete_outline_rounded,
                         color: AppColors.textTertiary, size: 20),
                   ),
                 ],
@@ -577,6 +443,302 @@ class _NotesScreenState extends State<NotesScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// What the editor hands back to the list.
+class _NoteDraft {
+  const _NoteDraft({required this.title, required this.body});
+  final String title;
+  final String body;
+}
+
+/// Full-screen note editor.
+///
+/// Replaced a bottom sheet: the body field, the auto-numbered list and the
+/// calculator preview all want the height, and a back arrow reads more
+/// clearly than a drag handle. Returns a [_NoteDraft] on save, null if
+/// dismissed.
+class _NoteEditorPage extends StatefulWidget {
+  const _NoteEditorPage({
+    required this.existing,
+    required this.previewExpanded,
+    required this.onPreviewChanged,
+  });
+
+  final CalcNote? existing;
+  final bool previewExpanded;
+
+  /// Reports the preview toggle up, so the choice survives closing the editor.
+  final ValueChanged<bool> onPreviewChanged;
+
+  @override
+  State<_NoteEditorPage> createState() => _NoteEditorPageState();
+}
+
+class _NoteEditorPageState extends State<_NoteEditorPage> {
+  late final TextEditingController _titleCtrl;
+  late final TextEditingController _bodyCtrl;
+  late bool _showPreview;
+
+  bool get _isNew => widget.existing == null;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleCtrl = TextEditingController(text: widget.existing?.title ?? '');
+    // New notes start the numbered list off at "1. ".
+    _bodyCtrl = TextEditingController(text: widget.existing?.body ?? '1. ');
+    _bodyCtrl.selection =
+        TextSelection.collapsed(offset: _bodyCtrl.text.length);
+    _NotesScreenState._attachAutoNumbering(_bodyCtrl);
+    _showPreview = widget.previewExpanded;
+  }
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    _bodyCtrl.dispose();
+    super.dispose();
+  }
+
+  bool get _dirty {
+    final title = _titleCtrl.text.trim();
+    final body = _bodyCtrl.text.trimRight();
+    if (_isNew) {
+      return title.isNotEmpty || !_NotesScreenState._isBlankBody(body);
+    }
+    return title != widget.existing!.title ||
+        body != widget.existing!.body.trimRight();
+  }
+
+  void _save() {
+    Navigator.pop(
+      context,
+      _NoteDraft(
+        title: _titleCtrl.text.trim(),
+        body: _bodyCtrl.text.trimRight(),
+      ),
+    );
+  }
+
+  /// Guards the back arrow so edits aren't silently thrown away.
+  Future<bool> _confirmDiscard() async {
+    if (!_dirty) return true;
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: AppColors.glassBorder),
+        ),
+        title: Text(
+          'Discard changes?',
+          style: GoogleFonts.outfit(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          'This note has not been saved yet.',
+          style: GoogleFonts.inter(
+            color: AppColors.textSecondary,
+            fontSize: 14,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Keep editing',
+                style: GoogleFonts.inter(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              'Discard',
+              style: GoogleFonts.inter(
+                color: AppColors.error,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    return leave == true;
+  }
+
+  Future<void> _handleBack() async {
+    if (await _confirmDiscard() && mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _handleBack();
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          backgroundColor: AppColors.background,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded,
+                color: AppColors.textPrimary),
+            tooltip: 'Back',
+            onPressed: _handleBack,
+          ),
+          title: Text(
+            _isNew ? 'New note' : 'Edit note',
+            style: GoogleFonts.outfit(
+              fontSize: 19,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: _save,
+              child: Text(
+                'Save',
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.electricBlue,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+          ],
+        ),
+        body: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              8,
+              20,
+              MediaQuery.of(context).viewInsets.bottom + 28,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: _titleCtrl,
+                  style: GoogleFonts.inter(color: AppColors.textPrimary),
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: InputDecoration(
+                    hintText: 'Title (optional)',
+                    hintStyle:
+                        GoogleFonts.inter(color: AppColors.textTertiary),
+                    filled: true,
+                    fillColor: AppColors.surfaceLight,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _bodyCtrl,
+                  autofocus: _isNew,
+                  maxLines: null,
+                  minLines: 12,
+                  keyboardType: TextInputType.multiline,
+                  textCapitalization: TextCapitalization.sentences,
+                  style: GoogleFonts.inter(color: AppColors.textPrimary),
+                  decoration: InputDecoration(
+                    hintText: 'e.g. QUADRATIC: X=(-B±√(B²-4AC))/2A',
+                    hintStyle:
+                        GoogleFonts.inter(color: AppColors.textTertiary),
+                    filled: true,
+                    fillColor: AppColors.surfaceLight,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // ── Collapsible 1:1 TI-84 Plus screen preview ──────
+                InkWell(
+                  onTap: () {
+                    setState(() => _showPreview = !_showPreview);
+                    widget.onPreviewChanged(_showPreview);
+                  },
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.calculate_rounded,
+                            size: 16, color: AppColors.textSecondary),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Calc preview',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        const Spacer(),
+                        AnimatedRotation(
+                          turns: _showPreview ? 0.5 : 0.0,
+                          duration: const Duration(milliseconds: 200),
+                          child: const Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            size: 20,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOut,
+                  alignment: Alignment.topCenter,
+                  child: _showPreview
+                      ? Column(
+                          children: [
+                            const SizedBox(height: 8),
+                            Center(
+                              child: ValueListenableBuilder<TextEditingValue>(
+                                valueListenable: _bodyCtrl,
+                                builder: (_, value, __) => Ti84Pager(
+                                  scale: 2,
+                                  text: _NotesScreenState._isBlankBody(
+                                          value.text)
+                                      ? 'YOUR NOTE APPEARS HERE'
+                                      : value.text,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              '96x64 screen — 16 chars per line, 8 lines each.',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                color: AppColors.textTertiary,
+                              ),
+                            ),
+                          ],
+                        )
+                      : const SizedBox(width: double.infinity),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
