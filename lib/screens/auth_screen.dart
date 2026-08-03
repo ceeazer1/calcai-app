@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/calcai_mark.dart';
+import 'verify_email_screen.dart';
 
 /// Sign-in screen.
 ///
@@ -110,15 +111,29 @@ class _AuthScreenState extends State<AuthScreen>
     final auth = context.read<AuthService>();
     final email = _emailCtrl.text.trim();
     final password = _passwordCtrl.text;
-    final ok = _isSignUp
+    final outcome = _isSignUp
         ? await auth.signUpWithEmail(email, password)
         : await auth.signInWithEmail(email, password);
 
     if (!mounted) return;
-    setState(() {
-      _isLoading = false;
-      _error = ok ? null : (auth.error ?? 'Something went wrong.');
-    });
+    setState(() => _isLoading = false);
+
+    switch (outcome) {
+      case EmailAuthOutcome.success:
+        // The app gate watches AuthService and swaps this screen out itself.
+        setState(() => _error = null);
+      case EmailAuthOutcome.verificationRequired:
+        // Sign-up mails a code instead of returning a session; logging in to
+        // an unconfirmed account lands here too.
+        setState(() => _error = null);
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => VerifyEmailScreen(email: email),
+          ),
+        );
+      case EmailAuthOutcome.failed:
+        setState(() => _error = auth.error ?? 'Something went wrong.');
+    }
   }
 
   Future<void> _handleSocial(String provider) async {

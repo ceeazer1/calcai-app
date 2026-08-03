@@ -13,6 +13,22 @@ import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'resilient_http_client.dart';
 import '../utils/log.dart';
 
+/// What an email sign-in or sign-up ended in.
+///
+/// Sign-up no longer returns a session — the address has to be confirmed
+/// first — so a plain bool can't say what the caller should do next.
+enum EmailAuthOutcome {
+  /// Signed in; a token is stored.
+  success,
+
+  /// The account exists but its email is unconfirmed. Send the user to the
+  /// code screen.
+  verificationRequired,
+
+  /// Nothing happened; [AuthService.error] explains why.
+  failed,
+}
+
 /// Manages authentication state for the CalcAI app.
 ///
 /// Handles sign-in / sign-out, token persistence via [FlutterSecureStorage],
@@ -312,7 +328,7 @@ class AuthService extends ChangeNotifier {
   ///
   /// POST /ai/auth/login. Returns true on success; [error] carries a message
   /// on failure.
-  Future<bool> signInWithEmail(String email, String password) =>
+  Future<EmailAuthOutcome> signInWithEmail(String email, String password) =>
       _emailAuth('/auth/login', email, password);
 
   /// Creates an account with an email and password.
@@ -320,12 +336,13 @@ class AuthService extends ChangeNotifier {
   /// POST /ai/auth/register. The backend stores the password as PBKDF2-SHA256
   /// and returns a session token, so a successful sign-up also signs the user
   /// in — there is no second round trip.
-  Future<bool> signUpWithEmail(String email, String password) =>
+  Future<EmailAuthOutcome> signUpWithEmail(String email, String password) =>
       _emailAuth('/auth/register', email, password);
 
   /// Shared body for the two email flows. They differ only by path and by
   /// which errors the backend can return.
-  Future<bool> _emailAuth(String path, String email, String password) async {
+  Future<EmailAuthOutcome> _emailAuth(
+      String path, String email, String password) async {
     _error = null;
     _setLoading(true);
     try {
@@ -348,18 +365,84 @@ class AuthService extends ChangeNotifier {
         // Fall through to the status-code message below.
       }
 
+      final code = data['error']?.toString();
+
+      // Logging in to an account whose address was never confirmed.
+      if (response.statusCode == 403 && code == 'email_unverified') {
+        _error = null;
+        return EmailAuthOutcome.verificationRequired;
+      }
+
       if (response.statusCode != 200 || data['ok'] != true) {
-        _error = _emailAuthMessage(data['error']?.toString(), response.statusCode);
-        return false;
+        _error = _emailAuthMessage(code, response.statusCode);
+        return EmailAuthOutcome.failed;
+      }
+
+      // Sign-up succeeds without a token: a code has just been emailed.
+      if (data['verificationRequired'] == true) {
+        _error = null;
+        return EmailAuthOutcome.verificationRequired;
       }
 
       _token = data['token'] as String?;
       if (_token == null || _token!.isEmpty) {
         _error = 'Sign-in failed. Please try again.';
-        return false;
+        return EmailAuthOutcome.failed;
       }
       _email = (data['email'] as String?) ?? email.trim();
       _username = (data['username'] as String?) ?? _email!.split('@').first;
+      _isAuthenticated = true;
+      _error = null;
+
+      await _saveToStorage();
+      await fetchDevices();
+      return EmailAuthOutcome.success;
+    } on TimeoutException {
+      _error = 'Connection timed out. Please try again.';
+      return EmailAuthOutcome.failed;
+    } catch (e) {
+      logDebug('_emailAuth error: $e');
+      _error = 'Network error — check your internet connection.';
+      return EmailAuthOutcome.failed;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Confirms the emailed code and finishes signing in.
+  ///
+  /// POST /ai/auth/verify. Returns true when the account is confirmed and a
+  /// session is stored.
+  Future<bool> verifyEmailCode(String email, String code) async {
+    _error = null;
+    _setLoading(true);
+    try {
+      final response = await _httpClient
+          .post(
+            Uri.parse('$_baseUrl/auth/verify'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'email': email.trim(), 'code': code}),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      Map<String, dynamic> data = const {};
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) data = decoded;
+      } catch (_) {}
+
+      if (response.statusCode != 200 || data['ok'] != true) {
+        _error = _verifyMessage(data['error']?.toString(), response.statusCode);
+        return false;
+      }
+
+      _token = data['token'] as String?;
+      if (_token == null || _token!.isEmpty) {
+        _error = 'Could not finish signing in. Please try again.';
+        return false;
+      }
+      _email = email.trim();
+      _username = _email!.split('@').first;
       _isAuthenticated = true;
       _error = null;
 
@@ -370,11 +453,47 @@ class AuthService extends ChangeNotifier {
       _error = 'Connection timed out. Please try again.';
       return false;
     } catch (e) {
-      logDebug('_emailAuth error: $e');
+      logDebug('verifyEmailCode error: $e');
       _error = 'Network error — check your internet connection.';
       return false;
     } finally {
       _setLoading(false);
+    }
+  }
+
+  /// Asks the backend to email a fresh code.
+  ///
+  /// Always reports success: the endpoint deliberately answers the same way
+  /// for a registered and an unregistered address, so there is nothing here to
+  /// tell the user apart from "check your inbox".
+  Future<void> resendVerificationCode(String email) async {
+    try {
+      await _httpClient
+          .post(
+            Uri.parse('$_baseUrl/auth/resend-code'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'email': email.trim()}),
+          )
+          .timeout(const Duration(seconds: 20));
+    } catch (e) {
+      logDebug('resendVerificationCode error: $e');
+    }
+  }
+
+  static String _verifyMessage(String? code, int status) {
+    switch (code) {
+      case 'bad_code':
+        return 'That code is not right. Check it and try again.';
+      case 'code_expired':
+        return 'That code has expired. Tap Resend for a new one.';
+      case 'too_many_attempts':
+        return 'Too many tries. Tap Resend for a new code.';
+      case 'no_account':
+        return 'No account found for that email.';
+      case 'bad_input':
+        return 'Enter the 6-digit code from your email.';
+      default:
+        return 'Could not confirm the code ($status). Please try again.';
     }
   }
 
@@ -394,6 +513,9 @@ class AuthService extends ChangeNotifier {
         return 'Email or password is incorrect.';
       case 'registration_disabled':
         return 'Sign-ups are currently closed.';
+      case 'email_unavailable':
+      case 'email_failed':
+        return "Couldn't send the confirmation email. Please try again.";
       case 'rate_limited':
         return 'Too many attempts. Please wait a moment and try again.';
       default:
@@ -650,14 +772,23 @@ class PreviewAuthService extends AuthService {
   }
 
   @override
-  Future<bool> signInWithEmail(String email, String password) async {
+  Future<EmailAuthOutcome> signInWithEmail(String email, String password) async {
+    await init();
+    return EmailAuthOutcome.success;
+  }
+
+  @override
+  Future<EmailAuthOutcome> signUpWithEmail(String email, String password) async {
+    await init();
+    return EmailAuthOutcome.success;
+  }
+
+  @override
+  Future<bool> verifyEmailCode(String email, String code) async {
     await init();
     return true;
   }
 
   @override
-  Future<bool> signUpWithEmail(String email, String password) async {
-    await init();
-    return true;
-  }
+  Future<void> resendVerificationCode(String email) async {}
 }
