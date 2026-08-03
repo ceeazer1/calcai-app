@@ -4,12 +4,18 @@ import 'package:provider/provider.dart';
 
 import '../services/auth_service.dart';
 import '../theme/app_colors.dart';
-import '../widgets/glass_card.dart';
+import '../widgets/calcai_mark.dart';
 
-/// Authentication screen — Sign in with Apple/Google.
+/// Sign-in screen.
 ///
-/// This is the first screen new users see. Clean, minimal,
-/// with prominent sign-in buttons.
+/// Layout follows the product mock: a light band carrying the logo, then a
+/// large dark rounded panel holding the sign-in actions, and a light footer.
+///
+/// The mock drew email + password fields and a Login/Sign up switch. CalcAI is
+/// Sign in with Apple / Google only and registration is closed, so those are
+/// not rebuilt here — a segmented control with one option, or a password field
+/// with no password behind it, would be decoration pretending to be function.
+/// The shape, spacing and cream primary button are kept.
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
 
@@ -19,6 +25,10 @@ class AuthScreen extends StatefulWidget {
 
 class _AuthScreenState extends State<AuthScreen>
     with SingleTickerProviderStateMixin {
+  static const _panel = Color(0xFF1B1B1D);
+  static const _page = Color(0xFFF7F7F5);
+  static const _cream = Color(0xFFF6EFEA);
+
   late final AnimationController _animController;
   late final Animation<double> _fadeIn;
   late final Animation<Offset> _slideUp;
@@ -30,18 +40,18 @@ class _AuthScreenState extends State<AuthScreen>
     super.initState();
     _animController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 900),
     );
     _fadeIn = CurvedAnimation(
       parent: _animController,
       curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
     );
     _slideUp = Tween<Offset>(
-      begin: const Offset(0, 0.3),
+      begin: const Offset(0, 0.08),
       end: Offset.zero,
     ).animate(CurvedAnimation(
       parent: _animController,
-      curve: const Interval(0.3, 1.0, curve: Curves.easeOutCubic),
+      curve: const Interval(0.2, 1.0, curve: Curves.easeOutCubic),
     ));
     _animController.forward();
   }
@@ -69,7 +79,7 @@ class _AuthScreenState extends State<AuthScreen>
           errorDetail = auth.error ?? 'Google sign-in failed';
         }
       }
-    } catch (e) {
+    } catch (_) {
       errorDetail = 'Sign in failed. Please try again.';
     } finally {
       if (mounted) {
@@ -84,194 +94,192 @@ class _AuthScreenState extends State<AuthScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: AppColors.backgroundGradient,
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Column(
-              children: [
-                const Spacer(flex: 3),
+      backgroundColor: _page,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            // ── Logo band ─────────────────────────────────────
+            FadeTransition(
+              opacity: _fadeIn,
+              child: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 18),
+                child: CalcAiMark(size: 54),
+              ),
+            ),
 
-                // ── Logo & Branding ──────────────────────────
-                FadeTransition(
+            // ── Dark panel ────────────────────────────────────
+            Expanded(
+              child: SlideTransition(
+                position: _slideUp,
+                child: FadeTransition(
                   opacity: _fadeIn,
-                  child: Column(
-                    children: [
-                      // Your logo will go here — space reserved for now.
-                      const SizedBox(height: 96),
-                      Text(
-                        'Your Calculator, Reimagined with AI.',
-                        style: GoogleFonts.inter(
-                          fontSize: 16,
-                          color: AppColors.textSecondary,
-                          fontWeight: FontWeight.w400,
-                        ),
+                  child: Container(
+                    width: double.infinity,
+                    decoration: const BoxDecoration(
+                      color: _panel,
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(38),
                       ),
-                    ],
-                  ),
-                ),
-
-                const Spacer(flex: 2),
-
-                // ── Sign-in buttons ──────────────────────────
-                SlideTransition(
-                  position: _slideUp,
-                  child: FadeTransition(
-                    opacity: _fadeIn,
-                    child: Column(
-                      children: [
-                        // Error message
-                        if (_error != null)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 16),
-                            child: Text(
-                              _error!,
-                              style: GoogleFonts.inter(
-                                fontSize: 13,
-                                color: AppColors.error,
-                              ),
-                              textAlign: TextAlign.center,
+                    ),
+                    padding: const EdgeInsets.fromLTRB(28, 40, 28, 0),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            'Welcome',
+                            style: GoogleFonts.outfit(
+                              fontSize: 30,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                              letterSpacing: -0.5,
                             ),
                           ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Your calculator, reimagined with AI.',
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              height: 1.4,
+                              color: const Color(0xFF9A9AA2),
+                            ),
+                          ),
+                          const SizedBox(height: 40),
 
-                        // Sign in with Apple
-                        _SignInButton(
-                          icon: Icons.apple_rounded,
-                          label: 'Sign in with Apple',
-                          onTap: _isLoading
-                              ? null
-                              : () => _handleSignIn('apple'),
-                          isPrimary: true,
-                        ),
-                        const SizedBox(height: 12),
+                          _AuthButton(
+                            icon: Icons.apple_rounded,
+                            label: 'Continue with Apple',
+                            background: _cream,
+                            foreground: const Color(0xFF16161A),
+                            onTap:
+                                _isLoading ? null : () => _handleSignIn('apple'),
+                          ),
+                          const SizedBox(height: 14),
+                          _AuthButton(
+                            icon: Icons.g_mobiledata_rounded,
+                            label: 'Continue with Google',
+                            background: Colors.transparent,
+                            foreground: Colors.white,
+                            border: const Color(0xFF3A3A40),
+                            onTap: _isLoading
+                                ? null
+                                : () => _handleSignIn('google'),
+                          ),
 
-                        // Sign in with Google
-                        _SignInButton(
-                          icon: Icons.g_mobiledata_rounded,
-                          label: 'Sign in with Google',
-                          onTap: _isLoading
-                              ? null
-                              : () => _handleSignIn('google'),
-                          isPrimary: false,
-                        ),
-
-                        const SizedBox(height: 24),
-
-                        // Loading indicator
-                        if (_isLoading)
+                          const SizedBox(height: 22),
+                          // Fixed-height slot so the buttons don't jump when a
+                          // spinner or an error appears.
                           SizedBox(
                             height: 24,
-                            width: 24,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                AppColors.textSecondary,
-                              ),
+                            child: Center(
+                              child: _isLoading
+                                  ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                          Color(0xFF9A9AA2),
+                                        ),
+                                      ),
+                                    )
+                                  : (_error != null
+                                      ? Text(
+                                          _error!,
+                                          textAlign: TextAlign.center,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 13,
+                                            color: AppColors.error,
+                                          ),
+                                        )
+                                      : const SizedBox.shrink()),
                             ),
                           ),
-                      ],
+                          const SizedBox(height: 24),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-
-                const Spacer(flex: 1),
-
-                // ── Footer ────────────────────────────────────
-                FadeTransition(
-                  opacity: _fadeIn,
-                  child: Text(
-                    'By continuing, you agree to our Terms of Service',
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      color: AppColors.textTertiary,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
+              ),
             ),
-          ),
+
+            // ── Footer ────────────────────────────────────────
+            Container(
+              color: _page,
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(28, 14, 28, 18),
+              child: Text(
+                'By continuing, you agree to our Terms of Service',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  color: const Color(0xFF8A8A90),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-/// Custom sign-in button with glass effect.
-class _SignInButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback? onTap;
-  final bool isPrimary;
-
-  const _SignInButton({
+/// Full-width pill button, matching the mock's primary action.
+class _AuthButton extends StatelessWidget {
+  const _AuthButton({
     required this.icon,
     required this.label,
+    required this.background,
+    required this.foreground,
     required this.onTap,
-    this.isPrimary = false,
+    this.border,
   });
+
+  final IconData icon;
+  final String label;
+  final Color background;
+  final Color foreground;
+  final Color? border;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: 56,
-      child: isPrimary
-          ? Container(
-              decoration: BoxDecoration(
-                gradient: AppColors.accentGradient,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: onTap,
-                  borderRadius: BorderRadius.circular(16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(icon, color: AppColors.textOnAccent, size: 24),
-                      const SizedBox(width: 12),
-                      Text(
-                        label,
-                        style: GoogleFonts.inter(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textOnAccent,
-                        ),
-                      ),
-                    ],
+    return Opacity(
+      opacity: onTap == null ? 0.55 : 1,
+      child: Material(
+        color: background,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            height: 54,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border:
+                  border == null ? null : Border.all(color: border!, width: 1),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: foreground, size: 22),
+                const SizedBox(width: 10),
+                Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: foreground,
                   ),
                 ),
-              ),
-            )
-          : GlassCard(
-              padding: EdgeInsets.zero,
-              borderRadius: 16,
-              onTap: onTap,
-              child: SizedBox(
-                height: 56,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(icon, color: AppColors.textPrimary, size: 24),
-                    const SizedBox(width: 12),
-                    Text(
-                      label,
-                      style: GoogleFonts.inter(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              ],
             ),
+          ),
+        ),
+      ),
     );
   }
 }

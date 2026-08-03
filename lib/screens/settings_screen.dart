@@ -8,6 +8,7 @@ import '../services/auth_service.dart';
 import '../services/cloud_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glass_card.dart';
+import '../widgets/calcai_mark.dart';
 
 /// Settings screen — account, device info, and sign out.
 class SettingsScreen extends StatefulWidget {
@@ -240,6 +241,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Column(
                 children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                    child: Row(
+                      children: [
+                        const CalcAiMark(size: 40),
+                        const SizedBox(width: 14),
+                        Text(
+                          'CalcAI',
+                          style: GoogleFonts.outfit(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Divider(color: AppColors.glassBorder, height: 1, indent: 56),
                   _SettingsRow(
                     icon: Icons.info_outline_rounded,
                     label: 'Version',

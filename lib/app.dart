@@ -10,6 +10,7 @@ import 'services/ble_service.dart';
 import 'services/cloud_service.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
+import 'widgets/calcai_mark.dart';
 
 /// UI-only preview flag. Enable with `--dart-define=UI_PREVIEW=true` to boot
 /// straight into the main app (skipping auth/pairing) for live UI editing on
@@ -109,6 +110,8 @@ class _AppGateState extends State<_AppGate> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              const CalcAiMark(size: 64),
+              const SizedBox(height: 20),
               Text(
                 'CalcAI',
                 style: GoogleFonts.outfit(
