@@ -1053,3 +1053,25 @@ class BleService extends ChangeNotifier {
     super.dispose();
   }
 }
+
+/// BLE stand-in for UI previews.
+///
+/// A browser has no Bluetooth radio, so the real service can never populate the
+/// saved-network list and Home always shows "No networks saved yet". This
+/// subclass seeds the list (and the connected SSID) so the Wi-Fi section renders
+/// the way it does on a provisioned device.
+///
+/// Active **only** under `--dart-define=UI_PREVIEW=true`; release builds pass no
+/// dart-defines, so this never ships. It lives in this file because
+/// `_savedNetworks` and `_connectedSsid` are library-private.
+class PreviewBleService extends BleService {
+  PreviewBleService() {
+    _savedNetworks.addAll(const ['Home WiFi', 'Chris iPhone']);
+    _connectedSsid = 'Home WiFi';
+  }
+
+  /// Never touches SharedPreferences: startup calls this and an empty (or
+  /// stale) stored list would otherwise wipe the seed.
+  @override
+  Future<void> loadPersistedNetworks(String? deviceMac) async {}
+}

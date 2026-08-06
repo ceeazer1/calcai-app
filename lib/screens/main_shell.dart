@@ -89,11 +89,13 @@ class _MainShellState extends State<MainShell> {
                 width: 0.5,
               ),
             ),
+            // Expanded, not spaceAround: the items have fixed padding, so on
+            // a narrow phone (320pt) four of them are wider than the bar and
+            // the Row overflows. Sharing the width lets them compress.
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: List.generate(
                 _tabs.length,
-                (index) => _buildNavItem(index),
+                (index) => Expanded(child: _buildNavItem(index)),
               ),
             ),
           ),
@@ -116,7 +118,7 @@ class _MainShellState extends State<MainShell> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         curve: Curves.easeOutCubic,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -136,6 +138,8 @@ class _MainShellState extends State<MainShell> {
             // Label with animated color transition.
             Text(
               tab.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: GoogleFonts.inter(
                 fontSize: 11,
                 fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,

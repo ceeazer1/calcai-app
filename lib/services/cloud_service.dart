@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../models/calc_note.dart';
 import 'resilient_http_client.dart';
 import '../utils/log.dart';
 
@@ -82,6 +83,14 @@ class CloudService extends ChangeNotifier {
 
   /// Current response style ("answer", "small", or "detailed").
   String get responseStyle => _modelInfo?['style']?.toString() ?? 'small';
+
+  /// How hard the model may think before answering ("fast", "balanced" or
+  /// "thorough"). The worker translates it per provider.
+  String get thinkingEffort => _modelInfo?['effort']?.toString() ?? 'fast';
+
+  /// The user's own standing instructions, appended to every prompt.
+  String _customContext = '';
+  String get customContext => _customContext;
 
   /// Plan type (e.g. "Free", "Pro").
   String? get planType => _usage?['plan']?.toString() ??
@@ -283,15 +292,59 @@ class CloudService extends ChangeNotifier {
     }
   }
 
-  /// Updates the AI model and response style for a device.
+  /// Loads the device's custom instructions.
   ///
-  /// POST /ai/model/set  body: {mac, model, style}
+  /// GET /ai/context/get?mac=…
+  Future<String> getContext(String mac) async {
+    try {
+      final response = await _client.get(
+        Uri.parse('$_baseUrl/ai/context/get?mac=${Uri.encodeQueryComponent(mac)}'),
+      );
+      _assertSuccess(response);
+      final j = jsonDecode(response.body) as Map<String, dynamic>;
+      _customContext = (j['context'] ?? '').toString();
+      notifyListeners();
+      return _customContext;
+    } catch (e) {
+      // Non-fatal: an empty value just means no custom instructions.
+      return _customContext;
+    }
+  }
+
+  /// Saves the device's custom instructions.
+  ///
+  /// POST /ai/context/set  body: {mac, context}
+  Future<bool> setContext(String token, String mac, String context) async {
+    try {
+      _setLoading(true);
+      _clearError();
+      final response = await _client.post(
+        Uri.parse('$_baseUrl/ai/context/set'),
+        headers: _jsonAuthHeaders(token),
+        body: jsonEncode({'mac': mac, 'context': context}),
+      );
+      _assertSuccess(response);
+      _customContext = context;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _setError('Failed to save instructions: ${_friendlyError(e)}');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Updates the AI model, response style and thinking effort for a device.
+  ///
+  /// POST /ai/model/set  body: {mac, model, style, effort}
   Future<void> setModel(
     String token,
     String mac,
     String model,
-    String style,
-  ) async {
+    String style, {
+    String? effort,
+  }) async {
     try {
       _setLoading(true);
       _clearError();
@@ -303,13 +356,20 @@ class CloudService extends ChangeNotifier {
           'mac': mac,
           'model': model,
           'style': style,
+          // Omitted rather than guessed: the worker keeps the stored value when
+          // the field is absent, so a partial update can't reset it.
+          if (effort != null) 'effort': effort,
         }),
       );
 
       _assertSuccess(response);
 
       // Optimistic update so the UI reflects changes immediately.
-      _modelInfo = {'model': model, 'style': style};
+      _modelInfo = {
+        'model': model,
+        'style': style,
+        'effort': effort ?? thinkingEffort,
+      };
       notifyListeners();
     } catch (e) {
       _setError('Failed to update model: ${_friendlyError(e)}');
@@ -505,6 +565,7 @@ class CloudService extends ChangeNotifier {
           getUsage(token, mac),
           getDeviceInfo(token, mac),
           getHistory(token, mac, limit: 10),
+          getContext(mac),
         ],
         eagerError: false,
       );
@@ -718,6 +779,7 @@ class CloudService extends ChangeNotifier {
     _devices = [];
     _deviceInfo = null;
     _modelInfo = null;
+    _customContext = '';
     _notes = null;
     _history = [];
     _usage = null;
@@ -752,18 +814,98 @@ class CloudException implements Exception {
 class PreviewCloudService extends CloudService {
   /// Notes envelope, exactly as the real backend would store it.
   String _notesPayload = '';
-
-  PreviewCloudService() {
+  /// [seeded] fills the service with sample activity and notes so a preview
+  /// build shows a populated app. Off by default: tests construct this
+  /// directly and want to control their own fixtures, and an empty service is
+  /// the honest starting point.
+  PreviewCloudService({bool seeded = false}) {
     _usage = {
       'plan': 'free',
-      'cheapCount': 0,
-      'expensiveCount': 0,
+      'cheapCount': seeded ? 12 : 0,
+      'expensiveCount': seeded ? 3 : 0,
       'cheapLimit': 50,
       'expensiveLimit': 10,
     };
-    _modelInfo = {'model': 'gpt-5-mini', 'style': 'small'};
+    _modelInfo = {'model': 'gpt-5.6-sol', 'style': 'small', 'effort': 'fast'};
     _deviceInfo = {'calcModel': 'TI-84 Plus', 'firmware': '1.0.0'};
     _devices = ['ca1ca1000001'];
+
+    // Sample activity, so a preview build shows a populated app instead of
+    // empty states. Answers are stored as LaTeX exactly the way the worker
+    // logs them, which also exercises latexToReadable on the way to the
+    // screen. None of this can reach production: PreviewCloudService is only
+    // constructed when kUiPreview is true, and release builds pass no
+    // dart-defines.
+    if (!seeded) return;
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    const minute = 60 * 1000;
+    _history = [
+      {
+        'ts': now - 8 * minute,
+        'type': 'render',
+        'question': 'derivative of x^3 - 5x + 2',
+        'response': r'$$f(x)=x^3-5x+2$$'
+            '\n'
+            r"$$f'(x)=3x^2-5$$",
+        'model': 'gpt-5.6-sol',
+      },
+      {
+        'ts': now - 46 * minute,
+        'type': 'render',
+        'question': 'solve 2x + 7 = 19',
+        'response': r'$$2x=12$$'
+            '\n'
+            r'$$x=6$$',
+        'model': 'gpt-5.6-luna',
+      },
+      {
+        'ts': now - 3 * 60 * minute,
+        'type': 'render',
+        'question': 'area of a circle with radius 5',
+        'response': r'$$A=\pi r^2$$'
+            '\n'
+            r'$$A=\pi(5)^2$$'
+            '\n'
+            r'$$A=78.5$$',
+        'model': 'gpt-5.6-sol',
+      },
+      {
+        'ts': now - 5 * 60 * minute,
+        'type': 'render',
+        'question': 'distance between (1,2) and (4,6)',
+        'response': r'$$d=\sqrt{9+16}$$'
+            '\n'
+            r'$$d=5$$',
+        'model': 'gpt-5.6-luna',
+      },
+      {
+        'ts': now - 26 * 60 * minute,
+        'type': 'render',
+        'question': 'graph y = x^2 - 4',
+        'response': 'Parabola opening upward'
+            '\n'
+            r'\plot{x^2-4}{-3}{3}'
+            '\n'
+            r'$$\text{Roots: } x=\pm 2$$',
+        'model': 'gpt-5.6-sol',
+      },
+    ];
+
+    _notesPayload = CalcNote.toEnvelope([
+      CalcNote.create(
+        title: 'Quadratic',
+        body: 'X=(-B±√(B²-4AC))/2A',
+      ),
+      CalcNote.create(
+        title: 'Unit circle',
+        body: '1. SIN30=0.5\n2. COS60=0.5\n3. TAN45=1',
+      ),
+      CalcNote.create(
+        title: 'Constants',
+        body: 'G=9.81 M/S²\nC=3.0E8 M/S',
+      ),
+    ]);
   }
 
   @override
@@ -812,9 +954,23 @@ class PreviewCloudService extends CloudService {
   Future<Map<String, dynamic>> listApiKeys(String token) async => _apiKeys;
 
   @override
-  Future<void> setModel(
-      String token, String mac, String model, String style) async {
-    _modelInfo = {'model': model, 'style': style};
+  Future<String> getContext(String mac) async => customContext;
+
+  @override
+  Future<bool> setContext(String token, String mac, String context) async {
+    _customContext = context;
+    notifyListeners();
+    return true;
+  }
+
+  @override
+  Future<void> setModel(String token, String mac, String model, String style,
+      {String? effort}) async {
+    _modelInfo = {
+      'model': model,
+      'style': style,
+      'effort': effort ?? thinkingEffort,
+    };
     notifyListeners();
   }
 }

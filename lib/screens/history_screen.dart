@@ -8,6 +8,7 @@ import '../theme/app_colors.dart';
 import '../widgets/glass_card.dart';
 import '../utils/latex_readable.dart';
 import '../utils/safe_image.dart';
+import '../widgets/qa_line.dart';
 
 /// History screen — shows all AI interactions from the calculator,
 /// including camera photos and text prompts.
@@ -465,7 +466,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
                     // Question
                     if (question.isNotEmpty) ...[
-                      Text('Prompt',
+                      Text('Q',
                           style: GoogleFonts.inter(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
@@ -485,7 +486,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
                     // Response
                     if (response.isNotEmpty) ...[
-                      Text('Response',
+                      Text('A',
                           style: GoogleFonts.inter(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
@@ -652,33 +653,34 @@ class _HistoryCard extends StatelessWidget {
                     ],
                   ),
 
-                  // Title: the student's prompt, or "Photo" for image entries.
+                  // The student's prompt, or "Photo" for image entries.
                   if (question.isNotEmpty || isImage) ...[
                     const SizedBox(height: 8),
-                    Text(
-                      isImage ? 'Photo' : question,
-                      style: GoogleFonts.inter(
+                    QaLine(
+                      letter: 'Q',
+                      text: isImage ? 'Photo' : question,
+                      maxLines: isImage ? 1 : 2,
+                      textStyle: GoogleFonts.inter(
                         fontSize: 14,
+                        height: 1.35,
                         fontWeight: FontWeight.w600,
                         color: AppColors.textPrimary,
                       ),
-                      maxLines: isImage ? 1 : 2,
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
 
                   // Response preview
                   if (response.isNotEmpty) ...[
-                    const SizedBox(height: 5),
-                    Text(
-                      response,
-                      style: GoogleFonts.inter(
+                    const SizedBox(height: 7),
+                    QaLine(
+                      letter: 'A',
+                      text: response,
+                      textStyle: GoogleFonts.inter(
                         fontSize: 13,
                         color: AppColors.textSecondary,
                         height: 1.45,
                       ),
                       maxLines: isImage ? 2 : 3,
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ],

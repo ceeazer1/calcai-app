@@ -7,17 +7,29 @@ import '../services/ble_service.dart';
 import '../services/cloud_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glass_card.dart';
+import 'custom_instructions_screen.dart';
 import 'link_device_screen.dart';
 import 'wifi_screen.dart';
 import '../utils/latex_readable.dart';
 import '../utils/safe_image.dart';
+import '../widgets/qa_line.dart';
+
+/// What the backend falls back to when a device has no model set
+/// (`OPENAI_MODEL` in edge-worker/wrangler.toml).
+const String kDefaultModel = 'gpt-5.6-luna';
 
 /// Model IDs usable on the free plan. Everything else is premium.
+///
+/// Mirrors `CHEAP_MODELS` in the worker — if the two drift, the app shows a
+/// model as free that the backend then bills against the premium quota.
 const Set<String> kFreeModels = {
-  'gpt-5-mini',
+  'gpt-5.6-luna',
   'gemini-3.5-flash',
-  'gemini-3.1-flash-lite',
+  'gemini-3.5-flash-lite',
   'claude-haiku-4-5',
+  // Retired from the picker but still valid on devices provisioned earlier.
+  'gpt-5-mini',
+  'gemini-3.1-flash-lite',
 };
 
 bool isFreeModel(String model) => kFreeModels.contains(model);
@@ -46,6 +58,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   /// Whether the response-style inline dropdown is open.
   bool _styleExpanded = false;
+  bool _effortExpanded = false;
 
   @override
   void initState() {
@@ -106,8 +119,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                 _buildModelSelector(),
                 const SizedBox(height: 10),
                 _buildStyleDropdown(),
+                const SizedBox(height: 10),
+                _buildEffortDropdown(),
                 const SizedBox(height: 24),
-                _buildSectionHeader('Recent', Icons.history_rounded),
+                _buildSectionHeader('Latest activity', Icons.history_rounded),
                 const SizedBox(height: 12),
                 _buildLastPromptCard(),
                 const SizedBox(height: 24),
@@ -291,11 +306,24 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   /// Response-style presets, shared by the dropdown row and its picker sheet.
-  static const List<(String, String, String, IconData)> _styles = [
-    ('answer', 'Answers only', 'Just the final answers', Icons.bolt_rounded),
-    ('small', 'Brief explanation', 'Answers with short work', Icons.notes_rounded),
-    ('detailed', 'Detailed explanation', 'Full step-by-step work',
-        Icons.menu_book_rounded),
+  ///
+  /// No icons: a bolt, a page and a book said nothing the labels didn't, and
+  /// three unrelated glyphs in a row read as clutter.
+  static const List<(String, String, String)> _styles = [
+    ('answer', 'Answers only', 'Just the final answers'),
+    ('small', 'Brief explanation', 'Answers with short work'),
+    ('detailed', 'Detailed explanation', 'Full step-by-step work'),
+  ];
+
+  /// How long the AI may think before answering.
+  ///
+  /// Deliberately plain words. Each provider names this differently and several
+  /// models don't allow it to be changed at all, so the worker maps one level to
+  /// whatever that model actually supports — nothing here ever greys out.
+  static const List<(String, String, String)> _efforts = [
+    ('fast', 'Fast', 'Answers right away'),
+    ('balanced', 'Balanced', 'Thinks a little first'),
+    ('thorough', 'Take your time', 'Thinks hard, slower to answer'),
   ];
 
   /// "Response style" inline dropdown: a compact row that, on tap, animates
@@ -308,7 +336,124 @@ class _DashboardScreenState extends State<DashboardScreen>
           (s) => s.$1 == current,
           orElse: () => _styles[1],
         );
-        return GlassCard(
+        return _presetDropdown(
+          label: 'Response style',
+          selectedLabel: match.$2,
+          presets: _styles,
+          current: current,
+          expanded: _styleExpanded,
+          onToggle: () => setState(() => _styleExpanded = !_styleExpanded),
+          onSelect: (id) {
+            _setStyle(id);
+            setState(() => _styleExpanded = false);
+          },
+          // The presets are three ways of saying "how much to show". Writing
+          // your own belongs in the same list, not in a separate card.
+          extraOption: _addYourOwnOption(cloud.customContext),
+        );
+      },
+    );
+  }
+
+  /// "Thinking" inline dropdown — same widget as the response style row.
+  Widget _buildEffortDropdown() {
+    return Consumer<CloudService>(
+      builder: (context, cloud, _) {
+        final current = cloud.thinkingEffort;
+        final match = _efforts.firstWhere(
+          (e) => e.$1 == current,
+          orElse: () => _efforts[0],
+        );
+        return _presetDropdown(
+          label: 'Thinking',
+          selectedLabel: match.$2,
+          presets: _efforts,
+          current: current,
+          expanded: _effortExpanded,
+          onToggle: () => setState(() => _effortExpanded = !_effortExpanded),
+          onSelect: (id) {
+            _setEffort(id);
+            setState(() => _effortExpanded = false);
+          },
+        );
+      },
+    );
+  }
+
+  /// "Add your own" — the last entry in the response-style list. Opens the
+  /// full-screen editor, and once something is saved it shows the first line so
+  /// the setting stays legible without opening it.
+  Widget _addYourOwnOption(String saved) {
+    final text = saved.trim();
+    final hasText = text.isNotEmpty;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () async {
+          setState(() => _styleExpanded = false);
+          await Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => const CustomInstructionsScreen(),
+            ),
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          child: Row(
+            children: [
+              Icon(
+                hasText ? Icons.edit_rounded : Icons.add_rounded,
+                size: 18,
+                color: hasText
+                    ? AppColors.electricBlue
+                    : AppColors.textSecondary,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      hasText ? 'Your own instructions' : 'Add your own',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    Text(
+                      hasText
+                          ? text.split(RegExp(r'\r?\n')).first
+                          : 'Tell the AI how you want answers',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textTertiary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The shared expand-in-place dropdown used by both settings rows.
+  Widget _presetDropdown({
+    required String label,
+    required String selectedLabel,
+    required List<(String, String, String)> presets,
+    required String current,
+    required bool expanded,
+    required VoidCallback onToggle,
+    required ValueChanged<String> onSelect,
+    Widget? extraOption,
+  }) {
+    return GlassCard(
           padding: EdgeInsets.zero,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -318,22 +463,18 @@ class _DashboardScreenState extends State<DashboardScreen>
                 color: Colors.transparent,
                 child: InkWell(
                   borderRadius: BorderRadius.circular(12),
-                  onTap: () =>
-                      setState(() => _styleExpanded = !_styleExpanded),
+                  onTap: onToggle,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 14, vertical: 13),
                     child: Row(
                       children: [
-                        Icon(match.$4,
-                            size: 20, color: AppColors.textSecondary),
-                        const SizedBox(width: 14),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Response style',
+                                label,
                                 style: GoogleFonts.inter(
                                   fontSize: 12,
                                   color: AppColors.textSecondary,
@@ -341,7 +482,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                match.$2,
+                                selectedLabel,
                                 style: GoogleFonts.inter(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
@@ -352,7 +493,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                           ),
                         ),
                         AnimatedRotation(
-                          turns: _styleExpanded ? 0.5 : 0.0,
+                          turns: expanded ? 0.5 : 0.0,
                           duration: const Duration(milliseconds: 220),
                           child: const Icon(
                             Icons.keyboard_arrow_down_rounded,
@@ -370,7 +511,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 duration: const Duration(milliseconds: 220),
                 curve: Curves.easeOut,
                 alignment: Alignment.topCenter,
-                child: _styleExpanded
+                child: expanded
                     ? Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -380,7 +521,16 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 const EdgeInsets.symmetric(horizontal: 14),
                             color: AppColors.glassBorder,
                           ),
-                          ..._styles.map((s) => _styleOption(s, current)),
+                          ...presets.map((s) => _option(s, current, onSelect)),
+                          if (extraOption != null) ...[
+                            Container(
+                              height: 0.5,
+                              margin:
+                                  const EdgeInsets.symmetric(horizontal: 14),
+                              color: AppColors.glassBorder,
+                            ),
+                            extraOption,
+                          ],
                           const SizedBox(height: 6),
                         ],
                       )
@@ -389,33 +539,20 @@ class _DashboardScreenState extends State<DashboardScreen>
             ],
           ),
         );
-      },
-    );
   }
 
-  /// A single option row inside the response-style dropdown.
-  Widget _styleOption(
-      (String, String, String, IconData) s, String current) {
+  /// A single option row inside either dropdown.
+  Widget _option((String, String, String) s, String current,
+      ValueChanged<String> onSelect) {
     final isSelected = s.$1 == current;
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () {
-          _setStyle(s.$1);
-          setState(() => _styleExpanded = false);
-        },
+        onTap: () => onSelect(s.$1),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
           child: Row(
             children: [
-              Icon(
-                s.$4,
-                size: 20,
-                color: isSelected
-                    ? AppColors.electricBlue
-                    : AppColors.textTertiary,
-              ),
-              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -767,48 +904,28 @@ class _DashboardScreenState extends State<DashboardScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Icon(
-                          isImage
-                              ? Icons.camera_alt_rounded
-                              : Icons.auto_awesome_rounded,
-                          color: AppColors.electricBlue,
-                          size: 16,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Latest Activity',
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (question.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        question,
-                        style: GoogleFonts.inter(
+                    if (question.isNotEmpty)
+                      QaLine(
+                        letter: 'Q',
+                        text: question,
+                        maxLines: 2,
+                        textStyle: GoogleFonts.inter(
                           fontSize: 14,
+                          height: 1.35,
                           color: AppColors.textPrimary,
                         ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
                       ),
-                    ],
                     if (response.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        response,
-                        style: GoogleFonts.inter(
+                      if (question.isNotEmpty) const SizedBox(height: 8),
+                      QaLine(
+                        letter: 'A',
+                        text: response,
+                        maxLines: 3,
+                        textStyle: GoogleFonts.inter(
                           fontSize: 13,
+                          height: 1.35,
                           color: AppColors.textSecondary,
                         ),
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ],
@@ -822,15 +939,19 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   void _showModelPicker(CloudService cloud) {
+    // Kept in sync with ALLOWED_MODELS in edge-worker/wrangler.toml; anything
+    // not on that list is rejected by the backend.
     final providers = [
       _ModelProvider('OpenAI', Icons.auto_awesome_rounded, [
-        'gpt-5', 'gpt-5-mini',
+        'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna',
       ]),
       _ModelProvider('Google', Icons.cloud_rounded, [
-        'gemini-3.1-pro-preview', 'gemini-3.5-flash', 'gemini-3.1-flash-lite',
+        'gemini-3.1-pro-preview', 'gemini-3.6-flash', 'gemini-3.5-flash',
+        'gemini-3.5-flash-lite',
       ]),
       _ModelProvider('Anthropic', Icons.psychology_rounded, [
-        'claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5',
+        'claude-opus-5', 'claude-sonnet-5', 'claude-fable-5',
+        'claude-haiku-4-5',
       ]),
     ];
 
@@ -865,7 +986,17 @@ class _DashboardScreenState extends State<DashboardScreen>
     final cloud = context.read<CloudService>();
     if (auth.token != null && auth.primaryMac != null) {
       await cloud.setModel(auth.token!, auth.primaryMac!,
-          cloud.currentModel ?? 'gpt-5-mini', style);
+          cloud.currentModel ?? kDefaultModel, style);
+    }
+  }
+
+  Future<void> _setEffort(String effort) async {
+    final auth = context.read<AuthService>();
+    final cloud = context.read<CloudService>();
+    if (auth.token != null && auth.primaryMac != null) {
+      await cloud.setModel(auth.token!, auth.primaryMac!,
+          cloud.currentModel ?? kDefaultModel, cloud.responseStyle,
+          effort: effort);
     }
   }
 }
@@ -1150,13 +1281,15 @@ class _UsageCount extends StatelessWidget {
             color: color,
           ),
         ),
+        const SizedBox(height: 1),
         Text(
-          label,
+          label.toUpperCase(),
           style: GoogleFonts.inter(
             fontSize: 10.5,
-            fontWeight: FontWeight.w500,
-            color: AppColors.textTertiary,
-            letterSpacing: 0.2,
+            fontWeight: FontWeight.w800,
+            // Matches its own number, so Premium reads blue like the bar does.
+            color: color,
+            letterSpacing: 0.9,
           ),
         ),
       ],

@@ -42,7 +42,10 @@ class CalcNote {
 
   static String newId() {
     final now = DateTime.now().millisecondsSinceEpoch.toRadixString(36);
-    final rand = Random().nextInt(1 << 32).toRadixString(36);
+    // 1 << 30, not 1 << 32: on the web an int shift wraps at 32 bits, so
+    // `1 << 32` evaluates to 0 and nextInt(0) throws a RangeError. Only four
+    // base-36 characters are kept anyway, so the smaller range costs nothing.
+    final rand = Random().nextInt(1 << 30).toRadixString(36);
     return '$now${rand.padLeft(4, '0').substring(0, 4)}';
   }
 
