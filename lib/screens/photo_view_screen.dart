@@ -3,12 +3,13 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:gal/gal.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../services/resilient_http_client.dart';
 import '../theme/app_colors.dart';
 import '../utils/log.dart';
+import '../utils/resilient_image.dart';
 
 /// Full-screen viewer for a calculator photo, with save and share.
 ///
@@ -27,11 +28,21 @@ class _PhotoViewScreenState extends State<PhotoViewScreen> {
   bool _busy = false;
   List<int>? _bytes;
 
+  /// Same DoH-resolving client the rest of the app uses — the OS resolver is
+  /// blocked on some networks, which is what broke photos in the first place.
+  final _client = createResilientClient();
+
+  @override
+  void dispose() {
+    _client.close();
+    super.dispose();
+  }
+
   /// Downloads the photo once and caches it for the session.
   Future<List<int>?> _load() async {
     if (_bytes != null) return _bytes;
     try {
-      final r = await http.get(Uri.parse(widget.imageUrl));
+      final r = await _client.get(Uri.parse(widget.imageUrl));
       if (r.statusCode != 200) {
         _toast('Could not download the photo (${r.statusCode})');
         return null;
@@ -163,8 +174,8 @@ class _PhotoViewScreenState extends State<PhotoViewScreen> {
         child: InteractiveViewer(
           minScale: 1,
           maxScale: 5,
-          child: Image.network(
-            widget.imageUrl,
+          child: Image(
+            image: ResilientNetworkImage(widget.imageUrl),
             fit: BoxFit.contain,
             loadingBuilder: (_, child, progress) {
               if (progress == null) return child;

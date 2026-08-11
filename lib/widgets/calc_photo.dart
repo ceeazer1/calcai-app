@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../screens/photo_view_screen.dart';
 import '../theme/app_colors.dart';
+import '../utils/resilient_image.dart';
 
 /// A calculator photo in history, tappable to open full screen.
 ///
@@ -48,8 +49,8 @@ class _CalcPhotoState extends State<CalcPhoto> {
       onTap: _open,
       child: ClipRRect(
         borderRadius: radius,
-        child: Image.network(
-          widget.imageUrl,
+        child: Image(
+          image: ResilientNetworkImage(widget.imageUrl),
           key: ValueKey('${widget.imageUrl}#$_attempt'),
           width: double.infinity,
           height: widget.height,
