@@ -20,6 +20,8 @@
 	<string>CalcAI uses Bluetooth to connect to your CalcAI device for WiFi setup and management.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>CalcAI saves a photo taken on your calculator to your photo library when you tap Save.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>CalcAI needs photo library access to save calculator photos into a CalcAI album. It never reads, opens or uploads photos you already have.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
