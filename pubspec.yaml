@@ -1,7 +1,7 @@
 name: calcai_app
 description: CalcAI - ESP32 WiFi Provisioning App
 publish_to: 'none'
-version: 1.0.0+77
+version: 1.0.0+78
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -20,6 +20,11 @@ dependencies:
   google_sign_in: ^6.2.2
   crypto: ^3.0.6
   package_info_plus: ^8.0.0
+  # Full-screen photo viewer: save the calculator photo to the camera roll and
+  # hand it to the system share sheet.
+  gal: ^2.3.0
+  share_plus: ^10.1.4
+  path_provider: ^2.1.5
 
 dev_dependencies:
   flutter_test:

@@ -9,7 +9,7 @@ void main() {
     final c = PreviewCloudService(seeded: true);
     // notes only populate on fetch, same as the real service.
     await c.getNotes('t', 'm');
-    expect(c.history.length, 5);
+    expect(c.history.length, 6);
     expect(c.cheapUsage, 12);
     expect(c.currentModel, 'gpt-5.6-sol');
     final notes = CalcNote.parseStored(c.notes ?? '');

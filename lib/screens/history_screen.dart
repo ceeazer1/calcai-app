@@ -8,6 +8,7 @@ import '../theme/app_colors.dart';
 import '../widgets/glass_card.dart';
 import '../utils/latex_readable.dart';
 import '../utils/safe_image.dart';
+import '../widgets/calc_photo.dart';
 import '../widgets/qa_line.dart';
 
 /// History screen — shows all AI interactions from the calculator,
@@ -427,40 +428,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   children: [
                     // Image
                     if (isImage && imageUrl != null) ...[
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: Image.network(
-                          imageUrl,
-                          fit: BoxFit.contain,
-                          loadingBuilder: (_, child, progress) {
-                            if (progress == null) return child;
-                            return Container(
-                              height: 200,
-                              decoration: BoxDecoration(
-                                color: AppColors.surfaceLight,
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: const Center(
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: AppColors.electricBlue,
-                                ),
-                              ),
-                            );
-                          },
-                          errorBuilder: (_, __, ___) => Container(
-                            height: 120,
-                            decoration: BoxDecoration(
-                              color: AppColors.surfaceLight,
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: const Center(
-                              child: Icon(Icons.broken_image_rounded,
-                                  color: AppColors.textTertiary, size: 32),
-                            ),
-                          ),
-                        ),
-                      ),
+                      CalcPhoto(imageUrl: imageUrl, height: 240),
                       const SizedBox(height: 16),
                     ],
 
@@ -574,36 +542,11 @@ class _HistoryCard extends StatelessWidget {
           children: [
             // ── Image thumbnail ──────────────────────────
             if (isImage && imageUrl != null)
-              ClipRRect(
+              CalcPhoto(
+                imageUrl: imageUrl,
+                height: 180,
                 borderRadius:
                     const BorderRadius.vertical(top: Radius.circular(16)),
-                child: Image.network(
-                  imageUrl,
-                  width: double.infinity,
-                  height: 180,
-                  fit: BoxFit.cover,
-                  loadingBuilder: (_, child, progress) {
-                    if (progress == null) return child;
-                    return Container(
-                      height: 180,
-                      color: AppColors.surfaceLight,
-                      child: const Center(
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppColors.electricBlue,
-                        ),
-                      ),
-                    );
-                  },
-                  errorBuilder: (_, __, ___) => Container(
-                    height: 100,
-                    color: AppColors.surfaceLight,
-                    child: const Center(
-                      child: Icon(Icons.image_not_supported_rounded,
-                          color: AppColors.textTertiary, size: 28),
-                    ),
-                  ),
-                ),
               ),
 
             // ── Text content ─────────────────────────────

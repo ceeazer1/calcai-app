@@ -12,6 +12,7 @@ import 'link_device_screen.dart';
 import 'wifi_screen.dart';
 import '../utils/latex_readable.dart';
 import '../utils/safe_image.dart';
+import '../widgets/calc_photo.dart';
 import '../widgets/qa_line.dart';
 
 /// What the backend falls back to when a device has no model set
@@ -886,18 +887,14 @@ class _DashboardScreenState extends State<DashboardScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Photo thumbnail if it's an image entry
+              // Photo thumbnail if it's an image entry. Tapping opens it full
+              // screen; a failed load offers a retry instead of vanishing.
               if (isImage && imageUrl != null)
-                ClipRRect(
+                CalcPhoto(
+                  imageUrl: imageUrl,
+                  height: 140,
                   borderRadius:
                       const BorderRadius.vertical(top: Radius.circular(16)),
-                  child: Image.network(
-                    imageUrl,
-                    width: double.infinity,
-                    height: 140,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                  ),
                 ),
               Padding(
                 padding: const EdgeInsets.all(16),

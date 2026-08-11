@@ -880,6 +880,19 @@ class PreviewCloudService extends CloudService {
         'model': 'gpt-5.6-luna',
       },
       {
+        // A photo entry, so the preview exercises the image card and the
+        // full-screen viewer rather than only text answers.
+        'ts': now - 9 * 60 * minute,
+        'type': 'render-image',
+        'question': 'photo of a worksheet',
+        'response': r'$$3x+12=27$$'
+            '\n'
+            r'$$x=5$$',
+        'imageUrl':
+            'https://ai.calcai.cc/ai/image/view/img%2F1786410445633-4b8326442f0205d2.jpg',
+        'model': 'gpt-5.6-sol',
+      },
+      {
         'ts': now - 26 * 60 * minute,
         'type': 'render',
         'question': 'graph y = x^2 - 4',
