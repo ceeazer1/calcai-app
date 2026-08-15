@@ -433,6 +433,7 @@ class BleService extends ChangeNotifier {
   void _handleDisconnection() {
     _connectedDevice = null;
     _scanChar = null;
+    _pairedOwner = null;
     _configChar = null;
     _statusChar = null;
     _wifiNetworks.clear();
@@ -707,6 +708,93 @@ class BleService extends ChangeNotifier {
 
   /// Asks the connected peripheral to answer an identity challenge.
   ///
+  /// One JSON command on the scan characteristic, with the reply read back.
+  ///
+  /// The firmware answers inline inside its write callback, so the value is
+  /// ready almost immediately; the short retries cover BLE scheduling rather
+  /// than any work on the device.
+  Future<Map<String, dynamic>?> _command(Map<String, dynamic> cmd) async {
+    if (_scanChar == null) return null;
+    try {
+      await _scanChar!.write(
+        utf8.encode(jsonEncode(cmd)),
+        withoutResponse: _scanChar!.properties.writeWithoutResponse,
+      );
+      for (var attempt = 0; attempt < 4; attempt++) {
+        await Future.delayed(const Duration(milliseconds: 250));
+        final raw = await _scanChar!.read();
+        if (raw.isEmpty) continue;
+        try {
+          final data = jsonDecode(utf8.decode(raw));
+          if (data is Map<String, dynamic>) return data;
+        } catch (_) {
+          // Could still be a stale scan/list payload — try again.
+        }
+      }
+    } catch (e) {
+      logDebug('CalcAI BLE: command ${cmd['cmd']} failed: $e');
+    }
+    return null;
+  }
+
+  /// Whether this calculator has already been claimed by an account.
+  ///
+  /// Null means the firmware did not answer — either it predates pairing or the
+  /// peripheral is not a CalcAI at all.
+  Future<bool?> isDevicePaired() async {
+    final r = await _command({'cmd': 'pairinfo'});
+    final v = r?['paired'];
+    return v is bool ? v : null;
+  }
+
+  /// Claims an unpaired calculator with the six digits shown on its screen.
+  ///
+  /// Returns null on success, or a short reason to show the user. The firmware
+  /// allows five wrong guesses per connection and then burns the code.
+  Future<String?> submitPairingCode(String code, String owner) async {
+    final r = await _command({
+      'cmd': 'paircode',
+      'code': code,
+      'owner': owner,
+    });
+    if (r == null) return 'The calculator did not respond. Try again.';
+    if (r['ok'] == true) {
+      _pairedOwner = owner;
+      notifyListeners();
+      return null;
+    }
+    final left = (r['left'] as num?)?.toInt();
+    switch ((r['error'] ?? '').toString()) {
+      case 'bad_code':
+        return left != null && left > 0
+            ? 'Wrong code — $left ${left == 1 ? 'try' : 'tries'} left.'
+            : 'Wrong code. Reopen the Bluetooth screen for a new one.';
+      case 'code_expired':
+        return 'That code expired. Reopen the Bluetooth screen on your calculator.';
+      case 'too_many_tries':
+        return 'Too many attempts. Reopen the Bluetooth screen for a new code.';
+      case 'already_paired':
+        return 'This calculator is already paired to an account.';
+      default:
+        return 'Pairing failed. Try again.';
+    }
+  }
+
+  /// Identifies this account to an already-paired calculator. Until this
+  /// succeeds the firmware refuses every provisioning command, so it runs
+  /// before any Wi-Fi work.
+  Future<bool> announceOwner(String owner) async {
+    final r = await _command({'cmd': 'hello', 'owner': owner});
+    final ok = r?['ok'] == true;
+    if (ok) _pairedOwner = owner;
+    return ok;
+  }
+
+  /// The account this connection has identified as, once [announceOwner] or
+  /// [submitPairingCode] has succeeded.
+  String? _pairedOwner;
+  String? get pairedOwner => _pairedOwner;
+
   /// Writes `{"cmd":"auth","nonce":...}` and reads the answer back from the
   /// same characteristic, the way the saved-network list already works.
   /// Returns null if the peripheral cannot answer — which is what an impostor,
