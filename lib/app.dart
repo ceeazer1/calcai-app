@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'screens/auth_screen.dart';
 import 'screens/link_device_screen.dart';
 import 'screens/main_shell.dart';
+import 'screens/pair_device_screen.dart';
 import 'services/auth_service.dart';
 import 'services/ble_service.dart';
 import 'services/cloud_service.dart';
@@ -16,6 +17,10 @@ import 'widgets/calcai_mark.dart';
 /// straight into the main app (skipping auth/pairing) for live UI editing on
 /// desktop/web. Defaults to false, so production builds are unaffected.
 const bool kUiPreview = bool.fromEnvironment('UI_PREVIEW');
+
+/// Which screen a preview build opens on. Empty means the main shell.
+const String kUiPreviewScreen =
+    String.fromEnvironment('UI_PREVIEW_SCREEN');
 
 /// Root widget for the CalcAI application.
 ///
@@ -97,8 +102,21 @@ class _AppGateState extends State<_AppGate> {
 
   @override
   Widget build(BuildContext context) {
-    // UI preview: skip auth/pairing and jump straight into the app shell.
-    if (kUiPreview) return const MainShell();
+    // UI preview: skip auth and land on whichever screen is being worked on.
+    // --dart-define=UI_PREVIEW_SCREEN=pair boots straight into pairing, which
+    // is otherwise unreachable in a browser (it needs a real BLE link).
+    if (kUiPreview) {
+      switch (kUiPreviewScreen) {
+        case 'pair':
+          return const PairDeviceScreen();
+        case 'link':
+          return const LinkDeviceScreen();
+        case 'auth':
+          return const AuthScreen();
+        default:
+          return const MainShell();
+      }
+    }
 
     final auth = context.watch<AuthService>();
 
