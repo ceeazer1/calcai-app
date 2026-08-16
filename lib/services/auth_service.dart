@@ -863,8 +863,19 @@ class AuthService extends ChangeNotifier {
 /// It fakes the session + pairing so features can be exercised in a browser; it
 /// does not fabricate any user content.
 class PreviewAuthService extends AuthService {
+  /// [signedOut] leaves the preview at the sign-in screen with no device
+  /// linked, so the setup flow can be walked from the beginning.
+  PreviewAuthService({this.signedOut = false});
+
+  final bool signedOut;
+
   @override
   Future<void> init() async {
+    if (signedOut) {
+      _isAuthenticated = false;
+      notifyListeners();
+      return;
+    }
     _isAuthenticated = true;
     _username = 'Preview';
     _email = 'preview@calcai.cc';
@@ -892,6 +903,17 @@ class PreviewAuthService extends AuthService {
 
   @override
   Future<EmailAuthOutcome> signInWithEmail(String email, String password) async {
+    if (signedOut) {
+      _isAuthenticated = true;
+      _username = email;
+      _email = email;
+      _token = 'preview-token';
+      _deviceMacs = [];
+      _primaryMac = null;
+      _error = null;
+      notifyListeners();
+      return EmailAuthOutcome.success;
+    }
     await init();
     return EmailAuthOutcome.success;
   }

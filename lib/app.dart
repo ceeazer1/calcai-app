@@ -105,7 +105,9 @@ class _AppGateState extends State<_AppGate> {
     // UI preview: skip auth and land on whichever screen is being worked on.
     // --dart-define=UI_PREVIEW_SCREEN=pair boots straight into pairing, which
     // is otherwise unreachable in a browser (it needs a real BLE link).
-    if (kUiPreview) {
+    // 'setup' deliberately falls through to the real routing below, so the
+    // whole onboarding chain runs exactly as it does on a phone.
+    if (kUiPreview && kUiPreviewScreen != 'setup') {
       switch (kUiPreviewScreen) {
         case 'pair':
           return const PairDeviceScreen();

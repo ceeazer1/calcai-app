@@ -36,10 +36,14 @@ void main() {
         // account with a paired device so features are testable in a browser.
         // Release builds pass no dart-defines, so these never ship.
         ChangeNotifierProvider<BleService>(
-          create: (_) => kUiPreview ? PreviewBleService() : BleService(),
+          create: (_) => kUiPreview
+              ? PreviewBleService(walkthrough: kUiPreviewScreen == 'setup')
+              : BleService(),
         ),
         ChangeNotifierProvider<AuthService>(
-          create: (_) => kUiPreview ? PreviewAuthService() : AuthService(),
+          create: (_) => kUiPreview
+              ? PreviewAuthService(signedOut: kUiPreviewScreen == 'setup')
+              : AuthService(),
         ),
         ChangeNotifierProvider<CloudService>(
           create: (_) => kUiPreview ? PreviewCloudService(seeded: true) : CloudService(),
