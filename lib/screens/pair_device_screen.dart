@@ -41,7 +41,7 @@ class _PairDeviceScreenState extends State<PairDeviceScreen> {
     final ble = context.read<BleService>();
     final owner = auth.username;
     if (owner == null || owner.isEmpty) {
-      setState(() => _error = 'Sign in first, then pair your calculator.');
+      setState(() => _error = 'Sign in first.');
       return;
     }
 
@@ -109,8 +109,7 @@ class _PairDeviceScreenState extends State<PairDeviceScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Your calculator is showing a 6-digit pairing code on its '
-                'Bluetooth setup screen.',
+                "It's on your calculator's screen.",
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   height: 1.45,
@@ -129,7 +128,7 @@ class _PairDeviceScreenState extends State<PairDeviceScreen> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Connected to $name',
+                        name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.inter(
@@ -203,16 +202,6 @@ class _PairDeviceScreenState extends State<PairDeviceScreen> {
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                ),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                "Can't see a code? Open Settings, Bluetooth on your "
-                'calculator. The code changes every time you reconnect.',
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  height: 1.5,
-                  color: AppColors.textTertiary,
                 ),
               ),
             ],

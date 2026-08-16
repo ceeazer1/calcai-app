@@ -757,7 +757,7 @@ class BleService extends ChangeNotifier {
       'code': code,
       'owner': owner,
     });
-    if (r == null) return 'The calculator did not respond. Try again.';
+    if (r == null) return 'No response. Try again.';
     if (r['ok'] == true) {
       _pairedOwner = owner;
       notifyListeners();
@@ -768,13 +768,13 @@ class BleService extends ChangeNotifier {
       case 'bad_code':
         return left != null && left > 0
             ? 'Wrong code — $left ${left == 1 ? 'try' : 'tries'} left.'
-            : 'Wrong code. Reopen the Bluetooth screen for a new one.';
+            : 'Wrong code. Reconnect for a new one.';
       case 'code_expired':
-        return 'That code expired. Reopen the Bluetooth screen on your calculator.';
+        return 'Code expired. Reconnect for a new one.';
       case 'too_many_tries':
-        return 'Too many attempts. Reopen the Bluetooth screen for a new code.';
+        return 'Too many tries. Reconnect for a new code.';
       case 'already_paired':
-        return 'This calculator is already paired to an account.';
+        return 'Already paired to another account.';
       default:
         return 'Pairing failed. Try again.';
     }
