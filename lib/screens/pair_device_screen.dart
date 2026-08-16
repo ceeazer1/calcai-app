@@ -104,20 +104,27 @@ class _PairDeviceScreenState extends State<PairDeviceScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Enter code on calculator screen',
+                'Enter code',
                 style: GoogleFonts.outfit(
-                  fontSize: 26,
+                  fontSize: 28,
                   fontWeight: FontWeight.w600,
-                  height: 1.25,
                   color: AppColors.textPrimary,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
+              Text(
+                'on calculator screen',
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 3),
               Text(
                 'Settings > BLE',
                 style: GoogleFonts.inter(
-                  fontSize: 14,
-                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                  color: AppColors.textTertiary,
                 ),
               ),
               const SizedBox(height: 28),
