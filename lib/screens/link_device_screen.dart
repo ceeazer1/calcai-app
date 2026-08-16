@@ -2,12 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../models/calcai_device.dart';
 import '../services/auth_service.dart';
+import '../services/ble_service.dart';
 import '../services/cloud_service.dart';
 import '../theme/app_colors.dart';
-import 'scan_screen.dart';
+import '../widgets/scanning_animation.dart';
+import 'pair_device_screen.dart';
+import 'wifi_setup_screen.dart';
 
 /// Shown when the user is signed in but has no paired CalcAI device.
+///
+/// The scan runs here rather than on a page of its own: pushing a second
+/// screen to show a spinner made the user watch two layouts to do one thing.
+enum _Phase { idle, scanning, connecting, connected }
+
 class LinkDeviceScreen extends StatefulWidget {
   const LinkDeviceScreen({super.key});
 
@@ -15,159 +24,247 @@ class LinkDeviceScreen extends StatefulWidget {
   State<LinkDeviceScreen> createState() => _LinkDeviceScreenState();
 }
 
-class _LinkDeviceScreenState extends State<LinkDeviceScreen>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _fade;
+class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
+  _Phase _phase = _Phase.idle;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
-    _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
-    _controller.forward();
+    context.read<BleService>().addListener(_onBleChanged);
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    context.read<BleService>().removeListener(_onBleChanged);
     super.dispose();
   }
 
-  void _connect() {
+  void _onBleChanged() {
+    if (!mounted) return;
+    final ble = context.read<BleService>();
+
+    if (_phase == _Phase.scanning && ble.devices.isNotEmpty) {
+      setState(() => _phase = _Phase.connecting);
+      ble.connectToDevice(ble.devices.first);
+      return;
+    }
+
+    if (_phase == _Phase.connecting &&
+        ble.connectionState == DeviceConnectionState.ready) {
+      setState(() => _phase = _Phase.connected);
+      _afterConnect();
+    }
+  }
+
+  /// A calculator nobody owns has to be claimed with the code on its screen
+  /// before it will accept Wi-Fi credentials, so pairing comes first.
+  Future<void> _afterConnect() async {
+    final ble = context.read<BleService>();
+    final paired = await ble.isDevicePaired();
+    if (!mounted) return;
+
+    if (paired == false) {
+      final ok = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(builder: (_) => const PairDeviceScreen()),
+      );
+      if (!mounted) return;
+      if (ok != true) {
+        setState(() => _phase = _Phase.idle);
+        return;
+      }
+    } else {
+      final owner = context.read<AuthService>().username;
+      if (owner != null) await ble.announceOwner(owner);
+      if (!mounted) return;
+    }
+
     Navigator.of(context).pushReplacement(
-      PageRouteBuilder(
-        pageBuilder: (_, __, ___) => const ScanScreen(),
-        transitionDuration: const Duration(milliseconds: 400),
-        transitionsBuilder: (_, animation, __, child) => FadeTransition(
-          opacity: animation,
-          child: child,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => const WifiSetupScreen()),
     );
+  }
+
+  Future<void> _scan() async {
+    final ble = context.read<BleService>();
+    setState(() {
+      _error = null;
+      _phase = _Phase.scanning;
+    });
+
+    if (!await ble.requestPermissions()) {
+      if (!mounted) return;
+      setState(() {
+        _phase = _Phase.idle;
+        _error = 'Allow Bluetooth access to find your calculator.';
+      });
+      return;
+    }
+    if (!await ble.isBluetoothOn()) {
+      if (!mounted) return;
+      setState(() {
+        _phase = _Phase.idle;
+        _error = 'Turn on Bluetooth to find your calculator.';
+      });
+      return;
+    }
+    await ble.startScan();
+    if (!mounted) return;
+    // Scanning finished with nothing in range.
+    if (_phase == _Phase.scanning && context.read<BleService>().devices.isEmpty) {
+      setState(() {
+        _phase = _Phase.idle;
+        _error = 'No calculator found. Open Settings > BLE on it, then retry.';
+      });
+    }
+  }
+
+  String get _status {
+    switch (_phase) {
+      case _Phase.scanning:
+        return 'Looking for your calculator';
+      case _Phase.connecting:
+        return 'Connecting';
+      case _Phase.connected:
+        return 'Connected';
+      case _Phase.idle:
+        return '';
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final busy = _phase != _Phase.idle;
+
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
         child: SafeArea(
-          child: FadeTransition(
-            opacity: _fade,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 28),
-              child: Column(
-                children: [
-                  // ── Sign-out ───────────────────────────────────────
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: IconButton(
-                      // Clear cloud state too, or the next account to sign in
-                      // on this phone sees the previous user's history and
-                      // notes until a refresh lands.
-                      onPressed: () {
-                        context.read<AuthService>().signOut();
-                        context.read<CloudService>().reset();
-                      },
-                      icon: const Icon(
-                        Icons.logout_rounded,
-                        color: AppColors.textTertiary,
-                        size: 20,
-                      ),
-                      tooltip: 'Sign out',
-                    ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 28),
+            child: Column(
+              children: [
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: IconButton(
+                    // Clear cloud state too, or the next account to sign in on
+                    // this phone sees the previous user's history and notes.
+                    onPressed: () {
+                      context.read<AuthService>().signOut();
+                      context.read<CloudService>().reset();
+                    },
+                    icon: const Icon(Icons.logout_rounded,
+                        color: AppColors.textTertiary, size: 20),
+                    tooltip: 'Sign out',
                   ),
+                ),
 
-                  const Spacer(flex: 2),
-
-                  // ── Icon ──────────────────────────────────
-                  Container(
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceLight,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: AppColors.glassBorder),
-                    ),
-                    child: const Icon(
-                      Icons.calculate_outlined,
-                      color: AppColors.textTertiary,
-                      size: 36,
-                    ),
+                const SizedBox(height: 8),
+                Text(
+                  'Pair your device',
+                  style: GoogleFonts.outfit(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
                   ),
+                ),
 
-                  const SizedBox(height: 24),
-
-                  // ── Title ─────────────────────────────────
-                  Text(
-                    'No device paired',
-                    style: GoogleFonts.outfit(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
+                Expanded(
+                  child: Center(
+                    child: busy
+                        ? ScanningAnimation(
+                            isScanning: _phase != _Phase.connected,
+                            size: 260,
+                            color: _phase == _Phase.connected
+                                ? AppColors.accentBlue
+                                : AppColors.electricBlue,
+                            child: Icon(
+                              _phase == _Phase.connected
+                                  ? Icons.check_rounded
+                                  : Icons.bluetooth_searching_rounded,
+                              size: 40,
+                              color: _phase == _Phase.connected
+                                  ? AppColors.accentBlue
+                                  : AppColors.electricBlue,
+                            ),
+                          )
+                        : const SizedBox.shrink(),
                   ),
+                ),
 
-                  const SizedBox(height: 10),
-
-                  Text(
-                    'Settings > Bluetooth on your CalcAI Device',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.inter(
-                      fontSize: 15,
-                      color: AppColors.textSecondary,
-                      height: 1.5,
-                    ),
-                  ),
-
-                  const Spacer(flex: 3),
-
-                  // ── Connect button ─────────────────────────
-                  SizedBox(
-                    width: double.infinity,
-                    height: 54,
-                    child: ElevatedButton(
-                      onPressed: _connect,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.electricBlue,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        elevation: 0,
-                      ),
-                      child: Text(
-                        'Scan',
-                        style: GoogleFonts.inter(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 8),
-
-                  // ── Set up later ───────────────────────────
-                  TextButton(
-                    onPressed: () => context.read<AuthService>().skipSetup(),
+                if (busy)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
                     child: Text(
-                      'Set up later',
+                      _status,
+                      style: GoogleFonts.inter(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+
+                if (_error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Text(
+                      _error!,
+                      textAlign: TextAlign.center,
                       style: GoogleFonts.inter(
                         fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.textTertiary,
+                        height: 1.4,
+                        color: AppColors.error,
                       ),
                     ),
                   ),
 
-                  const SizedBox(height: 20),
-                ],
-              ),
+                SizedBox(
+                  width: double.infinity,
+                  height: 54,
+                  child: ElevatedButton(
+                    onPressed: busy ? null : _scan,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.electricBlue,
+                      disabledBackgroundColor: AppColors.surfaceLight,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.bluetooth_rounded, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Scan',
+                          style: GoogleFonts.inter(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: busy
+                      ? null
+                      : () => context.read<AuthService>().skipSetup(),
+                  child: Text(
+                    'Set up later',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textTertiary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
             ),
           ),
         ),
