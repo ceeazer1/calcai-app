@@ -6,7 +6,6 @@ import '../services/auth_service.dart';
 import '../services/ble_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/code_input.dart';
-import '../widgets/glass_card.dart';
 
 /// Claims a calculator using the six digits shown on its own screen.
 ///
@@ -64,9 +63,6 @@ class _PairDeviceScreenState extends State<PairDeviceScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final name = context.watch<BleService>().connectedDevice?.name ??
-        'your calculator';
-
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -78,13 +74,21 @@ class _PairDeviceScreenState extends State<PairDeviceScreen> {
           tooltip: 'Back',
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text(
-          'Pair calculator',
-          style: GoogleFonts.outfit(
-            fontSize: 19,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
-          ),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Pair calculator',
+              style: GoogleFonts.outfit(
+                fontSize: 19,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.bluetooth_rounded,
+                color: AppColors.electricBlue, size: 18),
+          ],
         ),
       ),
       body: SafeArea(
@@ -100,47 +104,23 @@ class _PairDeviceScreenState extends State<PairDeviceScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Enter the code',
+                'Enter code on calculator screen',
                 style: GoogleFonts.outfit(
                   fontSize: 26,
                   fontWeight: FontWeight.w600,
+                  height: 1.25,
                   color: AppColors.textPrimary,
                 ),
               ),
               const SizedBox(height: 8),
               Text(
-                "It's on your calculator's screen.",
+                'Settings > BLE',
                 style: GoogleFonts.inter(
                   fontSize: 14,
-                  height: 1.45,
                   color: AppColors.textSecondary,
                 ),
               ),
-              const SizedBox(height: 20),
-
-              GlassCard(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 12),
-                child: Row(
-                  children: [
-                    const Icon(Icons.bluetooth_connected_rounded,
-                        color: AppColors.electricBlue, size: 18),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 28),
 
               CodeInput(
                 controller: _codeCtrl,
