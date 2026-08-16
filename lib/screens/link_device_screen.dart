@@ -7,6 +7,7 @@ import '../services/auth_service.dart';
 import '../services/ble_service.dart';
 import '../services/cloud_service.dart';
 import '../theme/app_colors.dart';
+import '../utils/app_settings.dart';
 import '../widgets/scanning_animation.dart';
 import 'pair_device_screen.dart';
 import 'wifi_setup_screen.dart';
@@ -27,6 +28,9 @@ class LinkDeviceScreen extends StatefulWidget {
 class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
   _Phase _phase = _Phase.idle;
   String? _error;
+  /// Set when the only fix is the iOS Settings app, so the error can carry a
+  /// button instead of asking the user to go find it.
+  bool _needsSettings = false;
 
   @override
   void initState() {
@@ -88,22 +92,27 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
     final ble = context.read<BleService>();
     setState(() {
       _error = null;
+      _needsSettings = false;
       _phase = _Phase.scanning;
     });
 
+    // Refused once, iOS never asks again — Settings is the only way back.
     if (!await ble.requestPermissions()) {
       if (!mounted) return;
       setState(() {
         _phase = _Phase.idle;
-        _error = 'Allow Bluetooth access to find your calculator.';
+        _needsSettings = true;
+        _error = 'CalcAI needs Bluetooth access to find your calculator.';
       });
       return;
     }
+    // The radio being off is handled by the system power alert (it has its own
+    // Settings button), so this is only a fallback if the user dismisses it.
     if (!await ble.isBluetoothOn()) {
       if (!mounted) return;
       setState(() {
         _phase = _Phase.idle;
-        _error = 'Turn on Bluetooth to find your calculator.';
+        _error = 'Turn on Bluetooth, then tap Scan again.';
       });
       return;
     }
@@ -207,14 +216,32 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
                 if (_error != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 16),
-                    child: Text(
-                      _error!,
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        height: 1.4,
-                        color: AppColors.error,
-                      ),
+                    child: Column(
+                      children: [
+                        Text(
+                          _error!,
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            height: 1.4,
+                            color: AppColors.error,
+                          ),
+                        ),
+                        if (_needsSettings) ...[
+                          const SizedBox(height: 6),
+                          TextButton(
+                            onPressed: openAppSettings,
+                            child: Text(
+                              'Open Settings',
+                              style: GoogleFonts.inter(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.electricBlue,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
 

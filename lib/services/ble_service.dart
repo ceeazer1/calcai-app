@@ -57,7 +57,17 @@ class BleService extends ChangeNotifier {
     this.wifiScanCharUuid = '021a9006-0382-4aea-bff4-6b3f1c5adfb4',
     this.wifiConfigCharUuid = '021a9007-0382-4aea-bff4-6b3f1c5adfb4',
     this.wifiStatusCharUuid = '021a9008-0382-4aea-bff4-6b3f1c5adfb4',
-  });
+  }) {
+    // Let iOS raise its own "Turn On Bluetooth" alert, which carries a Settings
+    // button. There is no API to switch the radio on (turnOn() is Android only)
+    // and the URL scheme for the Bluetooth pane is private, so the system alert
+    // is the only route that both works and passes review.
+    if (!kIsWeb) {
+      FlutterBluePlus.setOptions(showPowerAlert: true).catchError((e) {
+        logDebug('CalcAI BLE: could not enable the power alert — $e');
+      });
+    }
+  }
 
   // ── State ──────────────────────────────────────────────────────────
 
