@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
-import '../models/calc_note.dart';
 import 'resilient_http_client.dart';
 import '../utils/log.dart';
 
@@ -805,121 +804,14 @@ class CloudException implements Exception {
   String toString() => 'CloudException($statusCode): $message';
 }
 
-/// Preview-only [CloudService] backed by in-memory state instead of the API.
+/// Test double for [CloudService].
 ///
-/// Active **only** under `--dart-define=UI_PREVIEW=true`; release builds pass no
-/// dart-defines, so this never ships. It starts **empty** — no fabricated notes
-/// or history — but lets notes be created, edited and deleted so the feature can
-/// actually be exercised in a browser.
+/// It starts empty — no fabricated notes or history — but lets notes be
+/// created, edited and deleted so the feature can be exercised in a test.
 class PreviewCloudService extends CloudService {
   /// Notes envelope, exactly as the real backend would store it.
   String _notesPayload = '';
-  /// [seeded] fills the service with sample activity and notes so a preview
-  /// build shows a populated app. Off by default: tests construct this
-  /// directly and want to control their own fixtures, and an empty service is
-  /// the honest starting point.
-  PreviewCloudService({bool seeded = false}) {
-    _usage = {
-      'plan': 'free',
-      'cheapCount': seeded ? 12 : 0,
-      'expensiveCount': seeded ? 3 : 0,
-      'cheapLimit': 50,
-      'expensiveLimit': 10,
-    };
-    _modelInfo = {'model': 'gpt-5.6-sol', 'style': 'small', 'effort': 'fast'};
-    _deviceInfo = {'calcModel': 'TI-84 Plus', 'firmware': '1.0.0'};
-    _devices = ['ca1ca1000001'];
-
-    // Sample activity, so a preview build shows a populated app instead of
-    // empty states. Answers are stored as LaTeX exactly the way the worker
-    // logs them, which also exercises latexToReadable on the way to the
-    // screen. None of this can reach production: PreviewCloudService is only
-    // constructed when kUiPreview is true, and release builds pass no
-    // dart-defines.
-    if (!seeded) return;
-
-    final now = DateTime.now().millisecondsSinceEpoch;
-    const minute = 60 * 1000;
-    _history = [
-      {
-        'ts': now - 8 * minute,
-        'type': 'render',
-        'question': 'derivative of x^3 - 5x + 2',
-        'response': r'$$f(x)=x^3-5x+2$$'
-            '\n'
-            r"$$f'(x)=3x^2-5$$",
-        'model': 'gpt-5.6-sol',
-      },
-      {
-        'ts': now - 46 * minute,
-        'type': 'render',
-        'question': 'solve 2x + 7 = 19',
-        'response': r'$$2x=12$$'
-            '\n'
-            r'$$x=6$$',
-        'model': 'gpt-5.6-luna',
-      },
-      {
-        'ts': now - 3 * 60 * minute,
-        'type': 'render',
-        'question': 'area of a circle with radius 5',
-        'response': r'$$A=\pi r^2$$'
-            '\n'
-            r'$$A=\pi(5)^2$$'
-            '\n'
-            r'$$A=78.5$$',
-        'model': 'gpt-5.6-sol',
-      },
-      {
-        'ts': now - 5 * 60 * minute,
-        'type': 'render',
-        'question': 'distance between (1,2) and (4,6)',
-        'response': r'$$d=\sqrt{9+16}$$'
-            '\n'
-            r'$$d=5$$',
-        'model': 'gpt-5.6-luna',
-      },
-      {
-        // A photo entry, so the preview exercises the image card and the
-        // full-screen viewer rather than only text answers.
-        'ts': now - 9 * 60 * minute,
-        'type': 'render-image',
-        'question': 'photo of a worksheet',
-        'response': r'$$3x+12=27$$'
-            '\n'
-            r'$$x=5$$',
-        'imageUrl':
-            'https://ai.calcai.cc/ai/image/view/img%2F1786410445633-4b8326442f0205d2.jpg',
-        'model': 'gpt-5.6-sol',
-      },
-      {
-        'ts': now - 26 * 60 * minute,
-        'type': 'render',
-        'question': 'graph y = x^2 - 4',
-        'response': 'Parabola opening upward'
-            '\n'
-            r'\plot{x^2-4}{-3}{3}'
-            '\n'
-            r'$$\text{Roots: } x=\pm 2$$',
-        'model': 'gpt-5.6-sol',
-      },
-    ];
-
-    _notesPayload = CalcNote.toEnvelope([
-      CalcNote.create(
-        title: 'Quadratic',
-        body: 'X=(-B±√(B²-4AC))/2A',
-      ),
-      CalcNote.create(
-        title: 'Unit circle',
-        body: '1. SIN30=0.5\n2. COS60=0.5\n3. TAN45=1',
-      ),
-      CalcNote.create(
-        title: 'Constants',
-        body: 'G=9.81 M/S²\nC=3.0E8 M/S',
-      ),
-    ]);
-  }
+  PreviewCloudService();
 
   @override
   Future<void> loadDashboard(String token, String mac) async {

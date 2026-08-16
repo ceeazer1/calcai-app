@@ -1142,121 +1142,16 @@ class BleService extends ChangeNotifier {
   }
 }
 
-/// BLE stand-in for UI previews.
+/// BLE test double.
 ///
 /// A browser has no Bluetooth radio, so the real service can never populate the
-/// saved-network list and Home always shows "No networks saved yet". This
-/// subclass seeds the list (and the connected SSID) so the Wi-Fi section renders
-/// the way it does on a provisioned device.
-///
-/// Active **only** under `--dart-define=UI_PREVIEW=true`; release builds pass no
-/// dart-defines, so this never ships. It lives in this file because
-/// `_savedNetworks` and `_connectedSsid` are library-private.
+/// saved-network list. Constructed only by tests — nothing in lib/
+/// instantiates it. It lives in this file because `_savedNetworks` and
+/// `_connectedSsid` are library-private.
 class PreviewBleService extends BleService {
-  /// [walkthrough] starts with nothing paired and nothing saved, so the setup
-  /// flow can be clicked through end to end in a browser. Without it the
-  /// service pretends a device is already provisioned, which is what the home
-  /// screen preview wants.
-  PreviewBleService({this.walkthrough = false}) {
-    if (walkthrough) return;
-    _savedNetworks.addAll(const ['Home WiFi', 'Chris iPhone']);
-    _connectedSsid = 'Home WiFi';
-  }
+  PreviewBleService();
 
-  final bool walkthrough;
-
-  @override
-  Future<bool> requestPermissions() async => true;
-
-  @override
-  Future<bool> isBluetoothOn() async => true;
-
-  @override
-  Future<void> startScan({Duration timeout = const Duration(seconds: 10)}) async {
-    _isScanning = true;
-    notifyListeners();
-    await Future.delayed(const Duration(milliseconds: 900));
-    _devices
-      ..clear()
-      ..add(CalcAiDevice(
-        device: BluetoothDevice.fromId('CA:1C:A1:00:00:01'),
-        rssi: -52,
-        advertisementName: 'CalcAI-A3B2',
-      ));
-    _isScanning = false;
-    notifyListeners();
-  }
-
-  @override
-  Future<void> stopScan() async {
-    _isScanning = false;
-    notifyListeners();
-  }
-
-  @override
-  Future<void> connectToDevice(
-    CalcAiDevice device, {
-    Duration timeout = const Duration(seconds: 15),
-    int attempts = 3,
-  }) async {
-    _connectionState = DeviceConnectionState.connecting;
-    notifyListeners();
-    await Future.delayed(const Duration(milliseconds: 700));
-    _connectedDevice = device;
-    _deviceMac = 'ca1ca1000001';
-    _connectionState = DeviceConnectionState.connected;
-    notifyListeners();
-  }
-
-  @override
-  Future<bool?> isDevicePaired() async => false;
-
-  @override
-  Future<String?> submitPairingCode(String code, String owner) async {
-    await Future.delayed(const Duration(milliseconds: 500));
-    if (code != '482917') return 'Wrong code — 4 tries left.';
-    _pairedOwner = owner;
-    notifyListeners();
-    return null;
-  }
-
-  @override
-  Future<bool> announceOwner(String owner) async => true;
-
-  @override
-  Future<void> requestWifiScan() async {
-    _provisioningState = ProvisioningState.scanning;
-    notifyListeners();
-    await Future.delayed(const Duration(milliseconds: 1100));
-    _wifiNetworks
-      ..clear()
-      ..addAll(const [
-        WifiNetwork(ssid: 'Home WiFi', rssi: -46, isSecured: true),
-        WifiNetwork(ssid: 'Chris iPhone', rssi: -58, isSecured: true),
-        WifiNetwork(ssid: 'Library-Guest', rssi: -71, isSecured: false),
-      ]);
-    _provisioningState = ProvisioningState.idle;
-    notifyListeners();
-  }
-
-  @override
-  Future<bool> sendWifiCredentials({
-    required String ssid,
-    String password = '',
-  }) async {
-    _provisioningState = ProvisioningState.sendingCredentials;
-    notifyListeners();
-    await Future.delayed(const Duration(milliseconds: 1400));
-    _savedNetworks.remove(ssid);
-    _savedNetworks.insert(0, ssid);
-    _connectedSsid = ssid;
-    _provisioningState = ProvisioningState.success;
-    notifyListeners();
-    return true;
-  }
-
-  /// Never touches SharedPreferences: startup calls this and an empty (or
-  /// stale) stored list would otherwise wipe the seed.
+  /// Never touches SharedPreferences — a test has no real store to read.
   @override
   Future<void> loadPersistedNetworks(String? deviceMac) async {}
 }

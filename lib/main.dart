@@ -32,22 +32,9 @@ void main() {
   runApp(
     MultiProvider(
       providers: [
-        // In UI-preview builds, swap in stand-ins that simulate a signed-in
-        // account with a paired device so features are testable in a browser.
-        // Release builds pass no dart-defines, so these never ship.
-        ChangeNotifierProvider<BleService>(
-          create: (_) => kUiPreview
-              ? PreviewBleService(walkthrough: kUiPreviewScreen == 'setup')
-              : BleService(),
-        ),
-        ChangeNotifierProvider<AuthService>(
-          create: (_) => kUiPreview
-              ? PreviewAuthService(signedOut: kUiPreviewScreen == 'setup')
-              : AuthService(),
-        ),
-        ChangeNotifierProvider<CloudService>(
-          create: (_) => kUiPreview ? PreviewCloudService(seeded: true) : CloudService(),
-        ),
+        ChangeNotifierProvider(create: (_) => BleService()),
+        ChangeNotifierProvider(create: (_) => AuthService()),
+        ChangeNotifierProvider(create: (_) => CloudService()),
       ],
       child: const CalcAIApp(),
     ),
