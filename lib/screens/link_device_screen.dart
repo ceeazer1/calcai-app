@@ -68,6 +68,17 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
     final paired = await ble.isDevicePaired();
     if (!mounted) return;
 
+    // No answer at all: firmware older than the pairing feature, or the read
+    // failed. Falling through would hand the Wi-Fi password to a calculator we
+    // could not identify, and would silently skip the step that makes it yours.
+    if (paired == null) {
+      setState(() {
+        _phase = _Phase.idle;
+        _error = 'This calculator needs a firmware update before it can pair.';
+      });
+      return;
+    }
+
     if (paired == false) {
       final ok = await Navigator.of(context).push<bool>(
         MaterialPageRoute(builder: (_) => const PairDeviceScreen()),
