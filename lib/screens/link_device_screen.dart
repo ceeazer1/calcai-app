@@ -77,10 +77,21 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
         setState(() => _phase = _Phase.idle);
         return;
       }
-    } else {
+    } else if (paired == true) {
+      // Identify this account. The firmware refuses every provisioning command
+      // until it matches the owner it stored, so a failure here has to stop the
+      // flow — otherwise the user reaches Wi-Fi setup, types their password,
+      // and the calculator silently drops it with nothing on screen to explain.
       final owner = context.read<AuthService>().username;
-      if (owner != null) await ble.announceOwner(owner);
+      final isOwner = owner != null && await ble.announceOwner(owner);
       if (!mounted) return;
+      if (!isOwner) {
+        setState(() {
+          _phase = _Phase.idle;
+          _error = 'This calculator belongs to another account.';
+        });
+        return;
+      }
     }
 
     Navigator.of(context).pushReplacement(
