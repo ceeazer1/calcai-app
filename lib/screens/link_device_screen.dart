@@ -334,7 +334,7 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
                               const SizedBox(height: 18),
                               Text(
                                 revoked
-                                    ? 'Account unpaired'
+                                    ? 'Calculator unpaired'
                                     : 'Pair your device',
                                 textAlign: TextAlign.center,
                                 style: GoogleFonts.outfit(
