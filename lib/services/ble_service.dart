@@ -723,8 +723,19 @@ class BleService extends ChangeNotifier {
   /// The firmware answers inline inside its write callback, so the value is
   /// ready almost immediately; the short retries cover BLE scheduling rather
   /// than any work on the device.
+  /// Why the last [_command] failed, when it failed for a reason other than the
+  /// calculator simply not recognising the command. Lets the UI tell "this
+  /// firmware is too old" apart from "the link broke", which look identical
+  /// from a null result and have completely different fixes.
+  String? _lastCommandError;
+  String? get lastCommandError => _lastCommandError;
+
   Future<Map<String, dynamic>?> _command(Map<String, dynamic> cmd) async {
-    if (_scanChar == null) return null;
+    _lastCommandError = null;
+    if (_scanChar == null) {
+      _lastCommandError = 'no command characteristic';
+      return null;
+    }
     try {
       await _scanChar!.write(
         utf8.encode(jsonEncode(cmd)),
@@ -743,6 +754,7 @@ class BleService extends ChangeNotifier {
       }
     } catch (e) {
       logDebug('CalcAI BLE: command ${cmd['cmd']} failed: $e');
+      _lastCommandError = e.toString();
     }
     return null;
   }

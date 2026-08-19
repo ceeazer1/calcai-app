@@ -68,13 +68,19 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
     final paired = await ble.isDevicePaired();
     if (!mounted) return;
 
-    // No answer at all: firmware older than the pairing feature, or the read
-    // failed. Falling through would hand the Wi-Fi password to a calculator we
-    // could not identify, and would silently skip the step that makes it yours.
+    // No answer. Two very different causes with the same null: firmware that
+    // predates pairing, or a link that broke before the command landed. Saying
+    // "update the firmware" for the second one sends people to reflash a board
+    // that was already fine, so separate them.
     if (paired == null) {
+      final err = ble.lastCommandError;
       setState(() {
         _phase = _Phase.idle;
-        _error = 'This calculator needs a firmware update before it can pair.';
+        _error = err == null
+            ? 'This calculator needs a firmware update before it can pair.'
+            : "Lost the connection before pairing could start. If you've just "
+                'updated the calculator, forget it in iPhone Settings > '
+                'Bluetooth, then scan again.';
       });
       return;
     }
