@@ -144,10 +144,15 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
       });
       return;
     }
-    await ble.startScan();
+    // Ten seconds is the default scan window and startScan only returns when it
+    // closes, but a device found early moves the phase on via the listener — so
+    // check that we are still scanning before calling it a miss. Reporting
+    // "not found" while the radio was still looking was why the first attempt
+    // always failed and the second, reading the devices left from the first,
+    // appeared to work.
+    await ble.startScan(timeout: const Duration(seconds: 6));
     if (!mounted) return;
-    // Scanning finished with nothing in range.
-    if (_phase == _Phase.scanning && context.read<BleService>().devices.isEmpty) {
+    if (_phase == _Phase.scanning && ble.devices.isEmpty) {
       setState(() {
         _phase = _Phase.idle;
         _error = 'No calculator found. Open Settings > BLE on it, then retry.';

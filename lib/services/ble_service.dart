@@ -411,13 +411,16 @@ class BleService extends ChangeNotifier {
         return;
       }
 
-      _setConnectionState(DeviceConnectionState.ready);
-
       // Subscribe to status notifications if available
       await _subscribeToStatus();
 
-      // Auto-fetch saved networks from the ESP32
+      // Auto-fetch saved networks BEFORE announcing ready. Listeners react to
+      // `ready` by running the pairing handshake, and both talk on the same
+      // characteristic — announcing first meant `list` overwrote the pairinfo
+      // reply before it could be read.
       await requestSavedNetworks();
+
+      _setConnectionState(DeviceConnectionState.ready);
     } catch (e) {
       _setError('Connection failed: ${_friendlyError(e)}');
       _setConnectionState(DeviceConnectionState.error);
@@ -623,7 +626,10 @@ class BleService extends ChangeNotifier {
 
   /// Requests saved/configured networks from the ESP32 via BLE.
   /// Sends `{"cmd":"list"}` to the scan characteristic and reads the response.
-  Future<void> requestSavedNetworks() async {
+  Future<void> requestSavedNetworks() =>
+      _serialize(() => _requestSavedNetworksLocked());
+
+  Future<void> _requestSavedNetworksLocked() async {
     if (_scanChar == null) return;
 
     _savedNetworksLoading = true;
@@ -718,6 +724,26 @@ class BleService extends ChangeNotifier {
 
   /// Asks the connected peripheral to answer an identity challenge.
   ///
+  /// Serialises access to the scan characteristic.
+  ///
+  /// Every command writes a request and then reads the reply back off the same
+  /// characteristic, so two of them in flight at once means the second one's
+  /// write lands before the first one's read — and the first caller parses the
+  /// wrong answer. Ordering here is cheaper than making every caller careful.
+  Future<void> _cmdQueue = Future<void>.value();
+
+  Future<T> _serialize<T>(Future<T> Function() op) {
+    final done = Completer<T>();
+    _cmdQueue = _cmdQueue.then((_) async {
+      try {
+        done.complete(await op());
+      } catch (e, st) {
+        done.completeError(e, st);
+      }
+    });
+    return done.future;
+  }
+
   /// One JSON command on the scan characteristic, with the reply read back.
   ///
   /// The firmware answers inline inside its write callback, so the value is
@@ -730,7 +756,10 @@ class BleService extends ChangeNotifier {
   String? _lastCommandError;
   String? get lastCommandError => _lastCommandError;
 
-  Future<Map<String, dynamic>?> _command(Map<String, dynamic> cmd) async {
+  Future<Map<String, dynamic>?> _command(Map<String, dynamic> cmd) =>
+      _serialize(() => _commandLocked(cmd));
+
+  Future<Map<String, dynamic>?> _commandLocked(Map<String, dynamic> cmd) async {
     _lastCommandError = null;
     if (_scanChar == null) {
       _lastCommandError = 'no command characteristic';
@@ -747,7 +776,13 @@ class BleService extends ChangeNotifier {
         if (raw.isEmpty) continue;
         try {
           final data = jsonDecode(utf8.decode(raw));
-          if (data is Map<String, dynamic>) return data;
+          if (data is! Map<String, dynamic>) continue;
+          // Firmware that echoes the command lets us prove the reply is ours
+          // rather than a leftover from another exchange. Older firmware sends
+          // no echo, so absence is accepted rather than treated as a mismatch.
+          final echo = data['cmd'];
+          if (echo is String && echo != cmd['cmd']) continue;
+          return data;
         } catch (_) {
           // Could still be a stale scan/list payload — try again.
         }
@@ -821,7 +856,10 @@ class BleService extends ChangeNotifier {
   /// same characteristic, the way the saved-network list already works.
   /// Returns null if the peripheral cannot answer — which is what an impostor,
   /// or a device on firmware older than the challenge, will do.
-  Future<DeviceChallenge?> requestIdentityChallenge() async {
+  Future<DeviceChallenge?> requestIdentityChallenge() =>
+      _serialize(() => _requestIdentityChallengeLocked());
+
+  Future<DeviceChallenge?> _requestIdentityChallengeLocked() async {
     if (_scanChar == null) return null;
     final nonce = _newNonce();
 
