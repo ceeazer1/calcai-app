@@ -863,7 +863,14 @@ class BleService extends ChangeNotifier {
       'response': response,
     });
     final ok = r?['ok'] == true;
-    if (ok) _pairedOwner = owner;
+    if (ok) {
+      _pairedOwner = owner;
+      // The connect-time fetch ran before this handshake -- it has to, or its
+      // reply overwrites the pairinfo one -- so on a claimed calculator the
+      // firmware's owner gate rejected it and the list came back empty. The
+      // session is authed now, so ask again.
+      await requestSavedNetworks();
+    }
     return ok;
   }
 
