@@ -6,6 +6,18 @@ workflows:
     
     integrations:
       app_store_connect: CalcAI
+
+    # Build on every push to main. This lived only in the Codemagic UI
+    # before, so nothing in the repo said when a build runs; keeping it
+    # here means the trigger is reviewable and travels with the branch.
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+          source: true
+      cancel_previous_builds: true
     
     environment:
       flutter: stable
