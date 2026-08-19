@@ -93,6 +93,19 @@ class _AppGateState extends State<_AppGate> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthService>();
+    final cloud = context.watch<CloudService>();
+
+    // The backend has stopped recognising this account as the owner — an admin
+    // unpaired the calculator, or it was claimed elsewhere. Drop the stored MAC
+    // so routing sends the user back to setup instead of leaving them on a
+    // dashboard whose every control silently fails.
+    if (cloud.deviceRevoked) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        cloud.clearDeviceRevoked();
+        cloud.reset();
+        await auth.forgetDevice();
+      });
+    }
 
     // ── Still loading persisted session (initial app boot only) ────────
     if (!_initialized) {

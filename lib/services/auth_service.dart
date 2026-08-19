@@ -704,6 +704,24 @@ class AuthService extends ChangeNotifier {
   ///
   /// This is a **local-only** operation — call [fetchDevices] afterwards if
   /// the device also needs to be registered server-side.
+  /// Forgets the paired calculator, sending the app back to setup.
+  ///
+  /// Used when the backend says this account no longer owns it, so the stored
+  /// MAC does not keep the user on a dashboard that cannot work.
+  Future<void> forgetDevice() async {
+    _deviceMacs = [];
+    _primaryMac = null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_keyPrimaryMac);
+      await prefs.remove(_keyDeviceMacs);
+    } catch (_) {
+      // Losing the persisted copy is not worth failing over; the in-memory
+      // state is what routing reads.
+    }
+    notifyListeners();
+  }
+
   Future<void> addDevice(String mac) async {
     // Lowercase, no separators — the backend's canonical form. This used to
     // uppercase, which meant the value written here never matched the list

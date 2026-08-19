@@ -625,7 +625,25 @@ class CloudService extends ChangeNotifier {
       };
 
   /// Throws a [CloudException] when the HTTP status code indicates failure.
+  /// True once the backend has told us this account no longer owns its
+  /// calculator — an admin unpaired it, or it was claimed elsewhere.
+  ///
+  /// Every device-scoped call 403s from that point on, and without noticing it
+  /// the app keeps showing a dashboard whose controls quietly do nothing.
+  bool _deviceRevoked = false;
+  bool get deviceRevoked => _deviceRevoked;
+
+  void clearDeviceRevoked() {
+    _deviceRevoked = false;
+  }
+
   void _assertSuccess(http.Response response) {
+    // 403 on a device-scoped call means ownership is gone, not that the request
+    // was malformed. Surface it once rather than as a string of odd failures.
+    if (response.statusCode == 403 && !_deviceRevoked) {
+      _deviceRevoked = true;
+      notifyListeners();
+    }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       String message;
       try {
