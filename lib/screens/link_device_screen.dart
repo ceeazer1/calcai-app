@@ -109,18 +109,36 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
       final isOwner = owner != null && await ble.announceOwner(owner);
       if (!mounted) return;
       if (!isOwner) {
-        setState(() {
-          _phase = _Phase.idle;
-          _error = 'This calculator belongs to another account.';
-        });
-        return;
-      }
-      // Already ours on the device but possibly not yet on the account — that
-      // is exactly the state an interrupted setup leaves behind, so repair it
-      // rather than walking past it.
-      final auth = context.read<AuthService>();
-      if (auth.primaryMac == null || auth.primaryMac!.isEmpty) {
-        if (!await _claimWithBackend()) return;
+        // Not ours — but it may have been released by an admin, in which case
+        // the backend will sign an instruction telling it to forget its old
+        // owner. Without this the calculator is unusable by anyone forever:
+        // unpairing clears the server record and cannot reach the device.
+        if (await _tryRelease()) {
+          if (!mounted) return;
+          final ok = await Navigator.of(context).push<bool>(
+            MaterialPageRoute(builder: (_) => const PairDeviceScreen()),
+          );
+          if (!mounted) return;
+          if (ok != true) {
+            setState(() => _phase = _Phase.idle);
+            return;
+          }
+          if (!await _claimWithBackend()) return;
+        } else {
+          setState(() {
+            _phase = _Phase.idle;
+            _error = 'This calculator belongs to another account.';
+          });
+          return;
+        }
+      } else {
+        // Already ours on the device but possibly not yet on the account —
+        // exactly what an interrupted setup leaves behind, so repair it rather
+        // than walking past it.
+        final auth = context.read<AuthService>();
+        if (auth.primaryMac == null || auth.primaryMac!.isEmpty) {
+          if (!await _claimWithBackend()) return;
+        }
       }
     }
 
@@ -128,6 +146,31 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const WifiSetupScreen()),
     );
+  }
+
+  /// Clears a calculator whose owner an admin has released.
+  ///
+  /// The device picks the nonce and the backend signs it, so neither this app
+  /// nor a stranger's can wipe a calculator that is still legitimately owned —
+  /// the backend refuses to sign for one, and the firmware refuses an unsigned
+  /// instruction.
+  Future<bool> _tryRelease() async {
+    final ble = context.read<BleService>();
+    final auth = context.read<AuthService>();
+    final cloud = context.read<CloudService>();
+    final token = auth.token;
+    if (token == null) return false;
+
+    final ask = await ble.requestReleaseNonce();
+    if (!mounted || ask == null) return false;
+
+    final signature =
+        await cloud.requestPairingRelease(token, ask.mac, ask.nonce);
+    if (!mounted || signature == null) return false;
+
+    final released = await ble.releaseOwnership(ask.nonce, signature);
+    if (!mounted) return false;
+    return released;
   }
 
   /// Records the calculator against this account. Returns false when it could

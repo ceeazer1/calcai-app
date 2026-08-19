@@ -847,6 +847,34 @@ class BleService extends ChangeNotifier {
     return ok;
   }
 
+  /// Asks the calculator for a nonce to have a release signed against.
+  ///
+  /// Returns null when the firmware predates the release command.
+  Future<({String mac, String nonce})?> requestReleaseNonce() async {
+    final r = await _command({'cmd': 'relnonce'});
+    final mac = (r?['mac'] ?? '').toString().toLowerCase();
+    final nonce = (r?['nonce'] ?? '').toString().toLowerCase();
+    if (!isValidMacHex(mac)) return null;
+    if (!RegExp(r'^[0-9a-f]{16,64}$').hasMatch(nonce)) return null;
+    return (mac: mac, nonce: nonce);
+  }
+
+  /// Hands the calculator a signed instruction to forget its owner.
+  ///
+  /// The signature is what authorises this, not the connection — the firmware
+  /// checks it against a secret only the backend holds, so a phone cannot reset
+  /// someone else's calculator by asking.
+  Future<bool> releaseOwnership(String nonce, String response) async {
+    final r = await _command({
+      'cmd': 'release',
+      'nonce': nonce,
+      'response': response,
+    });
+    final ok = r?['ok'] == true;
+    if (ok) _pairedOwner = null;
+    return ok;
+  }
+
   /// The account this connection has identified as, once [announceOwner] or
   /// [submitPairingCode] has succeeded.
   String? _pairedOwner;
