@@ -213,6 +213,7 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
 
   Future<void> _scan() async {
     final ble = context.read<BleService>();
+    context.read<AuthService>().clearUnpairedNotice();
     setState(() {
       _error = null;
       _needsSettings = false;
@@ -271,6 +272,7 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
   @override
   Widget build(BuildContext context) {
     final busy = _phase != _Phase.idle;
+    final revoked = context.watch<AuthService>().unpairedNotice;
 
     return Scaffold(
       body: Container(
@@ -295,22 +297,15 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
                   ),
                 ),
 
-                const SizedBox(height: 8),
-                Text(
-                  'Pair your device',
-                  style: GoogleFonts.outfit(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-
+                // Everything sits in the middle rather than pinned under
+                // the top bar: idle, there is nothing else on screen, and a
+                // heading floating above a void reads as a broken layout.
                 Expanded(
                   child: Center(
                     child: busy
                         ? ScanningAnimation(
                             isScanning: _phase != _Phase.connected,
-                            size: 260,
+                            size: 240,
                             color: _phase == _Phase.connected
                                 ? AppColors.accentBlue
                                 : AppColors.electricBlue,
@@ -324,7 +319,45 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
                                   : AppColors.electricBlue,
                             ),
                           )
-                        : const SizedBox.shrink(),
+                        : Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                revoked
+                                    ? Icons.link_off_rounded
+                                    : Icons.bluetooth_rounded,
+                                size: 40,
+                                color: revoked
+                                    ? AppColors.warning
+                                    : AppColors.electricBlue,
+                              ),
+                              const SizedBox(height: 18),
+                              Text(
+                                revoked
+                                    ? 'Account unpaired'
+                                    : 'Pair your device',
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.outfit(
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              if (revoked) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Your calculator was removed from this '
+                                  'account.',
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 14,
+                                    height: 1.45,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
                   ),
                 ),
 
@@ -393,7 +426,7 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
                         const Icon(Icons.bluetooth_rounded, size: 20),
                         const SizedBox(width: 8),
                         Text(
-                          'Scan',
+                          revoked ? 'Re-pair' : 'Scan',
                           style: GoogleFonts.inter(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,

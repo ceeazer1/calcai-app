@@ -708,9 +708,21 @@ class AuthService extends ChangeNotifier {
   ///
   /// Used when the backend says this account no longer owns it, so the stored
   /// MAC does not keep the user on a dashboard that cannot work.
+  /// Set when the device was taken away rather than removed by the user, so the
+  /// pairing screen can say what happened instead of silently reappearing.
+  bool _unpairedNotice = false;
+  bool get unpairedNotice => _unpairedNotice;
+
+  void clearUnpairedNotice() {
+    if (!_unpairedNotice) return;
+    _unpairedNotice = false;
+    notifyListeners();
+  }
+
   Future<void> forgetDevice() async {
     _deviceMacs = [];
     _primaryMac = null;
+    _unpairedNotice = true;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_keyPrimaryMac);
