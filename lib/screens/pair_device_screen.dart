@@ -38,7 +38,9 @@ class _PairDeviceScreenState extends State<PairDeviceScreen> {
     }
     final auth = context.read<AuthService>();
     final ble = context.read<BleService>();
-    final owner = auth.username;
+    // The email is what the backend stores as the device owner (sess.sub),
+    // so the copy in the calculator's flash matches its record.
+    final owner = auth.email;
     if (owner == null || owner.isEmpty) {
       setState(() => _error = 'Sign in first.');
       return;

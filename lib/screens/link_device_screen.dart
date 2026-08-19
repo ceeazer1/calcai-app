@@ -105,8 +105,7 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
       // until it matches the owner it stored, so a failure here has to stop the
       // flow — otherwise the user reaches Wi-Fi setup, types their password,
       // and the calculator silently drops it with nothing on screen to explain.
-      final owner = context.read<AuthService>().username;
-      final isOwner = owner != null && await ble.announceOwner(owner);
+      final isOwner = await _proveOwnership();
       if (!mounted) return;
       if (!isOwner) {
         // Not ours — but it may have been released by an admin, in which case
@@ -146,6 +145,32 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const WifiSetupScreen()),
     );
+  }
+
+  /// Proves to an already-claimed calculator that this account owns it.
+  ///
+  /// The device picks the nonce and the backend signs it only for the account
+  /// its own records name as the owner. The calculator used to settle this by
+  /// comparing the display name the app sent -- a first name, or the local
+  /// part of an email -- which anyone within radio range could guess.
+  Future<bool> _proveOwnership() async {
+    final ble = context.read<BleService>();
+    final auth = context.read<AuthService>();
+    final cloud = context.read<CloudService>();
+    final token = auth.token;
+    final owner = auth.email;
+    if (token == null || owner == null || owner.isEmpty) return false;
+
+    final ask = await ble.requestAuthNonce();
+    if (!mounted || ask == null) return false;
+
+    final signature =
+        await cloud.requestOwnershipProof(token, ask.mac, ask.nonce);
+    if (!mounted || signature == null) return false;
+
+    final proved = await ble.proveOwnership(ask.nonce, signature, owner);
+    if (!mounted) return false;
+    return proved;
   }
 
   /// Clears a calculator whose owner an admin has released.

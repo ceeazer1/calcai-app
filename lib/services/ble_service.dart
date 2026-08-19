@@ -837,11 +837,31 @@ class BleService extends ChangeNotifier {
     }
   }
 
+  /// Asks the calculator for a nonce to have an ownership proof signed against.
+  ///
+  /// Returns null when the firmware predates the signed handshake.
+  Future<({String mac, String nonce})?> requestAuthNonce() async {
+    final r = await _command({'cmd': 'authnonce'});
+    final mac = (r?['mac'] ?? '').toString().toLowerCase();
+    final nonce = (r?['nonce'] ?? '').toString().toLowerCase();
+    if (!isValidMacHex(mac)) return null;
+    if (!RegExp(r'^[0-9a-f]{16,64}$').hasMatch(nonce)) return null;
+    return (mac: mac, nonce: nonce);
+  }
+
   /// Identifies this account to an already-paired calculator. Until this
   /// succeeds the firmware refuses every provisioning command, so it runs
   /// before any Wi-Fi work.
-  Future<bool> announceOwner(String owner) async {
-    final r = await _command({'cmd': 'hello', 'owner': owner});
+  ///
+  /// The proof is a signature from the backend, not a name: the calculator
+  /// cannot tell one account from another by itself, and the string it used to
+  /// compare was the display name -- guessable by anyone in radio range.
+  Future<bool> proveOwnership(String nonce, String response, String owner) async {
+    final r = await _command({
+      'cmd': 'hello',
+      'nonce': nonce,
+      'response': response,
+    });
     final ok = r?['ok'] == true;
     if (ok) _pairedOwner = owner;
     return ok;
@@ -875,7 +895,7 @@ class BleService extends ChangeNotifier {
     return ok;
   }
 
-  /// The account this connection has identified as, once [announceOwner] or
+  /// The account this connection has identified as, once [proveOwnership] or
   /// [submitPairingCode] has succeeded.
   String? _pairedOwner;
   String? get pairedOwner => _pairedOwner;

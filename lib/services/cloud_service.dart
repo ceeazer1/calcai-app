@@ -291,6 +291,35 @@ class CloudService extends ChangeNotifier {
     }
   }
 
+  /// Asks the backend to sign a proof that this account owns a calculator.
+  ///
+  /// POST /ai/pair/hello  body: {mac, nonce}
+  ///
+  /// Returns the signature, or null when the backend says this account is not
+  /// the owner (403) or the device is unknown (404). The firmware cannot tell
+  /// accounts apart on its own, so the backend is what decides.
+  Future<String?> requestOwnershipProof(
+      String token, String mac, String nonce) async {
+    try {
+      final response = await _client.post(
+        Uri.parse('$_baseUrl/ai/pair/hello'),
+        headers: _jsonAuthHeaders(token),
+        body: jsonEncode({'mac': mac, 'nonce': nonce}),
+      );
+      if (response.statusCode != 200) {
+        logDebug('ownership proof refused: ${response.statusCode} ${response.body}');
+        return null;
+      }
+      final j = jsonDecode(response.body);
+      if (j is! Map || j['ok'] != true) return null;
+      final sig = (j['response'] ?? '').toString();
+      return RegExp(r'^[0-9a-f]{64}$').hasMatch(sig) ? sig : null;
+    } catch (e) {
+      logDebug('ownership proof failed: $e');
+      return null;
+    }
+  }
+
   /// Asks the backend to sign a release for a calculator an admin has unpaired.
   ///
   /// POST /ai/pair/release  body: {mac, nonce}
