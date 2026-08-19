@@ -94,6 +94,12 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
         setState(() => _phase = _Phase.idle);
         return;
       }
+      // Register with the backend as soon as the code is accepted, not at the
+      // end of Wi-Fi setup. Ownership is settled here; leaving the server claim
+      // until later meant a calculator switched off mid-setup ended up claimed
+      // on the device but unknown to the account, and the next sign-in dropped
+      // the user back into setup with no way to tell why.
+      if (!await _claimWithBackend()) return;
     } else if (paired == true) {
       // Identify this account. The firmware refuses every provisioning command
       // until it matches the owner it stored, so a failure here has to stop the
@@ -109,11 +115,57 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
         });
         return;
       }
+      // Already ours on the device but possibly not yet on the account — that
+      // is exactly the state an interrupted setup leaves behind, so repair it
+      // rather than walking past it.
+      final auth = context.read<AuthService>();
+      if (auth.primaryMac == null || auth.primaryMac!.isEmpty) {
+        if (!await _claimWithBackend()) return;
+      }
     }
 
+    if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const WifiSetupScreen()),
     );
+  }
+
+  /// Records the calculator against this account. Returns false when it could
+  /// not be done, having already shown why.
+  Future<bool> _claimWithBackend() async {
+    final ble = context.read<BleService>();
+    final auth = context.read<AuthService>();
+    final cloud = context.read<CloudService>();
+
+    final challenge = ble.verifiedChallenge ?? await ble.requestIdentityChallenge();
+    if (!mounted) return false;
+    final mac = challenge?.mac ?? ble.deviceMac ?? ble.connectedDevice?.id;
+    final token = auth.token;
+    if (mac == null || token == null) {
+      setState(() {
+        _phase = _Phase.idle;
+        _error = 'Could not read the calculator id. Try scanning again.';
+      });
+      return false;
+    }
+
+    await ble.setPersistMac(mac);
+    final claimed = await cloud.claimDevice(
+      token,
+      mac,
+      nonce: challenge?.nonce,
+      challengeResponse: challenge?.response,
+    );
+    if (!mounted) return false;
+    if (!claimed) {
+      setState(() {
+        _phase = _Phase.idle;
+        _error = cloud.error ?? 'Could not add this calculator to your account.';
+      });
+      return false;
+    }
+    await auth.addDevice(mac);
+    return mounted;
   }
 
   Future<void> _scan() async {
