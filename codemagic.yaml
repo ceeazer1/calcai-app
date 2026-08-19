@@ -66,8 +66,15 @@ workflows:
       - name: Build iOS
         script: |
           xcode-project use-profiles
+          # App Store Connect refuses a build number it has already
+          # accepted, and pubspec's is static -- so every upload after
+          # the first collided on 92 and the publish step failed. The
+          # commit count only ever grows and is already well past it.
+          BUILD_NUM=$(git rev-list --count HEAD)
+          echo "Building as build number $BUILD_NUM"
           flutter build ipa \
             --release \
+            --build-number="$BUILD_NUM" \
             --export-options-plist=/Users/builder/export_options.plist
     
     artifacts:
