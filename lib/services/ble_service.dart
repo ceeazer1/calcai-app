@@ -414,12 +414,12 @@ class BleService extends ChangeNotifier {
       // Subscribe to status notifications if available
       await _subscribeToStatus();
 
-      // Auto-fetch saved networks BEFORE announcing ready. Listeners react to
-      // `ready` by running the pairing handshake, and both talk on the same
-      // characteristic — announcing first meant `list` overwrote the pairinfo
-      // reply before it could be read.
-      await requestSavedNetworks();
-
+      // Do not request saved networks here. The firmware handles `list`
+      // asynchronously, while pairing commands answer immediately on the same
+      // characteristic. A slow list response can therefore arrive after
+      // `pairinfo` and overwrite it. Once ownership has been established we
+      // request the list safely from [proveOwnership]; newly claimed devices
+      // refresh it after provisioning.
       _setConnectionState(DeviceConnectionState.ready);
     } catch (e) {
       _setError('Connection failed: ${_friendlyError(e)}');
@@ -865,10 +865,9 @@ class BleService extends ChangeNotifier {
     final ok = r?['ok'] == true;
     if (ok) {
       _pairedOwner = owner;
-      // The connect-time fetch ran before this handshake -- it has to, or its
-      // reply overwrites the pairinfo one -- so on a claimed calculator the
-      // firmware's owner gate rejected it and the list came back empty. The
-      // session is authed now, so ask again.
+      // Saved networks are intentionally deferred until after this handshake.
+      // The firmware processes `list` asynchronously on the same characteristic
+      // used by pairing, so fetching earlier can overwrite a pairing reply.
       await requestSavedNetworks();
     }
     return ok;
