@@ -202,6 +202,11 @@ class _WifiScreenState extends State<WifiScreen> {
 
     if (!mounted) return;
     if (proved) {
+      // Presentation only: the TI-84 BLE page shows "WIFI MODE" while this
+      // authenticated management screen owns the connection. Disconnecting on
+      // dispose clears it in firmware even if this request is interrupted.
+      await ble.setWifiUiMode(true);
+      if (!mounted) return;
       _stopAutoConnecting();
     } else {
       await ble.disconnect();

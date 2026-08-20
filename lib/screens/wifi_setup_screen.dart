@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -43,14 +45,20 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
     );
     _enterController.forward();
 
-    // Start WiFi scan immediately
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<BleService>().requestWifiScan();
+    // Tell the calculator what this authenticated connection is doing, then
+    // start the scan. Both commands share BleService's serialized queue.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final ble = context.read<BleService>();
+      await ble.setWifiUiMode(true);
+      if (mounted) await ble.requestWifiScan();
     });
   }
 
   @override
   void dispose() {
+    // Best effort only. A disconnect also clears this volatile firmware flag,
+    // so an interrupted route can never leave the device stuck in Wi-Fi mode.
+    unawaited(context.read<BleService>().setWifiUiMode(false));
     _enterController.dispose();
     super.dispose();
   }

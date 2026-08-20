@@ -814,6 +814,16 @@ class BleService extends ChangeNotifier {
     return v is bool ? v : null;
   }
 
+  /// Changes only the short status shown on the calculator's BLE page.
+  /// Pairing, authorization, Wi-Fi state, and advertising are untouched.
+  Future<bool> setWifiUiMode(bool enabled) async {
+    final r = await _command({
+      'cmd': 'uimode',
+      'mode': enabled ? 'wifi' : 'normal',
+    });
+    return r?['ok'] == true;
+  }
+
   /// Claims an unpaired calculator with the six digits shown on its screen.
   ///
   /// Returns null on success, or a short reason to show the user. The firmware
