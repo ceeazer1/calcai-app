@@ -65,19 +65,25 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
 
   Future<void> _onNetworkTapped(WifiNetwork network) async {
     if (network.isSecured) {
-      final password = await _showPasswordDialog(network.ssid);
-      if (password == null) return; // User cancelled
-      _provisionWifi(network.ssid, password);
+      final details = await _showPasswordDialog(network.ssid);
+      if (details == null) return; // User cancelled
+      _provisionWifi(
+        network.ssid,
+        details.password,
+        iphoneHotspot: details.iphoneHotspot,
+      );
     } else {
       _provisionWifi(network.ssid, '');
     }
   }
 
-  Future<String?> _showPasswordDialog(String ssid) async {
+  Future<({String password, bool iphoneHotspot})?> _showPasswordDialog(
+      String ssid) async {
     final controller = TextEditingController();
     bool obscure = true;
+    bool iphoneHotspot = false;
 
-    return showDialog<String>(
+    return showDialog<({String password, bool iphoneHotspot})>(
       context: context,
       barrierColor: AppColors.scrim,
       builder: (ctx) {
@@ -160,8 +166,36 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
                       ),
                     ),
                     onSubmitted: (value) {
-                      if (value.isNotEmpty) Navigator.pop(ctx, value);
+                      if (value.isNotEmpty) {
+                        Navigator.pop(ctx, (
+                          password: value,
+                          iphoneHotspot: iphoneHotspot,
+                        ));
+                      }
                     },
+                  ),
+                  const SizedBox(height: 12),
+                  SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    value: iphoneHotspot,
+                    activeColor: AppColors.electricBlue,
+                    title: Text(
+                      'iPhone hotspot',
+                      style: GoogleFonts.inter(
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    subtitle: Text(
+                      'Keep it active while your iPhone is locked.',
+                      style: GoogleFonts.inter(
+                        color: AppColors.textTertiary,
+                        fontSize: 11,
+                      ),
+                    ),
+                    onChanged: (value) =>
+                        setDialogState(() => iphoneHotspot = value),
                   ),
                 ],
               ),
@@ -176,7 +210,10 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
                 ElevatedButton(
                   onPressed: () {
                     if (controller.text.isNotEmpty) {
-                      Navigator.pop(ctx, controller.text);
+                      Navigator.pop(ctx, (
+                        password: controller.text,
+                        iphoneHotspot: iphoneHotspot,
+                      ));
                     }
                   },
                   child: const Text('Connect'),
@@ -189,13 +226,18 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
     );
   }
 
-  Future<void> _provisionWifi(String ssid, String password) async {
+  Future<void> _provisionWifi(
+    String ssid,
+    String password, {
+    bool iphoneHotspot = false,
+  }) async {
     setState(() => _connectingSsid = ssid);
 
     final ble = context.read<BleService>();
     final success = await ble.sendWifiCredentials(
       ssid: ssid,
       password: password,
+      iphoneHotspot: iphoneHotspot,
     );
 
     if (!mounted) return;

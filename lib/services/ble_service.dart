@@ -98,6 +98,14 @@ class BleService extends ChangeNotifier {
   final List<String> _savedNetworks = [];
   List<String> get savedNetworks => List.unmodifiable(_savedNetworks);
 
+  /// Saved networks for which the ESP32 should keep an iPhone Personal Hotspot
+  /// active. This is per SSID; ordinary routers remain untouched.
+  final Set<String> _iphoneHotspotNetworks = <String>{};
+  Set<String> get iphoneHotspotNetworks =>
+      Set.unmodifiable(_iphoneHotspotNetworks);
+  bool isIphoneHotspotNetwork(String ssid) =>
+      _iphoneHotspotNetworks.contains(ssid);
+
   /// True while fetching the saved-network list from the device over BLE, so
   /// the UI can show a "loading networks…" state instead of a premature empty.
   bool _savedNetworksLoading = false;
@@ -660,10 +668,16 @@ class BleService extends ChangeNotifier {
           if (parsed is List) {
             // Replace the list (handles going down to zero saved networks).
             _savedNetworks.clear();
+            _iphoneHotspotNetworks.clear();
             for (final item in parsed) {
               if (item is Map<String, dynamic>) {
                 final ssid = item['ssid'] as String? ?? '';
-                if (ssid.isNotEmpty) _savedNetworks.add(ssid);
+                if (ssid.isNotEmpty) {
+                  _savedNetworks.add(ssid);
+                  if (item['iphoneHotspot'] == true) {
+                    _iphoneHotspotNetworks.add(ssid);
+                  }
+                }
               }
             }
             logDebug('CalcAI BLE: got ${_savedNetworks.length} saved networks');
@@ -697,8 +711,16 @@ class BleService extends ChangeNotifier {
         _savedNetworks
           ..clear()
           ..addAll(list.cast<String>());
-        notifyListeners();
       }
+      final hotspotJson = prefs.getString('iphone_hotspots_$norm');
+      _iphoneHotspotNetworks.clear();
+      if (hotspotJson != null) {
+        final list = jsonDecode(hotspotJson) as List;
+        _iphoneHotspotNetworks.addAll(
+          list.cast<String>().where(_savedNetworks.contains),
+        );
+      }
+      notifyListeners();
     } catch (e) {
       logDebug('CalcAI BLE: Error loading persisted networks: $e');
     }
@@ -716,6 +738,10 @@ class BleService extends ChangeNotifier {
       await prefs.setString(
         'saved_networks_$mac',
         jsonEncode(_savedNetworks),
+      );
+      await prefs.setString(
+        'iphone_hotspots_$mac',
+        jsonEncode(_iphoneHotspotNetworks.toList()..sort()),
       );
     } catch (e) {
       logDebug('CalcAI BLE: Error persisting networks: $e');
@@ -1029,6 +1055,14 @@ class BleService extends ChangeNotifier {
 
   // ── WiFi Provisioning ──────────────────────────────────────────────
 
+  Future<bool> _supportsIphoneHotspotKeepAlive() =>
+      _serialize(_supportsIphoneHotspotKeepAliveLocked);
+
+  Future<bool> _supportsIphoneHotspotKeepAliveLocked() async {
+    final result = await _commandLocked({'cmd': 'capabilities'});
+    return result?['iphoneHotspot'] == true;
+  }
+
   /// Sends WiFi credentials to the ESP32 and monitors connection status.
   ///
   /// [ssid] — the network SSID to connect to.
@@ -1036,6 +1070,7 @@ class BleService extends ChangeNotifier {
   Future<bool> sendWifiCredentials({
     required String ssid,
     String password = '',
+    bool iphoneHotspot = false,
   }) async {
     if (_configChar == null) {
       _setError('WiFi config characteristic not available.');
@@ -1051,6 +1086,14 @@ class BleService extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+    if (iphoneHotspot && !await _supportsIphoneHotspotKeepAlive()) {
+      _setError(
+        'Update the calculator firmware to use iPhone hotspot mode.',
+      );
+      _provisioningState = ProvisioningState.failed;
+      notifyListeners();
+      return false;
+    }
 
     _connectedSsid = ssid;
     _provisioningState = ProvisioningState.sendingCredentials;
@@ -1060,6 +1103,7 @@ class BleService extends ChangeNotifier {
       final payload = jsonEncode({
         'ssid': ssid,
         'password': password,
+        'iphoneHotspot': iphoneHotspot,
       });
 
       await _configChar!.write(
@@ -1099,6 +1143,7 @@ class BleService extends ChangeNotifier {
   Future<bool> forceSaveNetwork({
     required String ssid,
     String password = '',
+    bool iphoneHotspot = false,
   }) async {
     if (_configChar == null) {
       _setError('WiFi config characteristic not available.');
@@ -1107,12 +1152,19 @@ class BleService extends ChangeNotifier {
 
     // "Save anyway" still sends the password, so it gets the same check.
     if (!await ensureDeviceVerified()) return false;
+    if (iphoneHotspot && !await _supportsIphoneHotspotKeepAlive()) {
+      _setError(
+        'Update the calculator firmware to use iPhone hotspot mode.',
+      );
+      return false;
+    }
 
     try {
       final payload = jsonEncode({
         'action': 'force_save',
         'ssid': ssid,
         'password': password,
+        'iphoneHotspot': iphoneHotspot,
       });
 
       await _configChar!.write(
@@ -1189,10 +1241,50 @@ class BleService extends ChangeNotifier {
     return result;
   }
 
-  /// Sends a remove-network command to the ESP32 via BLE.
-  ///
-  /// The ESP32 firmware accepts `{"action":"remove","ssid":"..."}` on the
-  /// Config characteristic and clears the matching NVS slot.
+  /// Enables or disables keep-alive for one already-saved network.
+  Future<bool> setIphoneHotspotKeepAlive(String ssid, bool enabled) =>
+      _serialize(() => _setIphoneHotspotKeepAliveLocked(ssid, enabled));
+
+  Future<bool> _setIphoneHotspotKeepAliveLocked(
+    String ssid,
+    bool enabled,
+  ) async {
+    if (_configChar == null) {
+      _setError('WiFi config characteristic not available.');
+      return false;
+    }
+
+    _clearError();
+    try {
+      if (!await _supportsIphoneHotspotKeepAliveLocked()) {
+        _setError(
+          'Update the calculator firmware to use iPhone hotspot mode.',
+        );
+        return false;
+      }
+      final payload = jsonEncode({
+        'action': 'set_hotspot',
+        'ssid': ssid,
+        'iphoneHotspot': enabled,
+      });
+      await _configChar!.write(utf8.encode(payload), withoutResponse: false);
+      await _requestSavedNetworksLocked();
+
+      final updated = isIphoneHotspotNetwork(ssid) == enabled;
+      if (!updated) {
+        _setError(
+          'The calculator could not update this setting. Make sure its '
+          'firmware is current.',
+        );
+      }
+      return updated;
+    } catch (e) {
+      _setError('Failed to update hotspot keep-alive: ${_friendlyError(e)}');
+      return false;
+    }
+  }
+
+  /// Removes one saved network from the ESP32 and local cache.
   Future<bool> removeWifiNetwork(String ssid) async {
     if (_configChar == null) {
       _setError('WiFi config characteristic not available.');
@@ -1215,6 +1307,7 @@ class BleService extends ChangeNotifier {
       // Remove from local lists and persist
       _wifiNetworks.removeWhere((n) => n.ssid == ssid);
       _savedNetworks.remove(ssid);
+      _iphoneHotspotNetworks.remove(ssid);
       await _persistSavedNetworks();
       notifyListeners();
 

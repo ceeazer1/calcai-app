@@ -503,89 +503,119 @@ class _WifiScreenState extends State<WifiScreen> {
   void _showManualNetworkDialog() {
     final ssidController = TextEditingController();
     final passwordController = TextEditingController();
+    bool iphoneHotspot = false;
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: BorderSide(color: AppColors.glassBorder),
-        ),
-        title: Text(
-          'Add Network',
-          style: GoogleFonts.outfit(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.w600,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(color: AppColors.glassBorder),
           ),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Enter the network name exactly as it appears.',
-              style: GoogleFonts.inter(
-                color: AppColors.textSecondary,
-                fontSize: 13,
-              ),
+          title: Text(
+            'Add Network',
+            style: GoogleFonts.outfit(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w600,
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: ssidController,
-              autocorrect: false,
-              autofocus: true,
-              style: GoogleFonts.inter(color: AppColors.textPrimary),
-              decoration: InputDecoration(
-                hintText: 'Network name (SSID)',
-                hintStyle: GoogleFonts.inter(color: AppColors.textTertiary),
-                filled: true,
-                fillColor: AppColors.surfaceLight,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Enter the network name exactly as it appears.',
+                style: GoogleFonts.inter(
+                  color: AppColors.textSecondary,
+                  fontSize: 13,
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: passwordController,
-              obscureText: true,
-              style: GoogleFonts.inter(color: AppColors.textPrimary),
-              decoration: InputDecoration(
-                hintText: 'Password (leave blank if open)',
-                hintStyle: GoogleFonts.inter(color: AppColors.textTertiary),
-                filled: true,
-                fillColor: AppColors.surfaceLight,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+              const SizedBox(height: 16),
+              TextField(
+                controller: ssidController,
+                autocorrect: false,
+                autofocus: true,
+                style: GoogleFonts.inter(color: AppColors.textPrimary),
+                decoration: InputDecoration(
+                  hintText: 'Network name (SSID)',
+                  hintStyle: GoogleFonts.inter(color: AppColors.textTertiary),
+                  filled: true,
+                  fillColor: AppColors.surfaceLight,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
                 ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: passwordController,
+                obscureText: true,
+                style: GoogleFonts.inter(color: AppColors.textPrimary),
+                decoration: InputDecoration(
+                  hintText: 'Password (leave blank if open)',
+                  hintStyle: GoogleFonts.inter(color: AppColors.textTertiary),
+                  filled: true,
+                  fillColor: AppColors.surfaceLight,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                value: iphoneHotspot,
+                activeColor: AppColors.electricBlue,
+                title: Text(
+                  'iPhone hotspot',
+                  style: GoogleFonts.inter(
+                    color: AppColors.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                subtitle: Text(
+                  'Keep it active while your iPhone is locked.',
+                  style: GoogleFonts.inter(
+                    color: AppColors.textTertiary,
+                    fontSize: 11,
+                  ),
+                ),
+                onChanged: (value) =>
+                    setDialogState(() => iphoneHotspot = value),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.inter(color: AppColors.textSecondary),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final ssid = ssidController.text.trim();
+                if (ssid.isEmpty) return;
+                Navigator.pop(ctx);
+                _attemptConnect(
+                  ssid,
+                  passwordController.text,
+                  iphoneHotspot: iphoneHotspot,
+                );
+              },
+              child: Text(
+                'Connect',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w600),
               ),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              'Cancel',
-              style: GoogleFonts.inter(color: AppColors.textSecondary),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final ssid = ssidController.text.trim();
-              if (ssid.isEmpty) return;
-              Navigator.pop(ctx);
-              _attemptConnect(ssid, passwordController.text);
-            },
-            child: Text(
-              'Connect',
-              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -623,9 +653,11 @@ class _WifiScreenState extends State<WifiScreen> {
     }
     return ble.savedNetworks.map((ssid) {
       final isCurrentlyConnected = ssid == ble.connectedSsid;
+      final isIphoneHotspot = ble.isIphoneHotspotNetwork(ssid);
       return Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: GlassCard(
+          onTap: readOnly ? null : () => _showSavedNetworkSettings(ble, ssid),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             children: [
@@ -650,7 +682,8 @@ class _WifiScreenState extends State<WifiScreen> {
                       ),
                     ),
                     Text(
-                      isCurrentlyConnected ? 'Connected' : 'Saved',
+                      '${isCurrentlyConnected ? 'Connected' : 'Saved'}'
+                      '${isIphoneHotspot ? ' • iPhone hotspot' : ''}',
                       style: GoogleFonts.inter(
                         fontSize: 12,
                         color: isCurrentlyConnected
@@ -675,6 +708,85 @@ class _WifiScreenState extends State<WifiScreen> {
         ),
       );
     }).toList();
+  }
+
+  void _showSavedNetworkSettings(BleService ble, String ssid) {
+    bool iphoneHotspot = ble.isIphoneHotspotNetwork(ssid);
+    bool updating = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(color: AppColors.glassBorder),
+          ),
+          title: Text(
+            ssid,
+            style: GoogleFonts.outfit(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          content: SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            value: iphoneHotspot,
+            activeColor: AppColors.electricBlue,
+            title: Text(
+              'iPhone hotspot',
+              style: GoogleFonts.inter(
+                color: AppColors.textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            subtitle: Text(
+              'Keep this hotspot active while your iPhone is locked. Uses a '
+              'small amount of data and battery.',
+              style: GoogleFonts.inter(
+                color: AppColors.textTertiary,
+                fontSize: 11,
+                height: 1.35,
+              ),
+            ),
+            onChanged: updating
+                ? null
+                : (value) async {
+                    setDialogState(() => updating = true);
+                    final success =
+                        await ble.setIphoneHotspotKeepAlive(ssid, value);
+                    if (!ctx.mounted) return;
+                    setDialogState(() {
+                      if (success) iphoneHotspot = value;
+                      updating = false;
+                    });
+                    if (!success && mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            ble.error ?? 'Could not update hotspot setting.',
+                          ),
+                          backgroundColor: AppColors.error,
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
+                  },
+          ),
+          actions: [
+            TextButton(
+              onPressed: updating ? null : () => Navigator.pop(ctx),
+              child: Text(
+                'Done',
+                style: GoogleFonts.inter(color: AppColors.electricBlue),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _addNetwork(BleService ble) async {
@@ -797,77 +909,114 @@ class _WifiScreenState extends State<WifiScreen> {
     );
   }
 
-  void _showPasswordDialog(String ssid) {
+  void _showPasswordDialog(
+    String ssid, {
+    bool initialIphoneHotspot = false,
+  }) {
     final passwordController = TextEditingController();
+    bool iphoneHotspot = initialIphoneHotspot;
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: BorderSide(color: AppColors.glassBorder),
-        ),
-        title: Text(
-          'Enter Password',
-          style: GoogleFonts.outfit(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.w600,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(color: AppColors.glassBorder),
           ),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              ssid,
-              style: GoogleFonts.inter(
-                color: AppColors.textSecondary,
-                fontSize: 14,
+          title: Text(
+            'Enter Password',
+            style: GoogleFonts.outfit(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                ssid,
+                style: GoogleFonts.inter(
+                  color: AppColors.textSecondary,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: passwordController,
+                obscureText: true,
+                style: GoogleFonts.inter(color: AppColors.textPrimary),
+                decoration: InputDecoration(
+                  hintText: 'WiFi password',
+                  hintStyle: GoogleFonts.inter(color: AppColors.textTertiary),
+                  filled: true,
+                  fillColor: AppColors.surfaceLight,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                value: iphoneHotspot,
+                activeColor: AppColors.electricBlue,
+                title: Text(
+                  'iPhone hotspot',
+                  style: GoogleFonts.inter(
+                    color: AppColors.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                subtitle: Text(
+                  'Keep it active while your iPhone is locked.',
+                  style: GoogleFonts.inter(
+                    color: AppColors.textTertiary,
+                    fontSize: 11,
+                  ),
+                ),
+                onChanged: (value) =>
+                    setDialogState(() => iphoneHotspot = value),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.inter(color: AppColors.textSecondary),
               ),
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: passwordController,
-              obscureText: true,
-              style: GoogleFonts.inter(color: AppColors.textPrimary),
-              decoration: InputDecoration(
-                hintText: 'WiFi password',
-                hintStyle: GoogleFonts.inter(color: AppColors.textTertiary),
-                filled: true,
-                fillColor: AppColors.surfaceLight,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _attemptConnect(
+                  ssid,
+                  passwordController.text,
+                  iphoneHotspot: iphoneHotspot,
+                );
+              },
+              child: Text(
+                'Connect',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w600),
               ),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              'Cancel',
-              style: GoogleFonts.inter(color: AppColors.textSecondary),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _attemptConnect(ssid, passwordController.text);
-            },
-            child: Text(
-              'Connect',
-              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
       ),
     );
   }
 
-  Future<void> _attemptConnect(String ssid, String password) async {
+  Future<void> _attemptConnect(
+    String ssid,
+    String password, {
+    bool iphoneHotspot = false,
+  }) async {
     final ble = context.read<BleService>();
 
     // Show a connecting indicator
@@ -906,6 +1055,7 @@ class _WifiScreenState extends State<WifiScreen> {
     final success = await ble.sendWifiCredentials(
       ssid: ssid,
       password: password,
+      iphoneHotspot: iphoneHotspot,
     );
 
     if (!mounted) return;
@@ -925,11 +1075,21 @@ class _WifiScreenState extends State<WifiScreen> {
       );
     } else {
       // Show failure dialog with Save Anyway option
-      _showConnectionFailedDialog(ssid, password);
+      _showConnectionFailedDialog(
+        ssid,
+        password,
+        iphoneHotspot: iphoneHotspot,
+        error: ble.error,
+      );
     }
   }
 
-  void _showConnectionFailedDialog(String ssid, String password) {
+  void _showConnectionFailedDialog(
+    String ssid,
+    String password, {
+    bool iphoneHotspot = false,
+    String? error,
+  }) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -951,7 +1111,9 @@ class _WifiScreenState extends State<WifiScreen> {
           ),
         ),
         content: Text(
-          'Could not connect to "$ssid". The password may be incorrect, or the network may be out of range.',
+          error ??
+              'Could not connect to "$ssid". The password may be incorrect, '
+                  'or the network may be out of range.',
           style: GoogleFonts.inter(
             color: AppColors.textSecondary,
             fontSize: 14,
@@ -963,7 +1125,10 @@ class _WifiScreenState extends State<WifiScreen> {
             onPressed: () {
               Navigator.pop(ctx);
               // Re-open password dialog to try again
-              _showPasswordDialog(ssid);
+              _showPasswordDialog(
+                ssid,
+                initialIphoneHotspot: iphoneHotspot,
+              );
             },
             child: Text(
               'Try Again',
@@ -974,7 +1139,11 @@ class _WifiScreenState extends State<WifiScreen> {
             onPressed: () async {
               Navigator.pop(ctx);
               final ble = context.read<BleService>();
-              await ble.forceSaveNetwork(ssid: ssid, password: password);
+              await ble.forceSaveNetwork(
+                ssid: ssid,
+                password: password,
+                iphoneHotspot: iphoneHotspot,
+              );
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
