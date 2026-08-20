@@ -7,7 +7,9 @@ import 'package:calcai_app/services/ble_service.dart';
 /// Mirrors the firmware's bleChallengeResponse() and the worker's check, so the
 /// three implementations are pinned to one another by a test.
 String firmwareAnswer(String secret, String mac, String nonce) =>
-    Hmac(sha256, utf8.encode(secret)).convert(utf8.encode('$mac|$nonce')).toString();
+    Hmac(sha256, utf8.encode(secret))
+        .convert(utf8.encode('$mac|$nonce'))
+        .toString();
 
 void main() {
   group('MAC validation', () {
@@ -20,10 +22,15 @@ void main() {
       expect(isValidMacHex('aabbccddeeff&limit=999'), isFalse);
       expect(isValidMacHex('aabbcc#'), isFalse);
       expect(isValidMacHex('../../etc'), isFalse);
-      expect(isValidMacHex('AABBCCDDEEFF'), isFalse, reason: 'must be lowercased first');
+      expect(isValidMacHex('AABBCCDDEEFF'), isFalse,
+          reason: 'must be lowercased first');
       expect(isValidMacHex('aabbccddee'), isFalse, reason: 'too short');
       expect(isValidMacHex('aabbccddeeff00'), isFalse, reason: 'too long');
       expect(isValidMacHex('zzbbccddeeff'), isFalse, reason: 'not hex');
+      expect(isValidMacHex('000000000000'), isFalse,
+          reason: 'WiFi reports all zeroes before its radio is initialised');
+      expect(isValidMacHex('ffffffffffff'), isFalse,
+          reason: 'broadcast is not a device identity');
       expect(isValidMacHex(''), isFalse);
       expect(isValidMacHex(null), isFalse);
     });
@@ -70,14 +77,17 @@ void main() {
     test('the "mac|nonce" separator is not ambiguous', () {
       // Without a separator, ("aabb","ccdd") and ("aabbcc","dd") would collide.
       expect(
-        firmwareAnswer(secret, 'aabbccddeeff', '00112233445566778899aabbccddeeff'),
-        isNot(firmwareAnswer(secret, 'aabbccddeeff00', '112233445566778899aabbccddeeff')),
+        firmwareAnswer(
+            secret, 'aabbccddeeff', '00112233445566778899aabbccddeeff'),
+        isNot(firmwareAnswer(
+            secret, 'aabbccddeeff00', '112233445566778899aabbccddeeff')),
       );
     });
   });
 
   group('verification gate fails closed', () {
-    test('an unwired verifier refuses, rather than silently allowing', () async {
+    test('an unwired verifier refuses, rather than silently allowing',
+        () async {
       final ble = BleService();
       // deviceVerifier deliberately left null — a forgotten wiring must block.
       expect(await ble.ensureDeviceVerified(), isFalse);

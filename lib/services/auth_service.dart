@@ -63,6 +63,16 @@ class AuthService extends ChangeNotifier {
   // reinstall, Keychain is not), letting us detect and discard stale tokens.
   static const String _keySessionValid = 'session_valid';
 
+  static String _normaliseDeviceMac(Object? value) => (value ?? '')
+      .toString()
+      .replaceAll(RegExp(r'[^0-9a-fA-F]'), '')
+      .toLowerCase();
+
+  static bool _isUsableDeviceMac(String value) =>
+      RegExp(r'^[0-9a-f]{12}$').hasMatch(value) &&
+      value != '000000000000' &&
+      value != 'ffffffffffff';
+
   /// Generate a cryptographically secure nonce for Apple Sign-In.
   static String _generateNonce([int length = 32]) {
     const charset =
@@ -182,9 +192,16 @@ class AuthService extends ChangeNotifier {
       // Device MAC list stored as a JSON-encoded List<String>.
       final macsJson = prefs.getString(_keyDeviceMacs);
       if (macsJson != null) {
-        _deviceMacs = List<String>.from(jsonDecode(macsJson) as List);
+        _deviceMacs = (jsonDecode(macsJson) as List)
+            .map(_normaliseDeviceMac)
+            .where(_isUsableDeviceMac)
+            .toList();
       }
-      _primaryMac = prefs.getString(_keyPrimaryMac);
+      final savedPrimary = _normaliseDeviceMac(prefs.getString(_keyPrimaryMac));
+      _primaryMac =
+          _isUsableDeviceMac(savedPrimary) && _deviceMacs.contains(savedPrimary)
+              ? savedPrimary
+              : (_deviceMacs.isEmpty ? null : _deviceMacs.first);
 
       _isAuthenticated = _token != null;
     } catch (e) {
@@ -683,7 +700,8 @@ class AuthService extends ChangeNotifier {
               if (e is Map) return (e['mac'] ?? '').toString();
               return e.toString();
             })
-            .where((m) => m.isNotEmpty)
+            .map(_normaliseDeviceMac)
+            .where(_isUsableDeviceMac)
             .toList();
 
         // Keep primaryMac in sync: reset if the previous value is no longer
@@ -747,8 +765,11 @@ class AuthService extends ChangeNotifier {
     // uppercase, which meant the value written here never matched the list
     // /ai/user/devices returns, so primaryMac silently reset on the next
     // fetch. Storing it the same way everywhere removes that round trip.
-    final normalised =
-        mac.replaceAll(RegExp(r'[^0-9a-zA-Z]'), '').toLowerCase();
+    final normalised = _normaliseDeviceMac(mac);
+    if (!_isUsableDeviceMac(normalised)) {
+      logDebug('AuthService refused invalid device id');
+      return;
+    }
 
     if (!_deviceMacs.contains(normalised)) {
       _deviceMacs.add(normalised);

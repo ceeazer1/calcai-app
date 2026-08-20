@@ -30,7 +30,10 @@ class DeviceChallenge {
 
 /// A MAC as the backend keys them: 12 hex characters, no separators.
 bool isValidMacHex(String? mac) =>
-    mac != null && RegExp(r'^[0-9a-f]{12}$').hasMatch(mac);
+    mac != null &&
+    RegExp(r'^[0-9a-f]{12}$').hasMatch(mac) &&
+    mac != '000000000000' &&
+    mac != 'ffffffffffff';
 
 /// Comprehensive BLE service for CalcAI ESP32 WiFi provisioning.
 ///
