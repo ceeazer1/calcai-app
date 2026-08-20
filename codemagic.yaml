@@ -80,9 +80,20 @@ workflows:
           xcode-project use-profiles
           # App Store Connect refuses a build number it has already
           # accepted, and pubspec's is static -- so every upload after
-          # the first collided on 92 and the publish step failed. The
-          # commit count only ever grows and is already well past it.
-          BUILD_NUM=$(git rev-list --count HEAD)
+          # the first collided on 92 and the publish step failed.
+          #
+          # Not the commit count: Codemagic clones shallow, so it read
+          # 50 here against 143 locally, and 50 is below what has
+          # already been uploaded. Codemagic's own counter increments
+          # per build and does not depend on how much history was
+          # fetched; the offset clears the versions already on Apple.
+          # Falls back to minutes-since-epoch, which only ever grows,
+          # if that variable is ever missing.
+          if [ -n "$BUILD_NUMBER" ]; then
+            BUILD_NUM=$(( 1000 + BUILD_NUMBER ))
+          else
+            BUILD_NUM=$(( $(date +%s) / 60 ))
+          fi
           echo "Building as build number $BUILD_NUM"
           flutter build ipa \
             --release \
