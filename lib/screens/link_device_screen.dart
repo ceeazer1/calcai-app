@@ -28,6 +28,7 @@ class LinkDeviceScreen extends StatefulWidget {
 class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
   _Phase _phase = _Phase.idle;
   String? _error;
+
   /// Set when the only fix is the iOS Settings app, so the error can carry a
   /// button instead of asking the user to go find it.
   bool _needsSettings = false;
@@ -205,7 +206,8 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
     final auth = context.read<AuthService>();
     final cloud = context.read<CloudService>();
 
-    final challenge = ble.verifiedChallenge ?? await ble.requestIdentityChallenge();
+    final challenge =
+        ble.verifiedChallenge ?? await ble.requestIdentityChallenge();
     if (!mounted) return false;
     final mac = challenge?.mac ?? ble.deviceMac ?? ble.connectedDevice?.id;
     final token = auth.token;
@@ -228,11 +230,17 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
     if (!claimed) {
       setState(() {
         _phase = _Phase.idle;
-        _error = cloud.error ?? 'Could not add this calculator to your account.';
+        _error =
+            cloud.error ?? 'Could not add this calculator to your account.';
       });
       return false;
     }
-    await auth.addDevice(mac);
+    // Persist ownership immediately so an interrupted Wi-Fi step cannot leave
+    // the calculator claimed but missing from this account. Do not announce the
+    // new primary device until after we have opened Wi-Fi setup: announcing it
+    // here makes the app gate replace this screen with Home before the next
+    // navigation line can run.
+    await auth.addDevice(mac, announce: false);
     return mounted;
   }
 

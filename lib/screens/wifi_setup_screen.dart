@@ -4,11 +4,13 @@ import 'package:provider/provider.dart';
 
 import '../models/calcai_device.dart';
 import '../models/wifi_network.dart';
+import '../services/auth_service.dart';
 import '../services/ble_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/gradient_button.dart';
 import '../widgets/wifi_network_tile.dart';
+import 'main_shell.dart';
 import 'success_screen.dart';
 
 /// WiFi setup screen — lists networks discovered by the ESP32 and
@@ -258,6 +260,23 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
     );
   }
 
+  Future<void> _skipForNow() async {
+    final auth = context.read<AuthService>();
+    final ble = context.read<BleService>();
+    final mac = auth.primaryMac;
+    if (mac != null && mac.isNotEmpty) {
+      // The device was already claimed before this page opened. Announce the
+      // saved device now that the setup route is safely on screen.
+      await auth.addDevice(mac);
+    }
+    await ble.disconnect();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const MainShell()),
+      (_) => false,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -351,6 +370,20 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
                                   onTap: _onNetworkTapped,
                                   isSending: isSending,
                                 ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 4, 24, 16),
+                      child: TextButton(
+                        onPressed: isSending ? null : _skipForNow,
+                        child: Text(
+                          'Skip for now',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.textTertiary,
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 );

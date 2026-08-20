@@ -119,25 +119,26 @@ class _SuccessScreenState extends State<SuccessScreen>
     if (mac != null) await ble.setPersistMac(mac);
     ble.disconnect();
 
-    // Register the device with the cloud and set it as the primary device so
-    // the home page can load cloud data immediately. The challenge answer
-    // (read over BLE) proves to the worker this is a genuine, physically
-    // present device rather than a guessed MAC.
+    // Pairing normally claims the device before Wi-Fi setup begins so turning
+    // the calculator off on this page cannot orphan it. Keep the cloud claim as
+    // a fallback for older entry paths, but do not submit the same claim twice.
     if (mac != null && auth.token != null) {
-      final claimed = await cloud.claimDevice(
-        auth.token!,
-        mac,
-        nonce: challenge?.nonce,
-        challengeResponse: challenge?.response,
-      );
-      // Only record the device locally if the backend actually gave it to this
-      // account. Adding it regardless (the old behaviour) let a second account
-      // that connected to an already-owned CalcAI over BLE look paired, while
-      // every server call for that MAC returned 403.
-      if (!claimed) {
-        if (!mounted) return;
-        _showClaimFailed(cloud.error);
-        return;
+      final normalised =
+          mac.replaceAll(RegExp(r'[^0-9a-zA-Z]'), '').toLowerCase();
+      if (!auth.deviceMacs.contains(normalised)) {
+        final claimed = await cloud.claimDevice(
+          auth.token!,
+          mac,
+          nonce: challenge?.nonce,
+          challengeResponse: challenge?.response,
+        );
+        // Only record the device locally if the backend actually gave it to
+        // this account.
+        if (!claimed) {
+          if (!mounted) return;
+          _showClaimFailed(cloud.error);
+          return;
+        }
       }
       await auth.addDevice(mac);
     }
@@ -286,9 +287,7 @@ class _SuccessScreenState extends State<SuccessScreen>
                             ),
                           ),
                         ),
-
                         const SizedBox(height: 12),
-
                         RichText(
                           textAlign: TextAlign.center,
                           text: TextSpan(
@@ -298,7 +297,8 @@ class _SuccessScreenState extends State<SuccessScreen>
                             ),
                             children: [
                               const TextSpan(
-                                  text: 'Your CalcAI is online and ready.\nConnected to '),
+                                  text:
+                                      'Your CalcAI is online and ready.\nConnected to '),
                               TextSpan(
                                 text: widget.ssid,
                                 style: GoogleFonts.inter(
@@ -309,7 +309,6 @@ class _SuccessScreenState extends State<SuccessScreen>
                             ],
                           ),
                         ),
-
                       ],
                     ),
                   ),

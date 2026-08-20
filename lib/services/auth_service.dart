@@ -65,9 +65,11 @@ class AuthService extends ChangeNotifier {
 
   /// Generate a cryptographically secure nonce for Apple Sign-In.
   static String _generateNonce([int length = 32]) {
-    const charset = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-._';
+    const charset =
+        '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-._';
     final random = Random.secure();
-    return List.generate(length, (_) => charset[random.nextInt(charset.length)]).join();
+    return List.generate(length, (_) => charset[random.nextInt(charset.length)])
+        .join();
   }
 
   // ── State ─────────────────────────────────────────────────────────────
@@ -221,18 +223,21 @@ class AuthService extends ChangeNotifier {
       }
 
       // Exchange token with backend
-      final response = await _httpClient.post(
-        Uri.parse('$_baseUrl/auth/apple'),
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'CalcAI/1.0',
-        },
-        body: jsonEncode({'identityToken': identityToken}),
-      ).timeout(const Duration(seconds: 30));
+      final response = await _httpClient
+          .post(
+            Uri.parse('$_baseUrl/auth/apple'),
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': 'CalcAI/1.0',
+            },
+            body: jsonEncode({'identityToken': identityToken}),
+          )
+          .timeout(const Duration(seconds: 30));
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       if (response.statusCode != 200 || data['ok'] != true) {
-        return data['error']?.toString() ?? 'Sign-in failed (${response.statusCode})';
+        return data['error']?.toString() ??
+            'Sign-in failed (${response.statusCode})';
       }
 
       _token = data['token'] as String?;
@@ -673,10 +678,13 @@ class AuthService extends ChangeNotifier {
         }
 
         // Worker returns either plain strings or {mac, pairedAt} objects.
-        _deviceMacs = rawMacs.map((e) {
-          if (e is Map) return (e['mac'] ?? '').toString();
-          return e.toString();
-        }).where((m) => m.isNotEmpty).toList();
+        _deviceMacs = rawMacs
+            .map((e) {
+              if (e is Map) return (e['mac'] ?? '').toString();
+              return e.toString();
+            })
+            .where((m) => m.isNotEmpty)
+            .toList();
 
         // Keep primaryMac in sync: reset if the previous value is no longer
         // in the list, or default to the first entry.
@@ -734,12 +742,13 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> addDevice(String mac) async {
+  Future<void> addDevice(String mac, {bool announce = true}) async {
     // Lowercase, no separators — the backend's canonical form. This used to
     // uppercase, which meant the value written here never matched the list
     // /ai/user/devices returns, so primaryMac silently reset on the next
     // fetch. Storing it the same way everywhere removes that round trip.
-    final normalised = mac.replaceAll(RegExp(r'[^0-9a-zA-Z]'), '').toLowerCase();
+    final normalised =
+        mac.replaceAll(RegExp(r'[^0-9a-zA-Z]'), '').toLowerCase();
 
     if (!_deviceMacs.contains(normalised)) {
       _deviceMacs.add(normalised);
@@ -748,7 +757,7 @@ class AuthService extends ChangeNotifier {
     _primaryMac = normalised;
 
     await _saveToStorage();
-    notifyListeners();
+    if (announce) notifyListeners();
   }
 
   // ── Account Deletion ──────────────────────────────────────────────────
@@ -763,15 +772,13 @@ class AuthService extends ChangeNotifier {
     _setLoading(true);
 
     try {
-      final response = await _httpClient
-          .delete(
-            Uri.parse('$_baseUrl/account/delete'),
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer $_token',
-            },
-          )
-          .timeout(const Duration(seconds: 30));
+      final response = await _httpClient.delete(
+        Uri.parse('$_baseUrl/account/delete'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $_token',
+        },
+      ).timeout(const Duration(seconds: 30));
 
       if (response.statusCode != 200) {
         String message = 'Failed to delete account (${response.statusCode}).';
@@ -920,13 +927,15 @@ class PreviewAuthService extends AuthService {
   }
 
   @override
-  Future<EmailAuthOutcome> signInWithEmail(String email, String password) async {
+  Future<EmailAuthOutcome> signInWithEmail(
+      String email, String password) async {
     await init();
     return EmailAuthOutcome.success;
   }
 
   @override
-  Future<EmailAuthOutcome> signUpWithEmail(String email, String password) async {
+  Future<EmailAuthOutcome> signUpWithEmail(
+      String email, String password) async {
     await init();
     return EmailAuthOutcome.success;
   }
