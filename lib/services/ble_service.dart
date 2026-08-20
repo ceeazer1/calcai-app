@@ -177,7 +177,7 @@ class BleService extends ChangeNotifier {
 
       // Check adapter state
       final adapterState = await FlutterBluePlus.adapterState.first;
-      
+
       if (adapterState != BluetoothAdapterState.on) {
         // On iOS, this prompts the user to enable Bluetooth
         if (Platform.isIOS) {
@@ -191,13 +191,14 @@ class BleService extends ChangeNotifier {
             return false;
           }
         }
-        
+
         // Wait briefly for Bluetooth to turn on
         final state = await FlutterBluePlus.adapterState
             .where((s) => s == BluetoothAdapterState.on)
             .first
-            .timeout(const Duration(seconds: 10), onTimeout: () => BluetoothAdapterState.off);
-        
+            .timeout(const Duration(seconds: 10),
+                onTimeout: () => BluetoothAdapterState.off);
+
         if (state != BluetoothAdapterState.on) {
           _setError('Bluetooth is not enabled.');
           return false;
@@ -224,7 +225,8 @@ class BleService extends ChangeNotifier {
   ///
   /// Results are accumulated in [devices]. The scan runs for [timeout]
   /// seconds and then stops automatically.
-  Future<void> startScan({Duration timeout = const Duration(seconds: 10)}) async {
+  Future<void> startScan(
+      {Duration timeout = const Duration(seconds: 10)}) async {
     if (_isScanning) return;
 
     _clearError();
@@ -553,7 +555,8 @@ class BleService extends ChangeNotifier {
       List<int> response = [];
       for (int i = 0; i < 5; i++) {
         response = await _scanChar!.read();
-        logDebug('CalcAI BLE: scan read attempt ${i + 1}, got ${response.length} bytes');
+        logDebug(
+            'CalcAI BLE: scan read attempt ${i + 1}, got ${response.length} bytes');
         if (response.length > 10) break;
         await Future.delayed(const Duration(seconds: 2));
       }
@@ -562,7 +565,8 @@ class BleService extends ChangeNotifier {
         _parseWifiScanResults(response);
         logDebug('CalcAI BLE: parsed ${_wifiNetworks.length} networks');
       } else {
-        logDebug('CalcAI BLE: no scan results received (${response.length} bytes)');
+        logDebug(
+            'CalcAI BLE: no scan results received (${response.length} bytes)');
       }
 
       _provisioningState = ProvisioningState.idle;
@@ -640,11 +644,14 @@ class BleService extends ChangeNotifier {
         withoutResponse: _scanChar!.properties.writeWithoutResponse,
       );
 
-      // Wait for ESP32 to process and set the value
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      final response = await _scanChar!.read();
-      if (response.isNotEmpty) {
+      // Listing NVS networks runs in the firmware loop rather than inline in
+      // the BLE write callback. Poll for the actual list instead of assuming it
+      // always finishes within 500 ms; pairing/ownership replies are maps and
+      // are deliberately ignored here.
+      for (var attempt = 0; attempt < 8; attempt++) {
+        await Future.delayed(const Duration(milliseconds: 250));
+        final response = await _scanChar!.read();
+        if (response.isEmpty) continue;
         try {
           final parsed = jsonDecode(utf8.decode(response));
           if (parsed is List) {
@@ -656,9 +663,9 @@ class BleService extends ChangeNotifier {
                 if (ssid.isNotEmpty) _savedNetworks.add(ssid);
               }
             }
-            logDebug(
-                'CalcAI BLE: got ${_savedNetworks.length} saved networks');
+            logDebug('CalcAI BLE: got ${_savedNetworks.length} saved networks');
             await _persistSavedNetworks();
+            break;
           }
         } catch (_) {
           // Non-JSON / partial read — keep the existing list.
@@ -856,7 +863,8 @@ class BleService extends ChangeNotifier {
   /// The proof is a signature from the backend, not a name: the calculator
   /// cannot tell one account from another by itself, and the string it used to
   /// compare was the display name -- guessable by anyone in radio range.
-  Future<bool> proveOwnership(String nonce, String response, String owner) async {
+  Future<bool> proveOwnership(
+      String nonce, String response, String owner) async {
     final r = await _command({
       'cmd': 'hello',
       'nonce': nonce,

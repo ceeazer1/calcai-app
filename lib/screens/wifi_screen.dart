@@ -5,7 +5,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../models/calcai_device.dart';
+import '../services/auth_service.dart';
 import '../services/ble_service.dart';
+import '../services/cloud_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glass_card.dart';
 
@@ -32,6 +34,9 @@ class _WifiScreenState extends State<WifiScreen> {
 
   /// Guards against calling connectToDevice more than once per scan.
   bool _connectStarted = false;
+
+  /// True while this account proves ownership to a claimed calculator.
+  bool _authenticating = false;
 
   /// True when the last attempt failed because Bluetooth is off/unavailable
   /// (vs. the device simply not being found nearby).
@@ -100,15 +105,15 @@ class _WifiScreenState extends State<WifiScreen> {
     if (!mounted || !_autoConnecting) return;
     final ble = context.read<BleService>();
 
-    // Connected → done.
-    if (ble.connectionState.isConnected) {
-      _stopAutoConnecting();
+    // A raw BLE link is not enough on a claimed calculator. Once service
+    // discovery is complete, prove ownership before showing it as connected.
+    if (ble.connectionState == DeviceConnectionState.ready) {
+      unawaited(_authenticateConnectedDevice());
       return;
     }
 
     // A started connect attempt failed → stop showing the connecting state.
-    if (_connectStarted &&
-        ble.connectionState == DeviceConnectionState.error) {
+    if (_connectStarted && ble.connectionState == DeviceConnectionState.error) {
       _stopAutoConnecting();
       return;
     }
@@ -145,7 +150,9 @@ class _WifiScreenState extends State<WifiScreen> {
     final reconnected = await ble.reconnectKnownDevice();
     if (!mounted) return;
     if (reconnected || ble.connectionState.isConnected) {
-      _stopAutoConnecting();
+      if (ble.connectionState == DeviceConnectionState.ready) {
+        unawaited(_authenticateConnectedDevice());
+      }
       return;
     }
 
@@ -154,15 +161,52 @@ class _WifiScreenState extends State<WifiScreen> {
     _connectTimeout?.cancel();
     // Short timeout so a missing device drops to "Bluetooth disconnected"
     // quickly instead of leaving the user on "Connecting…".
-    _connectTimeout = Timer(const Duration(seconds: 10), () {
-      if (mounted && _autoConnecting && !ble.connectionState.isConnected) {
+    _connectTimeout = Timer(const Duration(seconds: 12), () {
+      if (mounted && _autoConnecting) {
         ble.stopScan();
+        ble.disconnect();
         _stopAutoConnecting();
       }
     });
 
     // Fire the scan — _onBle handles connecting when a device appears.
     ble.startScan();
+  }
+
+  Future<void> _authenticateConnectedDevice() async {
+    if (_authenticating || !_autoConnecting || !mounted) return;
+    _authenticating = true;
+    setState(() {});
+
+    final ble = context.read<BleService>();
+    final auth = context.read<AuthService>();
+    final cloud = context.read<CloudService>();
+    var proved = false;
+
+    try {
+      final token = auth.token;
+      final owner = auth.email;
+      if (token != null && owner != null && owner.isNotEmpty) {
+        final ask = await ble.requestAuthNonce();
+        if (ask != null) {
+          final signature =
+              await cloud.requestOwnershipProof(token, ask.mac, ask.nonce);
+          if (signature != null) {
+            proved = await ble.proveOwnership(ask.nonce, signature, owner);
+          }
+        }
+      }
+    } finally {
+      _authenticating = false;
+    }
+
+    if (!mounted) return;
+    if (proved) {
+      _stopAutoConnecting();
+    } else {
+      await ble.disconnect();
+      _stopAutoConnecting();
+    }
   }
 
   @override
@@ -177,9 +221,8 @@ class _WifiScreenState extends State<WifiScreen> {
           child: Consumer<BleService>(
             builder: (context, ble, _) {
               final isConnected =
-                  ble.connectionState == DeviceConnectionState.connected ||
-                  ble.connectionState == DeviceConnectionState.ready ||
-                  ble.connectionState == DeviceConnectionState.discovering;
+                  ble.connectionState == DeviceConnectionState.ready &&
+                      ble.pairedOwner != null;
 
               return Column(
                 children: [
@@ -238,7 +281,9 @@ class _WifiScreenState extends State<WifiScreen> {
   Widget _buildDisconnectedView(BleService ble) {
     // A device has been found and we're establishing the link.
     final isLinking = _connectStarted ||
-        ble.connectionState == DeviceConnectionState.connecting;
+        _authenticating ||
+        (ble.connectionState != DeviceConnectionState.disconnected &&
+            ble.connectionState != DeviceConnectionState.error);
     // Show the searching UI while connecting, or before the first attempt has
     // resolved (avoids a "Calc not found" flash on open).
     final searching = _autoConnecting || !_attempted;
@@ -253,7 +298,11 @@ class _WifiScreenState extends State<WifiScreen> {
                   const _SearchingBleIcon(),
                   const SizedBox(height: 18),
                   Text(
-                    isLinking ? 'Connecting…' : 'Searching…',
+                    _authenticating
+                        ? 'Verifying…'
+                        : isLinking
+                            ? 'Connecting…'
+                            : 'Searching…',
                     style: GoogleFonts.outfit(
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
@@ -829,7 +878,8 @@ class _WifiScreenState extends State<WifiScreen> {
         content: Row(
           children: [
             const SizedBox(
-              width: 24, height: 24,
+              width: 24,
+              height: 24,
               child: CircularProgressIndicator(
                 strokeWidth: 2.5,
                 color: AppColors.electricBlue,
