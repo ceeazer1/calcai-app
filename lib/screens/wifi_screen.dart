@@ -28,6 +28,10 @@ class WifiScreen extends StatefulWidget {
 
 class _WifiScreenState extends State<WifiScreen> {
   bool _isAddingNetwork = false;
+  BleService? _ble;
+  bool _bleListenerAttached = false;
+  bool _closing = false;
+  bool _allowPop = false;
 
   /// True while we're scanning for + connecting to the device from this tab.
   bool _autoConnecting = false;
@@ -50,10 +54,20 @@ class _WifiScreenState extends State<WifiScreen> {
   Timer? _connectTimeout;
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _ble ??= context.read<BleService>();
+  }
+
+  @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<BleService>().addListener(_onBle);
+      if (!mounted) return;
+      final ble = _ble ?? context.read<BleService>();
+      _ble = ble;
+      ble.addListener(_onBle);
+      _bleListenerAttached = true;
       if (widget.isActive) _attemptAutoConnect();
     });
   }
@@ -64,18 +78,55 @@ class _WifiScreenState extends State<WifiScreen> {
     // Tab just became visible → try to reconnect to the device.
     if (!oldWidget.isActive && widget.isActive) {
       _attemptAutoConnect();
+    } else if (oldWidget.isActive && !widget.isActive) {
+      unawaited(_setNormalCalculatorStatus());
     }
   }
 
   @override
   void dispose() {
     _connectTimeout?.cancel();
-    final ble = context.read<BleService>();
-    ble.removeListener(_onBle);
-    // Cut the BLE link entirely when leaving this screen so the app isn't
-    // left silently connected to the calculator after WiFi management is done.
-    ble.disconnect();
+    final ble = _ble;
+    if (ble != null && _bleListenerAttached) ble.removeListener(_onBle);
+    // Fallback for route replacement/app teardown. Normal back navigation
+    // awaits the same cleanup before closing the page.
+    if (!_closing) unawaited(_endWifiSession());
     super.dispose();
+  }
+
+  Future<void> _setNormalCalculatorStatus() async {
+    final ble = _ble;
+    if (ble == null || !ble.connectionState.isConnected) return;
+    await ble.setWifiUiMode(false);
+  }
+
+  Future<void> _endWifiSession() async {
+    final ble = _ble;
+    if (ble == null) return;
+    _connectTimeout?.cancel();
+    try {
+      await ble.stopScan();
+    } catch (_) {
+      // Closing the page must never be blocked by an iOS scan-state error.
+    }
+    // Clear the calculator label before dropping the link. This makes the
+    // screen return to PAIRED immediately instead of waiting for iOS to finish
+    // its asynchronous BLE disconnect.
+    try {
+      await _setNormalCalculatorStatus();
+    } catch (_) {
+      // Disconnect below is the firmware's second, independent reset path.
+    }
+    await ble.disconnect();
+  }
+
+  Future<void> _leaveScreen() async {
+    if (_closing) return;
+    _closing = true;
+    await _endWifiSession();
+    if (!mounted) return;
+    setState(() => _allowPop = true);
+    Navigator.of(context).pop();
   }
 
   /// User tapped "skip" — stop searching and show the not-found state now.
@@ -216,63 +267,70 @@ class _WifiScreenState extends State<WifiScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: AppColors.backgroundGradient,
-        ),
-        child: SafeArea(
-          child: Consumer<BleService>(
-            builder: (context, ble, _) {
-              final isConnected =
-                  ble.connectionState == DeviceConnectionState.ready &&
-                      ble.pairedOwner != null;
+    return PopScope<void>(
+      canPop: _allowPop,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) unawaited(_leaveScreen());
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: AppColors.backgroundGradient,
+          ),
+          child: SafeArea(
+            child: Consumer<BleService>(
+              builder: (context, ble, _) {
+                final isConnected =
+                    ble.connectionState == DeviceConnectionState.ready &&
+                        ble.pairedOwner != null;
 
-              return Column(
-                children: [
-                  // ── Header ──────────────────────────────────
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 8, 20, 0),
-                    child: Row(
-                      children: [
-                        IconButton(
-                          onPressed: () => Navigator.of(context).maybePop(),
-                          icon: const Icon(
-                            Icons.arrow_back_rounded,
-                            color: AppColors.textPrimary,
+                return Column(
+                  children: [
+                    // ── Header ──────────────────────────────────
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 8, 20, 0),
+                      child: Row(
+                        children: [
+                          IconButton(
+                            onPressed: _closing ? null : _leaveScreen,
+                            icon: const Icon(
+                              Icons.arrow_back_rounded,
+                              color: AppColors.textPrimary,
+                            ),
                           ),
-                        ),
-                        Text(
-                          'WiFi Networks',
-                          style: GoogleFonts.outfit(
-                            fontSize: 26,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textPrimary,
+                          Text(
+                            'WiFi Networks',
+                            style: GoogleFonts.outfit(
+                              fontSize: 26,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textPrimary,
+                            ),
                           ),
-                        ),
-                        const Spacer(),
-                        // Glowing Bluetooth icon = device connected.
-                        if (isConnected) const _GlowingBleIcon(),
-                      ],
+                          const Spacer(),
+                          // Glowing Bluetooth icon = device connected.
+                          if (isConnected) const _GlowingBleIcon(),
+                        ],
+                      ),
                     ),
-                  ),
 
-                  const SizedBox(height: 20),
+                    const SizedBox(height: 20),
 
-                  // Connected → show the saved-network list. While the list is
-                  // still being fetched (first load), show a connected phase
-                  // with the device name instead of a premature empty list.
-                  Expanded(
-                    child: isConnected
-                        ? (ble.savedNetworksLoading && ble.savedNetworks.isEmpty
-                            ? _buildConnectedLoading(ble)
-                            : _buildNetworkList(ble))
-                        : _buildDisconnectedView(ble),
-                  ),
-                ],
-              );
-            },
+                    // Connected → show the saved-network list. While the list is
+                    // still being fetched (first load), show a connected phase
+                    // with the device name instead of a premature empty list.
+                    Expanded(
+                      child: isConnected
+                          ? (ble.savedNetworksLoading &&
+                                  ble.savedNetworks.isEmpty
+                              ? _buildConnectedLoading(ble)
+                              : _buildNetworkList(ble))
+                          : _buildDisconnectedView(ble),
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
         ),
       ),
