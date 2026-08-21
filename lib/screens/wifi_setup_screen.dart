@@ -178,7 +178,7 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
                   SwitchListTile.adaptive(
                     contentPadding: EdgeInsets.zero,
                     value: iphoneHotspot,
-                    activeColor: AppColors.electricBlue,
+                    activeColor: AppColors.lightBlue,
                     title: Text(
                       'iPhone hotspot',
                       style: GoogleFonts.inter(

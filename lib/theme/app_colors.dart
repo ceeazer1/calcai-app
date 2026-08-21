@@ -20,6 +20,7 @@ abstract final class AppColors {
   // Whitish-blue accent (matches the premium end of the usage bar). Used for
   // "connected / paired" states in the setup flow instead of a green.
   static const Color accentBlue = Color(0xFF9DB6DA);
+  static const Color lightBlue = Color(0xFF64B5F6);
 
   // ── Semantic Colors ────────────────────────────────────────────────
   static const Color success = Color(0xFF00E676);

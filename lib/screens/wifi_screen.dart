@@ -569,7 +569,7 @@ class _WifiScreenState extends State<WifiScreen> {
               SwitchListTile.adaptive(
                 contentPadding: EdgeInsets.zero,
                 value: iphoneHotspot,
-                activeColor: AppColors.electricBlue,
+                activeColor: AppColors.lightBlue,
                 title: Text(
                   'iPhone hotspot',
                   style: GoogleFonts.inter(
@@ -733,7 +733,7 @@ class _WifiScreenState extends State<WifiScreen> {
           content: SwitchListTile.adaptive(
             contentPadding: EdgeInsets.zero,
             value: iphoneHotspot,
-            activeColor: AppColors.electricBlue,
+            activeColor: AppColors.lightBlue,
             title: Text(
               'iPhone hotspot',
               style: GoogleFonts.inter(
@@ -963,7 +963,7 @@ class _WifiScreenState extends State<WifiScreen> {
               SwitchListTile.adaptive(
                 contentPadding: EdgeInsets.zero,
                 value: iphoneHotspot,
-                activeColor: AppColors.electricBlue,
+                activeColor: AppColors.lightBlue,
                 title: Text(
                   'iPhone hotspot',
                   style: GoogleFonts.inter(
