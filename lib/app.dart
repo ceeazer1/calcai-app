@@ -50,6 +50,7 @@ class _AppGate extends StatefulWidget {
 
 class _AppGateState extends State<_AppGate> {
   bool _initialized = false;
+  bool _handlingDeviceRevocation = false;
 
   @override
   void initState() {
@@ -90,6 +91,30 @@ class _AppGateState extends State<_AppGate> {
     }
   }
 
+  Future<void> _handleDeviceRevocation(
+    AuthService auth,
+    CloudService cloud,
+  ) async {
+    if (_handlingDeviceRevocation) return;
+    _handlingDeviceRevocation = true;
+    cloud.clearDeviceRevoked();
+
+    final token = auth.token;
+    final mac = auth.primaryMac;
+    final stillOwned = token != null && mac != null
+        ? await cloud.confirmDeviceOwnership(token, mac)
+        : false;
+
+    if (!mounted) return;
+    if (stillOwned == false) {
+      cloud.reset();
+      await auth.forgetDevice();
+    }
+    // A failed confirmation is normally a temporary network/auth problem.
+    // Preserve the pairing until Cloudflare can answer authoritatively.
+    _handlingDeviceRevocation = false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthService>();
@@ -100,11 +125,9 @@ class _AppGateState extends State<_AppGate> {
     // so routing sends the user back to setup instead of leaving them on a
     // dashboard whose every control silently fails.
     if (cloud.deviceRevoked) {
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        cloud.clearDeviceRevoked();
-        cloud.reset();
-        await auth.forgetDevice();
-      });
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _handleDeviceRevocation(auth, cloud),
+      );
     }
 
     // ── Still loading persisted session (initial app boot only) ────────

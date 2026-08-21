@@ -6,6 +6,22 @@ import 'package:http/http.dart' as http;
 import 'resilient_http_client.dart';
 import '../utils/log.dart';
 
+/// Returns true only for the Worker's explicit ownership-revocation response.
+///
+/// A 403 can also mean a failed device proof, a disabled feature, or another
+/// security check. Treating every 403 as an unpair wipes a perfectly valid
+/// local pairing and sends the user back through setup.
+@visibleForTesting
+bool isDeviceOwnershipRevocation(http.Response response) {
+  if (response.statusCode != 403) return false;
+  try {
+    final body = jsonDecode(response.body);
+    return body is Map && body['error'] == 'device_not_owned';
+  } catch (_) {
+    return false;
+  }
+}
+
 /// Cloud service for the CalcAI REST API at [_baseUrl].
 ///
 /// Uses [ChangeNotifier] so the UI can reactively rebuild via [Provider].
@@ -74,8 +90,8 @@ class CloudService extends ChangeNotifier {
   // ── Convenience Getters ─────────────────────────────────────────────
 
   /// The display name for the device (e.g. "TI-84 Plus").
-  String? get deviceName => _deviceInfo?['model']?.toString() ??
-      _deviceInfo?['name']?.toString();
+  String? get deviceName =>
+      _deviceInfo?['model']?.toString() ?? _deviceInfo?['name']?.toString();
 
   /// Current AI model name (e.g. "gpt-5.4-mini").
   String? get currentModel => _modelInfo?['model']?.toString();
@@ -92,8 +108,8 @@ class CloudService extends ChangeNotifier {
   String get customContext => _customContext;
 
   /// Plan type (e.g. "Free", "Pro").
-  String? get planType => _usage?['plan']?.toString() ??
-      _usage?['planType']?.toString();
+  String? get planType =>
+      _usage?['plan']?.toString() ?? _usage?['planType']?.toString();
 
   /// Number of standard/cheap model calls used today.
   int get cheapUsage => (_usage?['cheapCount'] as num?)?.toInt() ?? 0;
@@ -127,10 +143,13 @@ class CloudService extends ChangeNotifier {
       final data = jsonDecode(response.body);
       final List<dynamic> raw = data is List ? data : (data['devices'] ?? []);
       // Worker returns [{mac, pairedAt}] objects or plain strings.
-      _devices = raw.map((e) {
-        if (e is Map) return (e['mac'] ?? '').toString();
-        return e.toString();
-      }).where((m) => m.isNotEmpty).toList();
+      _devices = raw
+          .map((e) {
+            if (e is Map) return (e['mac'] ?? '').toString();
+            return e.toString();
+          })
+          .where((m) => m.isNotEmpty)
+          .toList();
 
       notifyListeners();
       return _devices;
@@ -139,6 +158,36 @@ class CloudService extends ChangeNotifier {
       return [];
     } finally {
       _setLoading(false);
+    }
+  }
+
+  /// Re-checks the authoritative account-to-device mapping without changing
+  /// any cached UI state. `null` means the check itself failed, so callers must
+  /// preserve the local pairing instead of treating a network problem as an
+  /// unpair.
+  Future<bool?> confirmDeviceOwnership(String token, String mac) async {
+    try {
+      final response = await _client
+          .get(
+            Uri.parse('$_baseUrl/ai/user/devices'),
+            headers: _authHeaders(token),
+          )
+          .timeout(const Duration(seconds: 15));
+      if (response.statusCode != 200) return null;
+
+      final data = jsonDecode(response.body);
+      final List<dynamic> raw = data is List ? data : (data['devices'] ?? []);
+      final target = mac.replaceAll(RegExp(r'[^0-9a-zA-Z]'), '').toLowerCase();
+      return raw.any((entry) {
+        final value = entry is Map ? (entry['mac'] ?? '') : entry;
+        final candidate = value
+            .toString()
+            .replaceAll(RegExp(r'[^0-9a-zA-Z]'), '')
+            .toLowerCase();
+        return candidate == target;
+      });
+    } catch (_) {
+      return null;
     }
   }
 
@@ -307,7 +356,8 @@ class CloudService extends ChangeNotifier {
         body: jsonEncode({'mac': mac, 'nonce': nonce}),
       );
       if (response.statusCode != 200) {
-        logDebug('ownership proof refused: ${response.statusCode} ${response.body}');
+        logDebug(
+            'ownership proof refused: ${response.statusCode} ${response.body}');
         return null;
       }
       final j = jsonDecode(response.body);
@@ -354,7 +404,8 @@ class CloudService extends ChangeNotifier {
   Future<String> getContext(String token, String mac) async {
     try {
       final response = await _client.get(
-        Uri.parse('$_baseUrl/ai/context/get?mac=${Uri.encodeQueryComponent(mac)}'),
+        Uri.parse(
+            '$_baseUrl/ai/context/get?mac=${Uri.encodeQueryComponent(mac)}'),
         headers: _authHeaders(token),
       );
       _assertSuccess(response);
@@ -532,7 +583,8 @@ class CloudService extends ChangeNotifier {
 
       final data = jsonDecode(response.body);
       // Worker returns { ok, items: [...] }
-      final List<dynamic> raw = data is List ? data : (data['items'] ?? data['logs'] ?? []);
+      final List<dynamic> raw =
+          data is List ? data : (data['items'] ?? data['logs'] ?? []);
       _history = raw.cast<Map<String, dynamic>>();
 
       notifyListeners();
@@ -668,9 +720,9 @@ class CloudService extends ChangeNotifier {
   }
 
   void _assertSuccess(http.Response response) {
-    // 403 on a device-scoped call means ownership is gone, not that the request
-    // was malformed. Surface it once rather than as a string of odd failures.
-    if (response.statusCode == 403 && !_deviceRevoked) {
+    // Only the Worker's explicit ownership error revokes a device. Other 403s
+    // are independent security checks and must not erase a valid pairing.
+    if (isDeviceOwnershipRevocation(response) && !_deviceRevoked) {
       _deviceRevoked = true;
       notifyListeners();
     }
@@ -862,6 +914,7 @@ class CloudService extends ChangeNotifier {
     _historyError = null;
     _notesError = null;
     _isLoading = false;
+    _deviceRevoked = false;
     notifyListeners();
   }
 }
@@ -915,7 +968,8 @@ class PreviewCloudService extends CloudService {
 
   @override
   Future<List<Map<String, dynamic>>> getHistory(String token, String mac,
-      {int limit = 50}) async => _history;
+          {int limit = 50}) async =>
+      _history;
 
   @override
   Future<bool> clearHistory(String token, String mac) async {
@@ -929,7 +983,8 @@ class PreviewCloudService extends CloudService {
 
   @override
   Future<bool> claimDevice(String token, String mac,
-      {String? nonce, String? challengeResponse}) async => true;
+          {String? nonce, String? challengeResponse}) async =>
+      true;
 
   @override
   Future<Map<String, dynamic>> listApiKeys(String token) async => _apiKeys;

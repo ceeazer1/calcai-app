@@ -781,6 +781,9 @@ class AuthService extends ChangeNotifier {
     }
 
     _primaryMac = normalised;
+    // A successful claim is authoritative. Do not carry an unpair banner from
+    // a previous account or an earlier revoked pairing into this device.
+    _unpairedNotice = false;
 
     await _saveToStorage();
     if (announce) notifyListeners();
@@ -840,6 +843,7 @@ class AuthService extends ChangeNotifier {
     _deviceMacs = [];
     _primaryMac = null;
     _setupSkipped = false;
+    _unpairedNotice = false;
 
     await _clearStorage();
     notifyListeners();
