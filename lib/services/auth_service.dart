@@ -247,7 +247,12 @@ class AuthService extends ChangeNotifier {
               'Content-Type': 'application/json',
               'User-Agent': 'CalcAI/1.0',
             },
-            body: jsonEncode({'identityToken': identityToken}),
+            body: jsonEncode({
+              'identityToken': identityToken,
+              // The Worker verifies that Apple's signed token belongs to this
+              // exact sign-in attempt, preventing replayed identity tokens.
+              'rawNonce': rawNonce,
+            }),
           )
           .timeout(const Duration(seconds: 30));
 

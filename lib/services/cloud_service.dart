@@ -351,10 +351,11 @@ class CloudService extends ChangeNotifier {
   /// Loads the device's custom instructions.
   ///
   /// GET /ai/context/get?mac=…
-  Future<String> getContext(String mac) async {
+  Future<String> getContext(String token, String mac) async {
     try {
       final response = await _client.get(
         Uri.parse('$_baseUrl/ai/context/get?mac=${Uri.encodeQueryComponent(mac)}'),
+        headers: _authHeaders(token),
       );
       _assertSuccess(response);
       final j = jsonDecode(response.body) as Map<String, dynamic>;
@@ -621,7 +622,7 @@ class CloudService extends ChangeNotifier {
           getUsage(token, mac),
           getDeviceInfo(token, mac),
           getHistory(token, mac, limit: 10),
-          getContext(mac),
+          getContext(token, mac),
         ],
         eagerError: false,
       );
@@ -934,7 +935,7 @@ class PreviewCloudService extends CloudService {
   Future<Map<String, dynamic>> listApiKeys(String token) async => _apiKeys;
 
   @override
-  Future<String> getContext(String mac) async => customContext;
+  Future<String> getContext(String token, String mac) async => customContext;
 
   @override
   Future<bool> setContext(String token, String mac, String context) async {
