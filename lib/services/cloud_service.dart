@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'resilient_http_client.dart';
+import 'session_http_client.dart';
 import '../utils/log.dart';
 
 /// Returns true only for the Worker's explicit ownership-revocation response.
@@ -38,7 +39,51 @@ class CloudService extends ChangeNotifier {
 
   /// Shared client that resolves the API host over DoH, so requests work even
   /// on networks whose router DNS blocks the domain.
-  final http.Client _client = createResilientClient();
+  final SessionHttpClient _client;
+
+  CloudService({http.Client? client})
+    : _client = SessionHttpClient(client ?? createResilientClient());
+
+  static const aiConsentVersion = '2026-09-13';
+
+  Future<Map<String, dynamic>> readAiConsent(String token) async {
+    final response = await _client
+        .get(
+          Uri.parse('$_baseUrl/ai/user/ai-consent'),
+          headers: {'Authorization': 'Bearer $token'},
+        )
+        .timeout(const Duration(seconds: 20));
+    _assertSuccess(response);
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<void> saveAiConsent(String token, bool allowed) async {
+    final response = await _client
+        .put(
+          Uri.parse('$_baseUrl/ai/user/ai-consent'),
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({'version': aiConsentVersion, 'allowed': allowed}),
+        )
+        .timeout(const Duration(seconds: 20));
+    _assertSuccess(response);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (data['ok'] != true ||
+        data['allowed'] != allowed ||
+        data['version'] != aiConsentVersion) {
+      throw const FormatException('Consent was not confirmed.');
+    }
+  }
+
+  int _keyGeneration = 0;
+  bool _disposed = false;
+
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
 
   // ── State ───────────────────────────────────────────────────────────
 
@@ -348,7 +393,10 @@ class CloudService extends ChangeNotifier {
   /// the owner (403) or the device is unknown (404). The firmware cannot tell
   /// accounts apart on its own, so the backend is what decides.
   Future<String?> requestOwnershipProof(
-      String token, String mac, String nonce) async {
+    String token,
+    String mac,
+    String nonce,
+  ) async {
     try {
       final response = await _client.post(
         Uri.parse('$_baseUrl/ai/pair/hello'),
@@ -357,7 +405,8 @@ class CloudService extends ChangeNotifier {
       );
       if (response.statusCode != 200) {
         logDebug(
-            'ownership proof refused: ${response.statusCode} ${response.body}');
+          'ownership proof refused: ${response.statusCode} ${response.body}',
+        );
         return null;
       }
       final j = jsonDecode(response.body);
@@ -377,7 +426,10 @@ class CloudService extends ChangeNotifier {
   /// Returns the signature, or null when the device is still owned by someone
   /// (409) or was never released (403) — the backend decides, not the app.
   Future<String?> requestPairingRelease(
-      String token, String mac, String nonce) async {
+    String token,
+    String mac,
+    String nonce,
+  ) async {
     try {
       final response = await _client.post(
         Uri.parse('$_baseUrl/ai/pair/release'),
@@ -405,7 +457,8 @@ class CloudService extends ChangeNotifier {
     try {
       final response = await _client.get(
         Uri.parse(
-            '$_baseUrl/ai/context/get?mac=${Uri.encodeQueryComponent(mac)}'),
+          '$_baseUrl/ai/context/get?mac=${Uri.encodeQueryComponent(mac)}',
+        ),
         headers: _authHeaders(token),
       );
       _assertSuccess(response);
@@ -583,8 +636,9 @@ class CloudService extends ChangeNotifier {
 
       final data = jsonDecode(response.body);
       // Worker returns { ok, items: [...] }
-      final List<dynamic> raw =
-          data is List ? data : (data['items'] ?? data['logs'] ?? []);
+      final List<dynamic> raw = data is List
+          ? data
+          : (data['items'] ?? data['logs'] ?? []);
       _history = raw.cast<Map<String, dynamic>>();
 
       notifyListeners();
@@ -668,16 +722,13 @@ class CloudService extends ChangeNotifier {
     try {
       // Fire all requests concurrently. History is included so the home
       // "Recent Activity" card has data without needing the History tab.
-      final results = await Future.wait<dynamic>(
-        [
-          getModel(token, mac),
-          getUsage(token, mac),
-          getDeviceInfo(token, mac),
-          getHistory(token, mac, limit: 10),
-          getContext(token, mac),
-        ],
-        eagerError: false,
-      );
+      final results = await Future.wait<dynamic>([
+        getModel(token, mac),
+        getUsage(token, mac),
+        getDeviceInfo(token, mac),
+        getHistory(token, mac, limit: 10),
+        getContext(token, mac),
+      ], eagerError: false);
 
       logDebug(
         'CalcAI Cloud: Dashboard loaded — '
@@ -697,14 +748,14 @@ class CloudService extends ChangeNotifier {
 
   /// Standard authorization header map.
   Map<String, String> _authHeaders(String token) => {
-        'Authorization': 'Bearer $token',
-      };
+    'Authorization': 'Bearer $token',
+  };
 
   /// Authorization + JSON content-type header map (for POST requests).
   Map<String, String> _jsonAuthHeaders(String token) => {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      };
+    'Authorization': 'Bearer $token',
+    'Content-Type': 'application/json',
+  };
 
   /// Throws a [CloudException] when the HTTP status code indicates failure.
   /// True once the backend has told us this account no longer owns its
@@ -720,6 +771,7 @@ class CloudService extends ChangeNotifier {
   }
 
   void _assertSuccess(http.Response response) {
+    _client.ensureCurrent(response);
     // Only the Worker's explicit ownership error revokes a device. Other 403s
     // are independent security checks and must not erase a valid pairing.
     if (isDeviceOwnershipRevocation(response) && !_deviceRevoked) {
@@ -766,6 +818,7 @@ class CloudService extends ChangeNotifier {
 
   /// Turns usage of a saved key on/off without deleting it.
   Future<bool> toggleApiKey(String token, String provider, bool enabled) async {
+    final generation = _keyGeneration;
     final p = provider.toLowerCase();
     // Optimistic update.
     if (_apiKeys[p] is Map) {
@@ -781,12 +834,13 @@ class CloudService extends ChangeNotifier {
         },
         body: jsonEncode({'provider': p, 'enabled': enabled}),
       );
+      if (generation != _keyGeneration) return false;
       if (resp.statusCode == 200) return true;
     } catch (e) {
       logDebug('toggleApiKey error: $e');
     }
     // Revert on failure.
-    if (_apiKeys[p] is Map) {
+    if (generation == _keyGeneration && _apiKeys[p] is Map) {
       (_apiKeys[p] as Map)['enabled'] = !enabled;
       notifyListeners();
     }
@@ -795,11 +849,13 @@ class CloudService extends ChangeNotifier {
 
   /// List all saved API keys. Returns provider → { active, last4 }.
   Future<Map<String, dynamic>> listApiKeys(String token) async {
+    final generation = _keyGeneration;
     try {
       final resp = await _client.get(
         Uri.parse('$_baseUrl/ai/apikey/list'),
         headers: {'Authorization': 'Bearer $token'},
       );
+      if (generation != _keyGeneration) return {};
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body);
         // Worker returns { ok, keys: { openai: {...}, ... } }.
@@ -818,6 +874,7 @@ class CloudService extends ChangeNotifier {
 
   /// Save an API key for a provider. Backend validates the key first.
   Future<bool> saveApiKey(String token, String provider, String key) async {
+    final generation = _keyGeneration;
     try {
       final resp = await _client.post(
         Uri.parse('$_baseUrl/ai/apikey/save'),
@@ -827,6 +884,7 @@ class CloudService extends ChangeNotifier {
         },
         body: jsonEncode({'provider': provider.toLowerCase(), 'key': key}),
       );
+      if (generation != _keyGeneration) return false;
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body);
         if (data['ok'] == true) {
@@ -848,6 +906,7 @@ class CloudService extends ChangeNotifier {
 
   /// Delete a saved API key for a provider.
   Future<bool> deleteApiKey(String token, String provider) async {
+    final generation = _keyGeneration;
     try {
       final resp = await _client.post(
         Uri.parse('$_baseUrl/ai/apikey/delete'),
@@ -857,6 +916,7 @@ class CloudService extends ChangeNotifier {
         },
         body: jsonEncode({'provider': provider.toLowerCase()}),
       );
+      if (generation != _keyGeneration) return false;
       if (resp.statusCode == 200) {
         _apiKeys.remove(provider.toLowerCase());
         notifyListeners();
@@ -902,6 +962,9 @@ class CloudService extends ChangeNotifier {
 
   /// Resets all cached state. Useful when switching users or signing out.
   void reset() {
+    _client.invalidate();
+    _keyGeneration++;
+    _apiKeys = {};
     _currentMac = null;
     _devices = [];
     _deviceInfo = null;
@@ -917,6 +980,14 @@ class CloudService extends ChangeNotifier {
     _deviceRevoked = false;
     notifyListeners();
   }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _keyGeneration++;
+    _client.close();
+    super.dispose();
+  }
 }
 
 /// Exception type for non-2xx HTTP responses from the CalcAI API.
@@ -931,82 +1002,4 @@ class CloudException implements Exception {
 
   @override
   String toString() => 'CloudException($statusCode): $message';
-}
-
-/// Test double for [CloudService].
-///
-/// It starts empty — no fabricated notes or history — but lets notes be
-/// created, edited and deleted so the feature can be exercised in a test.
-class PreviewCloudService extends CloudService {
-  /// Notes envelope, exactly as the real backend would store it.
-  String _notesPayload = '';
-  PreviewCloudService();
-
-  @override
-  Future<void> loadDashboard(String token, String mac) async {
-    _currentMac = mac;
-    notifyListeners();
-  }
-
-  @override
-  Future<String> getNotes(String token, String mac) async {
-    _notes = _notesPayload;
-    _clearError();
-    notifyListeners();
-    return _notesPayload;
-  }
-
-  @override
-  Future<void> setNotes(String token, String mac, String text) async {
-    _notesPayload = text;
-    _notes = text;
-    _clearError();
-    notifyListeners();
-  }
-
-  // ── Everything else stays local so preview never hits the network ──
-
-  @override
-  Future<List<Map<String, dynamic>>> getHistory(String token, String mac,
-          {int limit = 50}) async =>
-      _history;
-
-  @override
-  Future<bool> clearHistory(String token, String mac) async {
-    _history = [];
-    notifyListeners();
-    return true;
-  }
-
-  @override
-  Future<List<String>> getDevices(String token) async => _devices;
-
-  @override
-  Future<bool> claimDevice(String token, String mac,
-          {String? nonce, String? challengeResponse}) async =>
-      true;
-
-  @override
-  Future<Map<String, dynamic>> listApiKeys(String token) async => _apiKeys;
-
-  @override
-  Future<String> getContext(String token, String mac) async => customContext;
-
-  @override
-  Future<bool> setContext(String token, String mac, String context) async {
-    _customContext = context;
-    notifyListeners();
-    return true;
-  }
-
-  @override
-  Future<void> setModel(String token, String mac, String model, String style,
-      {String? effort}) async {
-    _modelInfo = {
-      'model': model,
-      'style': style,
-      'effort': effort ?? thinkingEffort,
-    };
-    notifyListeners();
-  }
 }

@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import 'screens/auth_screen.dart';
+import 'screens/ai_consent_screen.dart';
 import 'screens/link_device_screen.dart';
 import 'screens/main_shell.dart';
 import 'services/auth_service.dart';
@@ -15,7 +16,7 @@ import 'widgets/calcai_mark.dart';
 /// Root widget for the CalcAI application.
 ///
 /// Applies the dark theme and delegates the initial route decision to
-/// [_AppGate], which watches [AuthService] to show the appropriate screen.
+/// [AppGate], which watches [AuthService] to show the appropriate screen.
 class CalcAIApp extends StatelessWidget {
   const CalcAIApp({super.key});
 
@@ -25,7 +26,7 @@ class CalcAIApp extends StatelessWidget {
       title: 'CalcAI',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
-      home: const _AppGate(),
+      home: const AppGate(),
     );
   }
 }
@@ -41,14 +42,15 @@ class CalcAIApp extends StatelessWidget {
 /// Because this widget watches [AuthService] via [Provider], it will
 /// automatically rebuild whenever the auth state changes (e.g. after
 /// sign-in, sign-out, or device pairing).
-class _AppGate extends StatefulWidget {
-  const _AppGate();
+class AppGate extends StatefulWidget {
+  const AppGate({super.key, this.restoreSession = true});
+  final bool restoreSession;
 
   @override
-  State<_AppGate> createState() => _AppGateState();
+  State<AppGate> createState() => AppGateState();
 }
 
-class _AppGateState extends State<_AppGate> {
+class AppGateState extends State<AppGate> {
   bool _initialized = false;
   bool _handlingDeviceRevocation = false;
 
@@ -79,7 +81,7 @@ class _AppGateState extends State<_AppGate> {
       );
     };
 
-    await auth.init();
+    if (widget.restoreSession) await auth.init();
 
     // Load persisted WiFi networks so they display offline
     if (auth.isAuthenticated && auth.primaryMac != null) {
@@ -174,10 +176,13 @@ class _AppGateState extends State<_AppGate> {
     // before they reach the main shell.
     if ((auth.primaryMac == null || auth.primaryMac!.isEmpty) &&
         !auth.setupSkipped) {
-      return const LinkDeviceScreen();
+      return AiConsentGate(
+        key: ValueKey(auth.token),
+        child: const LinkDeviceScreen(),
+      );
     }
 
     // ── Authenticated + device linked → main navigation shell ─────────
-    return const MainShell();
+    return AiConsentGate(key: ValueKey(auth.token), child: const MainShell());
   }
 }

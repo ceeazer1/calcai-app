@@ -299,15 +299,17 @@ class _WifiScreenState extends State<WifiScreen> {
                               color: AppColors.textPrimary,
                             ),
                           ),
-                          Text(
+                          Expanded(
+                              child: Text(
                             'WiFi Networks',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.outfit(
                               fontSize: 26,
                               fontWeight: FontWeight.w700,
                               color: AppColors.textPrimary,
                             ),
-                          ),
-                          const Spacer(),
+                          )),
                           // Glowing Bluetooth icon = device connected.
                           if (isConnected) const _GlowingBleIcon(),
                         ],
@@ -835,6 +837,16 @@ class _WifiScreenState extends State<WifiScreen> {
           ),
           actions: [
             TextButton(
+              onPressed: updating
+                  ? null
+                  : () {
+                      Navigator.pop(ctx);
+                      _showPasswordDialog(ssid,
+                          initialIphoneHotspot: iphoneHotspot);
+                    },
+              child: const Text('Update password'),
+            ),
+            TextButton(
               onPressed: updating ? null : () => Navigator.pop(ctx),
               child: Text(
                 'Done',
@@ -1098,13 +1110,14 @@ class _WifiScreenState extends State<WifiScreen> {
               ),
             ),
             const SizedBox(width: 16),
-            Text(
+            Expanded(
+                child: Text(
               'Connecting to $ssid...',
               style: GoogleFonts.inter(
                 color: AppColors.textPrimary,
                 fontSize: 14,
               ),
-            ),
+            )),
           ],
         ),
       ),

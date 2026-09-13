@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../services/auth_service.dart';
 import '../theme/app_colors.dart';
+import '../utils/public_links.dart';
 import '../widgets/calcai_wordmark.dart';
 import 'reset_password_screen.dart';
 import 'verify_email_screen.dart';
@@ -49,13 +50,13 @@ class _AuthScreenState extends State<AuthScreen>
       parent: _animController,
       curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
     );
-    _slideUp = Tween<Offset>(
-      begin: const Offset(0, 0.08),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _animController,
-      curve: const Interval(0.2, 1.0, curve: Curves.easeOutCubic),
-    ));
+    _slideUp = Tween<Offset>(begin: const Offset(0, 0.08), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _animController,
+            curve: const Interval(0.2, 1.0, curve: Curves.easeOutCubic),
+          ),
+        );
     _animController.forward();
   }
 
@@ -136,9 +137,7 @@ class _AuthScreenState extends State<AuthScreen>
         // an unconfirmed account lands here too.
         setState(() => _error = null);
         await Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => VerifyEmailScreen(email: email),
-          ),
+          MaterialPageRoute(builder: (_) => VerifyEmailScreen(email: email)),
         );
       case EmailAuthOutcome.failed:
         setState(() => _error = auth.error ?? 'Something went wrong.');
@@ -258,9 +257,8 @@ class _AuthScreenState extends State<AuthScreen>
                     ),
 
                   const SizedBox(height: 12),
-                  // Fixed slot so the button never jumps as messages appear.
-                  SizedBox(
-                    height: 34,
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 34),
                     child: Center(
                       child: _error == null
                           ? const SizedBox.shrink()
@@ -327,8 +325,7 @@ class _AuthScreenState extends State<AuthScreen>
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         child: Text(
                           'or',
-                          style:
-                              GoogleFonts.inter(fontSize: 12, color: _muted),
+                          style: GoogleFonts.inter(fontSize: 12, color: _muted),
                         ),
                       ),
                       const Expanded(child: Divider(color: Color(0xFF2A2A30))),
@@ -350,12 +347,28 @@ class _AuthScreenState extends State<AuthScreen>
 
                   const SizedBox(height: 30),
                   Text(
-                    'By continuing, you agree to our Terms of Service',
+                    'By continuing, you agree to our Terms of Service. '
+                    'Read how we handle your information below.',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       color: AppColors.textTertiary,
                     ),
+                  ),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    children: [
+                      TextButton(
+                        onPressed: () =>
+                            openPublicLink(context, termsOfServiceUrl),
+                        child: const Text('Terms of Service'),
+                      ),
+                      TextButton(
+                        onPressed: () =>
+                            openPublicLink(context, privacyPolicyUrl),
+                        child: const Text('Privacy Policy'),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 16),
                 ],
@@ -474,8 +487,9 @@ class _PrimaryButton extends StatelessWidget {
                     width: 20,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      valueColor:
-                          AlwaysStoppedAnimation<Color>(Color(0xFF16161A)),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        Color(0xFF16161A),
+                      ),
                     ),
                   )
                 : Text(
@@ -516,7 +530,8 @@ class _SocialButton extends StatelessWidget {
           onTap: onTap,
           borderRadius: BorderRadius.circular(12),
           child: Container(
-            height: 50,
+            constraints: const BoxConstraints(minHeight: 50),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: const Color(0xFF3A3A40)),
@@ -526,12 +541,15 @@ class _SocialButton extends StatelessWidget {
               children: [
                 Icon(icon, color: Colors.white, size: 21),
                 const SizedBox(width: 9),
-                Text(
-                  label,
-                  style: GoogleFonts.inter(
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                Flexible(
+                  child: Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
               ],

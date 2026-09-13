@@ -25,3 +25,11 @@
 # Misc
 .DS_Store
 *.log
+
+# Local signing credentials and environment secrets
+*.p8
+*.p12
+*.mobileprovision
+/signing/
+.env
+.env.local

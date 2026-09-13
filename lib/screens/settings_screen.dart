@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'ai_consent_screen.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../utils/public_links.dart';
 
 import '../services/auth_service.dart';
+import '../services/ble_service.dart';
 import '../services/cloud_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glass_card.dart';
@@ -42,9 +44,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        gradient: AppColors.backgroundGradient,
-      ),
+      decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
       child: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
@@ -126,10 +126,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             vertical: 4,
                           ),
                           decoration: BoxDecoration(
-                            color: (cloud.planType == 'Pro'
-                                    ? AppColors.warning
-                                    : AppColors.electricBlue)
-                                .withOpacity(0.12),
+                            color:
+                                (cloud.planType == 'Pro'
+                                        ? AppColors.warning
+                                        : AppColors.electricBlue)
+                                    .withOpacity(0.12),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
@@ -153,6 +154,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 24),
 
             // ── API Keys Section (collapsible) ──────────
+            ListTile(
+              leading: const Icon(Icons.privacy_tip_outlined),
+              title: const Text('AI sharing'),
+              subtitle: const Text('Review or change your permission'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const AiConsentScreen(),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
             GlassCard(
               padding: EdgeInsets.zero,
               child: Column(
@@ -161,10 +174,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Material(
                     color: Colors.transparent,
                     child: InkWell(
-                      onTap: () => setState(() => _apiKeysExpanded = !_apiKeysExpanded),
+                      onTap: () =>
+                          setState(() => _apiKeysExpanded = !_apiKeysExpanded),
                       borderRadius: BorderRadius.circular(20),
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 16,
+                        ),
                         child: Row(
                           children: [
                             Icon(
@@ -186,7 +203,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     ),
                                   ),
                                   Text(
-                                    'Add your own keys for unlimited usage',
+                                    'Use your own provider account',
                                     style: GoogleFonts.inter(
                                       fontSize: 11,
                                       color: AppColors.textTertiary,
@@ -216,9 +233,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       children: [
                         Divider(color: AppColors.glassBorder, height: 1),
                         _providerSection('OpenAI', Icons.auto_awesome_rounded),
-                        Divider(color: AppColors.glassBorder, height: 1, indent: 56),
+                        Divider(
+                          color: AppColors.glassBorder,
+                          height: 1,
+                          indent: 56,
+                        ),
                         _providerSection('Google', Icons.cloud_rounded),
-                        Divider(color: AppColors.glassBorder, height: 1, indent: 56),
+                        Divider(
+                          color: AppColors.glassBorder,
+                          height: 1,
+                          indent: 56,
+                        ),
                         _providerSection('Anthropic', Icons.psychology_rounded),
                         const SizedBox(height: 4),
                       ],
@@ -274,7 +299,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _LinkRow(
                     icon: Icons.privacy_tip_rounded,
                     label: 'Privacy Policy',
-                    url: 'https://calcai.cc/privacy',
+                    url: privacyPolicyUrl,
+                  ),
+                  Divider(color: AppColors.glassBorder, height: 1, indent: 56),
+                  _LinkRow(
+                    icon: Icons.description_outlined,
+                    label: 'Terms of Service',
+                    url: termsOfServiceUrl,
+                  ),
+                  Divider(color: AppColors.glassBorder, height: 1, indent: 56),
+                  _LinkRow(
+                    icon: Icons.help_outline_rounded,
+                    label: 'Contact support',
+                    url: 'mailto:info@calcai.cc',
+                  ),
+                  Divider(color: AppColors.glassBorder, height: 1, indent: 56),
+                  ListTile(
+                    leading: const Icon(Icons.code_rounded),
+                    title: const Text('Open-source licenses'),
+                    onTap: () => showLicensePage(
+                      context: context,
+                      applicationName: 'CalcAI',
+                      applicationVersion: _version,
+                    ),
                   ),
                 ],
               ),
@@ -342,8 +389,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           borderRadius: BorderRadius.circular(20),
           side: BorderSide(color: AppColors.glassBorder),
         ),
-        icon: Icon(Icons.warning_amber_rounded,
-            color: AppColors.error, size: 32),
+        icon: Icon(
+          Icons.warning_amber_rounded,
+          color: AppColors.error,
+          size: 32,
+        ),
         title: Text(
           'Delete Account?',
           style: GoogleFonts.outfit(
@@ -364,14 +414,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel',
-                style: GoogleFonts.inter(color: AppColors.textSecondary)),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.inter(color: AppColors.textSecondary),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Delete',
-                style: GoogleFonts.inter(
-                    color: AppColors.error, fontWeight: FontWeight.w600)),
+            child: Text(
+              'Delete',
+              style: GoogleFonts.inter(
+                color: AppColors.error,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),
@@ -379,26 +435,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     if (confirmed != true || !context.mounted) return;
 
-    // Show a blocking progress indicator while the request runs.
-    showDialog(
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final progress = DialogRoute<void>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => const Center(
-        child: CircularProgressIndicator(color: AppColors.electricBlue),
+      builder: (ctx) => const PopScope(
+        canPop: false,
+        child: Center(
+          child: CircularProgressIndicator(color: AppColors.electricBlue),
+        ),
       ),
     );
+    navigator.push(progress);
 
     final auth = context.read<AuthService>();
     final cloud = context.read<CloudService>();
+    final ble = context.read<BleService>();
     final error = await auth.deleteAccount();
-
-    if (!context.mounted) return;
-    Navigator.pop(context); // dismiss progress
-
     if (error == null) {
-      // Success — auth state is cleared, the app returns to sign-in.
       cloud.reset();
-    } else {
+      await ble.clearUserState();
+      PaintingBinding.instance.imageCache.clear();
+      PaintingBinding.instance.imageCache.clearLiveImages();
+    }
+    // Sign-out can dispose Settings while this request is finishing. Remove
+    // this exact route using the captured navigator, regardless of its context.
+    if (navigator.mounted && progress.isActive) navigator.removeRoute(progress);
+    if (error != null && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(error),
@@ -438,10 +501,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
+              final auth = context.read<AuthService>();
+              final cloud = context.read<CloudService>();
+              final ble = context.read<BleService>();
               Navigator.pop(ctx);
-              context.read<AuthService>().signOut();
-              context.read<CloudService>().reset();
+              cloud.reset();
+              await ble.clearUserState();
+              PaintingBinding.instance.imageCache.clear();
+              PaintingBinding.instance.imageCache.clearLiveImages();
+              await auth.signOut();
             },
             child: Text(
               'Sign Out',
@@ -482,14 +551,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _useKeyToggle(
-      BuildContext context, CloudService cloud, String provider, bool enabled) {
+    BuildContext context,
+    CloudService cloud,
+    String provider,
+    bool enabled,
+  ) {
     final auth = context.read<AuthService>();
     return Padding(
       padding: const EdgeInsets.fromLTRB(56, 2, 8, 2),
       child: Row(
         children: [
-          const Icon(Icons.vpn_key_rounded,
-              color: AppColors.textTertiary, size: 18),
+          const Icon(
+            Icons.vpn_key_rounded,
+            color: AppColors.textTertiary,
+            size: 18,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -517,9 +593,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _customModelRow(
-      BuildContext context, CloudService cloud, String provider) {
+    BuildContext context,
+    CloudService cloud,
+    String provider,
+  ) {
     final current = cloud.currentModel ?? '';
-    final showsCurrent = current.isNotEmpty && _modelBelongsTo(current, provider);
+    final showsCurrent =
+        current.isNotEmpty && _modelBelongsTo(current, provider);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -528,8 +608,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           padding: const EdgeInsets.fromLTRB(56, 12, 16, 12),
           child: Row(
             children: [
-              const Icon(Icons.tune_rounded,
-                  color: AppColors.textTertiary, size: 18),
+              const Icon(
+                Icons.tune_rounded,
+                color: AppColors.textTertiary,
+                size: 18,
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -550,8 +633,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               const SizedBox(width: 6),
-              const Icon(Icons.chevron_right_rounded,
-                  color: AppColors.textTertiary, size: 18),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: AppColors.textTertiary,
+                size: 18,
+              ),
             ],
           ),
         ),
@@ -609,14 +695,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
               'Run any $provider model your API key supports — including '
               'older or niche ones not in the picker.',
               style: GoogleFonts.inter(
-                  color: AppColors.textSecondary, fontSize: 13),
+                color: AppColors.textSecondary,
+                fontSize: 13,
+              ),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: controller,
               autocorrect: false,
               style: GoogleFonts.inter(
-                  color: AppColors.textPrimary, fontSize: 14),
+                color: AppColors.textPrimary,
+                fontSize: 14,
+              ),
               decoration: InputDecoration(
                 hintText: hint,
                 hintStyle: GoogleFonts.inter(color: AppColors.textTertiary),
@@ -633,8 +723,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel',
-                style: GoogleFonts.inter(color: AppColors.textSecondary)),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.inter(color: AppColors.textSecondary),
+            ),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -642,8 +734,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               if (model.isEmpty) return;
               Navigator.pop(ctx);
               if (auth.token != null && auth.primaryMac != null) {
-                await cloud.setModel(auth.token!, auth.primaryMac!, model,
-                    cloud.responseStyle);
+                await cloud.setModel(
+                  auth.token!,
+                  auth.primaryMac!,
+                  model,
+                  cloud.responseStyle,
+                );
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
@@ -655,8 +751,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 }
               }
             },
-            child: Text('Apply',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+            child: Text(
+              'Apply',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+            ),
           ),
         ],
       ),
@@ -678,6 +776,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           borderRadius: BorderRadius.circular(20),
           side: BorderSide(color: AppColors.glassBorder),
         ),
+        scrollable: true,
         title: Text(
           '$provider API Key',
           style: GoogleFonts.outfit(
@@ -698,7 +797,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.check_circle_rounded, color: AppColors.success, size: 18),
+                    Icon(
+                      Icons.check_circle_rounded,
+                      color: AppColors.success,
+                      size: 18,
+                    ),
                     const SizedBox(width: 8),
                     Text(
                       'Active  •••${last4 ?? ''}',
@@ -714,18 +817,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 12),
               Text(
                 'Replace with a new key or remove the existing one.',
-                style: GoogleFonts.inter(color: AppColors.textSecondary, fontSize: 13),
+                style: GoogleFonts.inter(
+                  color: AppColors.textSecondary,
+                  fontSize: 13,
+                ),
               ),
             ] else
               Text(
-                'Enter your $provider API key for unlimited usage.',
-                style: GoogleFonts.inter(color: AppColors.textSecondary, fontSize: 13),
+                'Enter your $provider API key. Provider billing and limits apply.',
+                style: GoogleFonts.inter(
+                  color: AppColors.textSecondary,
+                  fontSize: 13,
+                ),
               ),
+            const SizedBox(height: 16),
+            const Text(
+              'Your full key is sent securely to CalcAI, checked with the provider, '
+              'and stored encrypted on our server for your requests. '
+              'Removing it deletes our copy; revoke it with the provider to invalidate it everywhere.',
+            ),
             const SizedBox(height: 16),
             TextField(
               controller: controller,
               obscureText: true,
-              style: GoogleFonts.inter(color: AppColors.textPrimary, fontSize: 14),
+              style: GoogleFonts.inter(
+                color: AppColors.textPrimary,
+                fontSize: 14,
+              ),
               decoration: InputDecoration(
                 hintText: 'sk-...',
                 hintStyle: GoogleFonts.inter(color: AppColors.textTertiary),
@@ -748,11 +866,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   await cloud.deleteApiKey(auth.token!, provider);
                 }
               },
-              child: Text('Remove', style: GoogleFonts.inter(color: AppColors.error)),
+              child: Text(
+                'Remove',
+                style: GoogleFonts.inter(color: AppColors.error),
+              ),
             ),
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.textSecondary)),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.inter(color: AppColors.textSecondary),
+            ),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -764,14 +888,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 if (!ok && context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('Invalid API key. Please check and try again.'),
+                      content: Text(
+                        'Invalid API key. Please check and try again.',
+                      ),
                       backgroundColor: AppColors.error,
                     ),
                   );
                 }
               }
             },
-            child: Text('Save', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+            child: Text(
+              'Save',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+            ),
           ),
         ],
       ),
@@ -804,21 +933,14 @@ class _LinkRow extends StatelessWidget {
   final String label;
   final String url;
 
-  const _LinkRow({
-    required this.icon,
-    required this.label,
-    required this.url,
-  });
+  const _LinkRow({required this.icon, required this.label, required this.url});
 
   @override
   Widget build(BuildContext context) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () => launchUrl(
-          Uri.parse(url),
-          mode: LaunchMode.externalApplication,
-        ),
+        onTap: () => openPublicLink(context, url),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
@@ -910,7 +1032,11 @@ class _MacAddressRowState extends State<_MacAddressRow> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
-            Icon(Icons.memory_rounded, color: AppColors.textSecondary, size: 20),
+            Icon(
+              Icons.memory_rounded,
+              color: AppColors.textSecondary,
+              size: 20,
+            ),
             const SizedBox(width: 14),
             Text(
               'MAC Address',
@@ -985,8 +1111,11 @@ class _ApiKeyRow extends StatelessWidget {
                     ),
                   ),
                   if (hasSaved) ...[
-                    Icon(Icons.check_circle_rounded,
-                        color: AppColors.success, size: 14),
+                    Icon(
+                      Icons.check_circle_rounded,
+                      color: AppColors.success,
+                      size: 14,
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       '•••${last4 ?? ''}',

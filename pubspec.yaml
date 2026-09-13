@@ -1,14 +1,16 @@
 name: calcai_app
-description: CalcAI - ESP32 WiFi Provisioning App
+description: CalcAI companion app for device setup, Wi-Fi, notes, and history.
 publish_to: 'none'
 version: 1.0.0+149
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: '>=3.12.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
+  # Flutter's iOS text-editing controls use these glyphs internally.
+  cupertino_icons: ^1.0.8
   flutter_blue_plus: ^1.35.2
   provider: ^6.1.2
   google_fonts: ^6.2.1
@@ -40,6 +42,11 @@ flutter_launcher_icons:
   android: false
   remove_alpha_ios: true        # iOS icons must be opaque (no transparency)
   background_color_ios: "#FFFFFF"  # fill behind a transparent logo — change to taste
+  web:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
+    background_color: "#09090B"
+    theme_color: "#09090B"
 
 flutter:
   uses-material-design: true
@@ -49,3 +56,4 @@ flutter:
   assets:
     - assets/icon/app_icon.png
     - assets/icon/calcai_wordmark.png
+    - assets/fonts/

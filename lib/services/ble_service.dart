@@ -207,8 +207,10 @@ class BleService extends ChangeNotifier {
         final state = await FlutterBluePlus.adapterState
             .where((s) => s == BluetoothAdapterState.on)
             .first
-            .timeout(const Duration(seconds: 10),
-                onTimeout: () => BluetoothAdapterState.off);
+            .timeout(
+              const Duration(seconds: 10),
+              onTimeout: () => BluetoothAdapterState.off,
+            );
 
         if (state != BluetoothAdapterState.on) {
           _setError('Bluetooth is not enabled.');
@@ -236,8 +238,9 @@ class BleService extends ChangeNotifier {
   ///
   /// Results are accumulated in [devices]. The scan runs for [timeout]
   /// seconds and then stops automatically.
-  Future<void> startScan(
-      {Duration timeout = const Duration(seconds: 10)}) async {
+  Future<void> startScan({
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
     if (_isScanning) return;
 
     _clearError();
@@ -260,11 +263,13 @@ class BleService extends ChangeNotifier {
           );
 
           if (existing == -1) {
-            _devices.add(CalcAiDevice(
-              device: r.device,
-              rssi: r.rssi,
-              advertisementName: name,
-            ));
+            _devices.add(
+              CalcAiDevice(
+                device: r.device,
+                rssi: r.rssi,
+                advertisementName: name,
+              ),
+            );
           } else {
             _devices[existing].rssi = r.rssi;
           }
@@ -322,8 +327,11 @@ class BleService extends ChangeNotifier {
       );
       // Single short attempt: if the known device isn't right there, fail fast
       // (~4s) so the caller falls back to scanning instead of retrying for 15s.
-      await connectToDevice(dev,
-          timeout: const Duration(seconds: 4), attempts: 1);
+      await connectToDevice(
+        dev,
+        timeout: const Duration(seconds: 4),
+        attempts: 1,
+      );
       return connectionState.isConnected;
     } catch (e) {
       logDebug('reconnectKnownDevice error: $e');
@@ -359,10 +367,7 @@ class BleService extends ChangeNotifier {
       var didConnect = false;
       for (var attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
-          await device.device.connect(
-            timeout: perAttempt,
-            autoConnect: false,
-          );
+          await device.device.connect(timeout: perAttempt, autoConnect: false);
           didConnect = true;
           break;
         } catch (e) {
@@ -513,8 +518,9 @@ class BleService extends ChangeNotifier {
         // from whatever peripheral we are talking to.
         final rawMac = data['mac'] as String?;
         if (rawMac != null && rawMac.isNotEmpty) {
-          final norm =
-              rawMac.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toLowerCase();
+          final norm = rawMac
+              .replaceAll(RegExp(r'[^0-9a-fA-F]'), '')
+              .toLowerCase();
           if (isValidMacHex(norm)) _deviceMac = norm;
         }
         _provisioningState = ProvisioningState.success;
@@ -567,7 +573,8 @@ class BleService extends ChangeNotifier {
       for (int i = 0; i < 5; i++) {
         response = await _scanChar!.read();
         logDebug(
-            'CalcAI BLE: scan read attempt ${i + 1}, got ${response.length} bytes');
+          'CalcAI BLE: scan read attempt ${i + 1}, got ${response.length} bytes',
+        );
         if (response.length > 10) break;
         await Future.delayed(const Duration(seconds: 2));
       }
@@ -577,7 +584,8 @@ class BleService extends ChangeNotifier {
         logDebug('CalcAI BLE: parsed ${_wifiNetworks.length} networks');
       } else {
         logDebug(
-            'CalcAI BLE: no scan results received (${response.length} bytes)');
+          'CalcAI BLE: no scan results received (${response.length} bytes)',
+        );
       }
 
       _provisioningState = ProvisioningState.idle;
@@ -624,11 +632,13 @@ class BleService extends ChangeNotifier {
         // Expected: "SSID,RSSI,SECURED"
         final parts = line.split(',');
         if (parts.length >= 2) {
-          _wifiNetworks.add(WifiNetwork(
-            ssid: parts[0].trim(),
-            rssi: int.tryParse(parts[1].trim()) ?? -70,
-            isSecured: parts.length > 2 ? parts[2].trim() == '1' : true,
-          ));
+          _wifiNetworks.add(
+            WifiNetwork(
+              ssid: parts[0].trim(),
+              rssi: int.tryParse(parts[1].trim()) ?? -70,
+              isSecured: parts.length > 2 ? parts[2].trim() == '1' : true,
+            ),
+          );
         }
       }
       _wifiNetworks.sort((a, b) => b.rssi.compareTo(a.rssi));
@@ -729,16 +739,14 @@ class BleService extends ChangeNotifier {
   Future<void> _persistSavedNetworks() async {
     // Prefer the app's primary MAC (matches what the home page loads); fall
     // back to the device's reported WiFi MAC, then the BLE remote id.
-    final mac = _persistMac ??
+    final mac =
+        _persistMac ??
         _normMac(_deviceMac) ??
         _normMac(_connectedDevice?.device.remoteId.str);
     if (mac == null) return;
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        'saved_networks_$mac',
-        jsonEncode(_savedNetworks),
-      );
+      await prefs.setString('saved_networks_$mac', jsonEncode(_savedNetworks));
       await prefs.setString(
         'iphone_hotspots_$mac',
         jsonEncode(_iphoneHotspotNetworks.toList()..sort()),
@@ -855,11 +863,7 @@ class BleService extends ChangeNotifier {
   /// Returns null on success, or a short reason to show the user. The firmware
   /// allows five wrong guesses per connection and then burns the code.
   Future<String?> submitPairingCode(String code, String owner) async {
-    final r = await _command({
-      'cmd': 'paircode',
-      'code': code,
-      'owner': owner,
-    });
+    final r = await _command({'cmd': 'paircode', 'code': code, 'owner': owner});
     if (r == null) return 'No response. Try again.';
     if (r['ok'] == true) {
       _pairedOwner = owner;
@@ -903,7 +907,10 @@ class BleService extends ChangeNotifier {
   /// cannot tell one account from another by itself, and the string it used to
   /// compare was the display name -- guessable by anyone in radio range.
   Future<bool> proveOwnership(
-      String nonce, String response, String owner) async {
+    String nonce,
+    String response,
+    String owner,
+  ) async {
     final r = await _command({
       'cmd': 'hello',
       'nonce': nonce,
@@ -1087,9 +1094,7 @@ class BleService extends ChangeNotifier {
       return false;
     }
     if (iphoneHotspot && !await _supportsIphoneHotspotKeepAlive()) {
-      _setError(
-        'Update the calculator firmware to use iPhone hotspot mode.',
-      );
+      _setError('Update the calculator firmware to use iPhone hotspot mode.');
       _provisioningState = ProvisioningState.failed;
       notifyListeners();
       return false;
@@ -1153,9 +1158,7 @@ class BleService extends ChangeNotifier {
     // "Save anyway" still sends the password, so it gets the same check.
     if (!await ensureDeviceVerified()) return false;
     if (iphoneHotspot && !await _supportsIphoneHotspotKeepAlive()) {
-      _setError(
-        'Update the calculator firmware to use iPhone hotspot mode.',
-      );
+      _setError('Update the calculator firmware to use iPhone hotspot mode.');
       return false;
     }
 
@@ -1167,10 +1170,7 @@ class BleService extends ChangeNotifier {
         'iphoneHotspot': iphoneHotspot,
       });
 
-      await _configChar!.write(
-        utf8.encode(payload),
-        withoutResponse: false,
-      );
+      await _configChar!.write(utf8.encode(payload), withoutResponse: false);
 
       // Wait for ESP32 confirmation
       await Future.delayed(const Duration(milliseconds: 300));
@@ -1206,9 +1206,7 @@ class BleService extends ChangeNotifier {
     return false;
   }
 
-  Future<bool> _waitForProvisioningResult({
-    required Duration timeout,
-  }) async {
+  Future<bool> _waitForProvisioningResult({required Duration timeout}) async {
     final completer = Completer<bool>();
 
     // Set a timeout
@@ -1257,9 +1255,7 @@ class BleService extends ChangeNotifier {
     _clearError();
     try {
       if (!await _supportsIphoneHotspotKeepAliveLocked()) {
-        _setError(
-          'Update the calculator firmware to use iPhone hotspot mode.',
-        );
+        _setError('Update the calculator firmware to use iPhone hotspot mode.');
         return false;
       }
       final payload = jsonEncode({
@@ -1294,15 +1290,9 @@ class BleService extends ChangeNotifier {
     _clearError();
 
     try {
-      final payload = jsonEncode({
-        'action': 'remove',
-        'ssid': ssid,
-      });
+      final payload = jsonEncode({'action': 'remove', 'ssid': ssid});
 
-      await _configChar!.write(
-        utf8.encode(payload),
-        withoutResponse: false,
-      );
+      await _configChar!.write(utf8.encode(payload), withoutResponse: false);
 
       // Remove from local lists and persist
       _wifiNetworks.removeWhere((n) => n.ssid == ssid);
@@ -1350,6 +1340,22 @@ class BleService extends ChangeNotifier {
   }
 
   /// Resets all state. Useful when returning to the scan screen.
+  Future<void> clearUserState() async {
+    await disconnect();
+    _savedNetworks.clear();
+    _iphoneHotspotNetworks.clear();
+    _savedNetworksLoading = false;
+    _connectedSsid = null;
+    _deviceMac = null;
+    _persistMac = null;
+    _pairedOwner = null;
+    _devices.clear();
+    _wifiNetworks.clear();
+    _error = null;
+    notifyListeners();
+  }
+
+  /// Resets discovery/provisioning state without forgetting saved networks.
   void reset() {
     disconnect();
     _devices.clear();
@@ -1365,21 +1371,13 @@ class BleService extends ChangeNotifier {
     _scanSub?.cancel();
     _connectionSub?.cancel();
     _statusNotifySub?.cancel();
-    FlutterBluePlus.stopScan();
+    if (!kIsWeb &&
+        (Platform.isAndroid ||
+            Platform.isIOS ||
+            Platform.isMacOS ||
+            Platform.isLinux)) {
+      FlutterBluePlus.stopScan();
+    }
     super.dispose();
   }
-}
-
-/// BLE test double.
-///
-/// A browser has no Bluetooth radio, so the real service can never populate the
-/// saved-network list. Constructed only by tests — nothing in lib/
-/// instantiates it. It lives in this file because `_savedNetworks` and
-/// `_connectedSsid` are library-private.
-class PreviewBleService extends BleService {
-  PreviewBleService();
-
-  /// Never touches SharedPreferences — a test has no real store to read.
-  @override
-  Future<void> loadPersistedNetworks(String? deviceMac) async {}
 }

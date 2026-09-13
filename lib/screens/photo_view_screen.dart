@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../services/auth_service.dart';
 import 'package:gal/gal.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
@@ -42,7 +44,14 @@ class _PhotoViewScreenState extends State<PhotoViewScreen> {
   Future<List<int>?> _load() async {
     if (_bytes != null) return _bytes;
     try {
-      final r = await _client.get(Uri.parse(widget.imageUrl));
+      final token = context.read<AuthService>().token;
+      final r = await _client
+          .get(
+            Uri.parse(widget.imageUrl),
+            headers: privateImageHeaders(widget.imageUrl, token),
+          )
+          .timeout(const Duration(seconds: 30));
+      if (!mounted || context.read<AuthService>().token != token) return null;
       if (r.statusCode != 200) {
         _toast('Could not download the photo (${r.statusCode})');
         return null;
@@ -50,7 +59,7 @@ class _PhotoViewScreenState extends State<PhotoViewScreen> {
       _bytes = r.bodyBytes;
       return _bytes;
     } catch (e) {
-      logDebug('CalcAI photo: download failed — $e');
+      logDebug('CalcAI photo: download failed');
       _toast('Could not download the photo');
       return null;
     }
@@ -99,9 +108,11 @@ class _PhotoViewScreenState extends State<PhotoViewScreen> {
       _toast('Saved to your photos');
     } on GalException catch (e) {
       logDebug('CalcAI photo: save failed — ${e.type}');
-      _toast(e.type == GalExceptionType.accessDenied
-          ? 'Allow photo access in Settings to save'
-          : 'Could not save the photo');
+      _toast(
+        e.type == GalExceptionType.accessDenied
+            ? 'Allow photo access in Settings to save'
+            : 'Could not save the photo',
+      );
     } catch (e) {
       logDebug('CalcAI photo: save failed — $e');
       _toast('Could not save the photo');
@@ -121,7 +132,14 @@ class _PhotoViewScreenState extends State<PhotoViewScreen> {
         _toast('Could not share the photo');
         return;
       }
-      await Share.shareXFiles([XFile(path, mimeType: 'image/jpeg')]);
+      if (!mounted) return;
+      final box = context.findRenderObject() as RenderBox?;
+      await Share.shareXFiles(
+        [XFile(path, mimeType: 'image/jpeg')],
+        sharePositionOrigin: box == null
+            ? null
+            : box.localToGlobal(Offset.zero) & box.size,
+      );
     } catch (e) {
       logDebug('CalcAI photo: share failed — $e');
       _toast('Could not share the photo');
@@ -151,7 +169,9 @@ class _PhotoViewScreenState extends State<PhotoViewScreen> {
                 width: 18,
                 height: 18,
                 child: CircularProgressIndicator(
-                    strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Colors.white)),
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation(Colors.white),
+                ),
               ),
             )
           else ...[
@@ -175,26 +195,36 @@ class _PhotoViewScreenState extends State<PhotoViewScreen> {
           minScale: 1,
           maxScale: 5,
           child: Image(
-            image: ResilientNetworkImage(widget.imageUrl),
+            image: ResilientNetworkImage(
+              widget.imageUrl,
+              token: context.read<AuthService>().token,
+            ),
             fit: BoxFit.contain,
             loadingBuilder: (_, child, progress) {
               if (progress == null) return child;
               return const Center(
                 child: CircularProgressIndicator(
-                    strokeWidth: 2, color: AppColors.electricBlue),
+                  strokeWidth: 2,
+                  color: AppColors.electricBlue,
+                ),
               );
             },
             errorBuilder: (_, __, ___) => Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.image_not_supported_rounded,
-                      color: Colors.white38, size: 40),
+                  const Icon(
+                    Icons.image_not_supported_rounded,
+                    color: Colors.white38,
+                    size: 40,
+                  ),
                   const SizedBox(height: 10),
                   Text(
                     'This photo is no longer available',
                     style: GoogleFonts.inter(
-                        fontSize: 13, color: Colors.white38),
+                      fontSize: 13,
+                      color: Colors.white38,
+                    ),
                   ),
                 ],
               ),

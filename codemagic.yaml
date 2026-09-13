@@ -1,109 +1,108 @@
-workflows:
-  ios-testflight:
-    name: iOS TestFlight Build
-    max_build_duration: 60
-    instance_type: mac_mini_m2
-    
-    integrations:
-      app_store_connect: CalcAI
+# This file lives at the root of the independent calcai-app repository.
+definitions:
+  scripts:
+    - &verify
+      name: Verify release source
+      script: |
+        set -euo pipefail
+        flutter pub get --enforce-lockfile
+        python3 tool/release_preflight.py
+        flutter analyze --no-pub --fatal-infos
+        flutter test --no-pub
+    - &sdk
+      name: Verify App Store SDK
+      script: |
+        set -euo pipefail
+        xcodebuild -version
+        SDK_VERSION=$(xcrun --sdk iphoneos --show-sdk-version)
+        if [ "${SDK_VERSION%%.*}" -lt 26 ]; then
+          echo "App Store uploads require the iOS 26 SDK or newer."
+          exit 1
+        fi
 
-    # Build on every push to main. This lived only in the Codemagic UI
-    # before, so nothing in the repo said when a build runs; keeping it
-    # here means the trigger is reviewable and travels with the branch.
+workflows:
+  ios-check:
+    name: CalcAI iOS validation
+    working_directory: .
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      flutter: 3.44.2
+      xcode: latest
     triggering:
-      events:
-        - push
+      events: [push, pull_request]
       branch_patterns:
         - pattern: main
           include: true
           source: true
+        - pattern: main
+          include: true
+          source: false
       cancel_previous_builds: true
-    
-    environment:
-      flutter: stable
-      xcode: latest
-      groups:
-        - app_store_credentials
-
     scripts:
-      - name: Set up code signing
+      - *verify
+      - *sdk
+      - name: Compile the production iOS app
+        script: flutter build ios --release --no-codesign --no-pub --target lib/main.dart
+    artifacts:
+      - /tmp/xcodebuild_logs/*.log
+
+  ios-testflight:
+    name: CalcAI TestFlight candidate (manual)
+    working_directory: .
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    integrations:
+      app_store_connect: CalcAI
+    environment:
+      flutter: 3.44.2
+      xcode: latest
+      groups: [app_store_credentials]
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.calcai.calcaiApp
+    # Run manually after the release checklist is complete. Validation builds
+    # do not upload, and this workflow never submits to public App Review.
+    scripts:
+      - *verify
+      - *sdk
+      - name: Use configured signing identities
         script: |
+          set -euo pipefail
           keychain initialize
-      
-      - name: Create certificate and profiles
-        script: |
-          set -e  # fail fast on any error
-          
-          # Verify env var exists
-          if [ -z "$CERTIFICATE_PRIVATE_KEY" ]; then
-            echo "ERROR: CERTIFICATE_PRIVATE_KEY not set!"
-            echo "Add it in Codemagic > Environment variables > group: app_store_credentials"
-            exit 1
-          fi
-          
-          echo "$CERTIFICATE_PRIVATE_KEY" > /tmp/cert_key.pem
-          echo "Key written ($(wc -c < /tmp/cert_key.pem) bytes)"
-          
-          # Revoke ALL existing distribution certs so only ours remains
-          echo "Revoking any existing distribution certificates..."
-          app-store-connect certificates list \
-            --type IOS_DISTRIBUTION \
-            --save || true
-          
-          # Create fresh certificate with our persistent key
-          echo "Creating distribution certificate..."
-          app-store-connect certificates create \
-            --type IOS_DISTRIBUTION \
-            --certificate-key @file:/tmp/cert_key.pem \
-            --save || echo "Certificate may already exist for this key"
-          
-          # Force-create provisioning profile
-          echo "Fetching/creating provisioning profile..."
-          app-store-connect fetch-signing-files "com.calcai.calcaiApp" \
-            --type IOS_APP_STORE \
-            --certificate-key @file:/tmp/cert_key.pem \
-            --create
-          
-          echo "Signing setup complete"
-      
-      - name: Set up keychain and profiles
-        script: |
           keychain add-certificates
           xcode-project use-profiles
-      
-      - name: Get packages
+      - name: Build signed candidate
         script: |
-          flutter packages pub get
-      
-      - name: Build iOS
-        script: |
-          xcode-project use-profiles
-          # App Store Connect refuses a build number it has already
-          # accepted, and pubspec's is static -- so every upload after
-          # the first collided on 92 and the publish step failed.
-          #
-          # Not the commit count: Codemagic clones shallow, so it read
-          # 50 here against 143 locally, and 50 is below what has
-          # already been uploaded. Codemagic's own counter increments
-          # per build and does not depend on how much history was
-          # fetched; the offset clears the versions already on Apple.
-          # Falls back to minutes-since-epoch, which only ever grows,
-          # if that variable is ever missing.
-          if [ -n "$BUILD_NUMBER" ]; then
-            BUILD_NUM=$(( 1000 + BUILD_NUMBER ))
-          else
-            BUILD_NUM=$(( $(date +%s) / 60 ))
+          set -euo pipefail
+          : "${APP_STORE_APP_ID:?Set the numeric App Store app ID in app_store_credentials}"
+          : "${PROJECT_BUILD_NUMBER:?Codemagic project build counter is required}"
+          LATEST_BUILD=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APP_ID" --platform IOS --all-versions)
+          # Empty output after a successful lookup means there is no build yet.
+          LATEST_BUILD=${LATEST_BUILD:-0}
+          if ! [[ "$LATEST_BUILD" =~ ^[0-9]+$ ]]; then
+            echo "Latest Apple build is not an integer; review the version strategy."
+            exit 1
           fi
-          echo "Building as build number $BUILD_NUM"
-          flutter build ipa \
-            --release \
+          BUILD_NUM=$((LATEST_BUILD + 1))
+          COUNTER_BUILD=$((1000 + PROJECT_BUILD_NUMBER))
+          if [ "$COUNTER_BUILD" -gt "$BUILD_NUM" ]; then BUILD_NUM=$COUNTER_BUILD; fi
+          flutter build ipa --release --no-pub --target lib/main.dart \
             --build-number="$BUILD_NUM" \
             --export-options-plist=/Users/builder/export_options.plist
-    
+      - name: Check archived app privacy manifest
+        script: |
+          set -euo pipefail
+          APP=build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app
+          test -f "$APP/PrivacyInfo.xcprivacy"
+          plutil -lint "$APP/PrivacyInfo.xcprivacy" "$APP/Info.plist"
+          codesign --verify --deep --strict "$APP"
     artifacts:
       - build/ios/ipa/*.ipa
-    
+      - build/ios/archive/*.xcarchive
+      - /tmp/xcodebuild_logs/*.log
     publishing:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
+        submit_to_app_store: false

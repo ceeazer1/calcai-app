@@ -1,3 +1,5 @@
+import 'support/fake_cloud_service.dart';
+import 'support/fake_auth_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
@@ -13,10 +15,10 @@ void main() {
         providers: [
           ChangeNotifierProvider(create: (_) => BleService()),
           ChangeNotifierProvider<AuthService>(
-            create: (_) => PreviewAuthService(),
+            create: (_) => FakeAuthService(),
           ),
           ChangeNotifierProvider<CloudService>(
-            create: (_) => PreviewCloudService(),
+            create: (_) => FakeCloudService(),
           ),
         ],
         child: const CalcAIApp(),

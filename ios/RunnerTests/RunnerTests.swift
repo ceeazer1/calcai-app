@@ -4,9 +4,12 @@ import XCTest
 
 class RunnerTests: XCTestCase {
 
-  func testExample() {
-    // If you add code to the Runner application, consider adding tests here.
-    // See https://developer.apple.com/documentation/xctest for more information about using XCTest.
+  func testReleaseResourcesAreIncluded() {
+    let app = Bundle.main
+    XCTAssertEqual(app.bundleIdentifier, "com.calcai.calcaiApp")
+    XCTAssertNotNil(app.url(forResource: "PrivacyInfo", withExtension: "xcprivacy"))
+    XCTAssertNotNil(app.object(forInfoDictionaryKey: "NSBluetoothAlwaysUsageDescription"))
+    XCTAssertNotNil(app.object(forInfoDictionaryKey: "NSPhotoLibraryAddUsageDescription"))
   }
 
 }

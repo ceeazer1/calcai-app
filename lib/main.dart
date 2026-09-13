@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 
 import 'app.dart';
@@ -15,6 +16,14 @@ import 'services/cloud_service.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
+  LicenseRegistry.addLicense(() async* {
+    for (final family in ['inter', 'outfit', 'robotomono']) {
+      yield LicenseEntryWithLineBreaks([
+        family,
+      ], await rootBundle.loadString('assets/fonts/$family-OFL.txt'));
+    }
+  });
+
   // Force portrait orientation
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -22,12 +31,14 @@ void main() {
   ]);
 
   // Transparent status & navigation bars for the immersive dark UI
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.light,
-    systemNavigationBarColor: Color(0xFF09090B),
-    systemNavigationBarIconBrightness: Brightness.light,
-  ));
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+      systemNavigationBarColor: Color(0xFF09090B),
+      systemNavigationBarIconBrightness: Brightness.light,
+    ),
+  );
 
   runApp(
     MultiProvider(
@@ -40,4 +51,3 @@ void main() {
     ),
   );
 }
-

@@ -11,6 +11,7 @@ import 'app_colors.dart';
 abstract final class AppTheme {
   /// The global dark theme.
   static ThemeData get darkTheme {
+    GoogleFonts.config.allowRuntimeFetching = false;
     final colorScheme = ColorScheme.dark(
       brightness: Brightness.dark,
       primary: AppColors.electricBlue,
@@ -148,9 +149,7 @@ abstract final class AppTheme {
           color: AppColors.textPrimary,
           fontSize: 14,
         ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         behavior: SnackBarBehavior.floating,
       ),
 

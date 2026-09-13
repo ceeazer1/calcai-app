@@ -20,6 +20,8 @@ class GlassCard extends StatelessWidget {
     this.onTap,
     this.gradient,
     this.showBorderGradient = true,
+    this.borderColor,
+    this.borderWidth = 0.5,
   });
 
   /// Card contents.
@@ -45,6 +47,8 @@ class GlassCard extends StatelessWidget {
 
   /// Whether to show the gradient border effect.
   final bool showBorderGradient;
+  final Color? borderColor;
+  final double borderWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -73,7 +77,9 @@ class GlassCard extends StatelessWidget {
                     end: Alignment.bottomRight,
                   ),
               border: showBorderGradient
-                  ? Border.all(color: AppColors.glassBorder, width: 0.5)
+                  ? Border.all(
+                      color: borderColor ?? AppColors.glassBorder,
+                      width: borderWidth)
                   : null,
             ),
             child: Material(

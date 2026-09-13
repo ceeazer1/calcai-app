@@ -1,3 +1,5 @@
+import 'support/fake_cloud_service.dart';
+import 'support/fake_auth_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -8,9 +10,9 @@ import 'package:calcai_app/services/cloud_service.dart';
 
 void main() {
   testWidgets('saving a new note shows it in the list', (tester) async {
-    final auth = PreviewAuthService();
+    final auth = FakeAuthService();
     await auth.init();
-    final cloud = PreviewCloudService();
+    final cloud = FakeCloudService();
 
     await tester.pumpWidget(
       MultiProvider(
@@ -49,9 +51,9 @@ void main() {
   });
 
   testWidgets('the editor opens full screen with a back arrow', (tester) async {
-    final auth = PreviewAuthService();
+    final auth = FakeAuthService();
     await auth.init();
-    final cloud = PreviewCloudService();
+    final cloud = FakeCloudService();
 
     await tester.pumpWidget(
       MultiProvider(
@@ -77,9 +79,9 @@ void main() {
   });
 
   testWidgets('deleting a note asks first', (tester) async {
-    final auth = PreviewAuthService();
+    final auth = FakeAuthService();
     await auth.init();
-    final cloud = PreviewCloudService();
+    final cloud = FakeCloudService();
 
     await tester.pumpWidget(
       MultiProvider(

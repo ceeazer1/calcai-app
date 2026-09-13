@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -9,20 +7,14 @@ import '../services/ble_service.dart';
 import '../services/cloud_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/gradient_button.dart';
-import 'main_shell.dart';
+import '../app.dart';
 
 /// Success screen — shown after WiFi provisioning completes.
 ///
-/// Features an animated checkmark, the connected SSID name, and
-/// a "Done" button to return to the start.
+/// Features an animated link symbol and a large paired heading.
+/// The Home page button opens the main app.
 class SuccessScreen extends StatefulWidget {
-  const SuccessScreen({
-    super.key,
-    required this.ssid,
-  });
-
-  /// The SSID that was successfully connected.
-  final String ssid;
+  const SuccessScreen({super.key});
 
   @override
   State<SuccessScreen> createState() => _SuccessScreenState();
@@ -30,11 +22,11 @@ class SuccessScreen extends StatefulWidget {
 
 class _SuccessScreenState extends State<SuccessScreen>
     with TickerProviderStateMixin {
-  late final AnimationController _checkController;
+  late final AnimationController _pairController;
   late final AnimationController _contentController;
-  late final Animation<double> _checkScale;
-  late final Animation<double> _checkOpacity;
-  late final Animation<double> _strokeProgress;
+  late final Animation<double> _pairScale;
+  late final Animation<double> _pairOpacity;
+
   late final Animation<double> _contentFade;
   late final Animation<Offset> _contentSlide;
 
@@ -42,30 +34,23 @@ class _SuccessScreenState extends State<SuccessScreen>
   void initState() {
     super.initState();
 
-    // ── Checkmark animation ─────────────────────────────────────────
-    _checkController = AnimationController(
+    // ── Link animation ─────────────────────────────────────────
+    _pairController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     );
 
-    _checkScale = Tween<double>(begin: 0.0, end: 1.0).animate(
+    _pairScale = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
-        parent: _checkController,
+        parent: _pairController,
         curve: const Interval(0.0, 0.5, curve: Curves.elasticOut),
       ),
     );
 
-    _checkOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
+    _pairOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
-        parent: _checkController,
+        parent: _pairController,
         curve: const Interval(0.0, 0.3, curve: Curves.easeOut),
-      ),
-    );
-
-    _strokeProgress = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _checkController,
-        curve: const Interval(0.3, 0.8, curve: Curves.easeInOut),
       ),
     );
 
@@ -80,16 +65,16 @@ class _SuccessScreenState extends State<SuccessScreen>
       curve: Curves.easeOut,
     );
 
-    _contentSlide = Tween<Offset>(
-      begin: const Offset(0, 0.2),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _contentController,
-      curve: Curves.easeOutCubic,
-    ));
+    _contentSlide = Tween<Offset>(begin: const Offset(0, 0.2), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _contentController,
+            curve: Curves.easeOutCubic,
+          ),
+        );
 
     // Start animations
-    _checkController.forward();
+    _pairController.forward();
     Future.delayed(const Duration(milliseconds: 800), () {
       if (mounted) _contentController.forward();
     });
@@ -97,7 +82,7 @@ class _SuccessScreenState extends State<SuccessScreen>
 
   @override
   void dispose() {
-    _checkController.dispose();
+    _pairController.dispose();
     _contentController.dispose();
     super.dispose();
   }
@@ -123,8 +108,9 @@ class _SuccessScreenState extends State<SuccessScreen>
     // the calculator off on this page cannot orphan it. Keep the cloud claim as
     // a fallback for older entry paths, but do not submit the same claim twice.
     if (mac != null && auth.token != null) {
-      final normalised =
-          mac.replaceAll(RegExp(r'[^0-9a-zA-Z]'), '').toLowerCase();
+      final normalised = mac
+          .replaceAll(RegExp(r'[^0-9a-zA-Z]'), '')
+          .toLowerCase();
       if (!auth.deviceMacs.contains(normalised)) {
         final claimed = await cloud.claimDevice(
           auth.token!,
@@ -147,7 +133,7 @@ class _SuccessScreenState extends State<SuccessScreen>
 
     Navigator.of(context).pushAndRemoveUntil(
       PageRouteBuilder(
-        pageBuilder: (_, __, ___) => const MainShell(),
+        pageBuilder: (_, __, ___) => const AppGate(restoreSession: false),
         transitionDuration: const Duration(milliseconds: 500),
         transitionsBuilder: (context, animation, _, child) {
           return FadeTransition(
@@ -211,125 +197,80 @@ class _SuccessScreenState extends State<SuccessScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: AppColors.backgroundGradient,
-        ),
+        decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
         child: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.all(32),
+            padding: const EdgeInsets.all(28),
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Spacer(flex: 2),
-
-                // ── Animated checkmark ────────────────────────────
-                AnimatedBuilder(
-                  animation: _checkController,
-                  builder: (context, _) {
-                    return Opacity(
-                      opacity: _checkOpacity.value,
-                      child: Transform.scale(
-                        scale: _checkScale.value,
-                        child: Container(
-                          width: 120,
-                          height: 120,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: LinearGradient(
-                              colors: [
-                                AppColors.accentBlue.withOpacity(0.15),
-                                AppColors.electricBlue.withOpacity(0.08),
-                              ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.accentBlue.withOpacity(0.2),
-                                blurRadius: 40,
-                                spreadRadius: 10,
-                              ),
-                            ],
-                          ),
-                          child: CustomPaint(
-                            painter: _CheckmarkPainter(
-                              progress: _strokeProgress.value,
-                              color: AppColors.accentBlue,
-                              strokeWidth: 4,
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-
-                const SizedBox(height: 40),
-
-                // ── Success text ──────────────────────────────────
-                SlideTransition(
-                  position: _contentSlide,
-                  child: FadeTransition(
-                    opacity: _contentFade,
+                Expanded(
+                  child: Center(
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        ShaderMask(
-                          shaderCallback: (bounds) =>
-                              AppColors.accentGradient.createShader(bounds),
-                          child: Text(
-                            'Device Paired',
-                            style: GoogleFonts.outfit(
-                              fontSize: 32,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        RichText(
-                          textAlign: TextAlign.center,
-                          text: TextSpan(
-                            style: GoogleFonts.inter(
-                              fontSize: 15,
-                              color: AppColors.textSecondary,
-                            ),
-                            children: [
-                              const TextSpan(
-                                  text:
-                                      'Your CalcAI is online and ready.\nConnected to '),
-                              TextSpan(
-                                text: widget.ssid,
-                                style: GoogleFonts.inter(
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.electricBlue,
+                        AnimatedBuilder(
+                          animation: _pairController,
+                          builder: (context, _) => Opacity(
+                            opacity: _pairOpacity.value,
+                            child: Transform.scale(
+                              scale: _pairScale.value,
+                              child: ShaderMask(
+                                shaderCallback: (bounds) =>
+                                    const LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [
+                                        Color(0xFFF5F6FA),
+                                        Color(0xFFA5ADBC),
+                                      ],
+                                    ).createShader(bounds),
+                                child: const Icon(
+                                  Icons.link_rounded,
+                                  size: 112,
+                                  color: Colors.white,
+                                  semanticLabel: 'Device linked',
+                                  shadows: [
+                                    Shadow(
+                                      color: Color(0x507F879B),
+                                      blurRadius: 28,
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        SlideTransition(
+                          position: _contentSlide,
+                          child: FadeTransition(
+                            opacity: _contentFade,
+                            child: Text(
+                              'Device paired',
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.outfit(
+                                fontSize: 44,
+                                height: 1.12,
+                                letterSpacing: -1,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
                 ),
-
-                const Spacer(flex: 3),
-
-                // ── Done button ──────────────────────────────────
-                SlideTransition(
-                  position: _contentSlide,
-                  child: FadeTransition(
-                    opacity: _contentFade,
-                    child: GradientButton(
-                      label: 'Done',
-                      icon: Icons.check_circle_outline_rounded,
-                      onPressed: _onDone,
-                      width: double.infinity,
-                    ),
+                FadeTransition(
+                  opacity: _contentFade,
+                  child: GradientButton(
+                    label: 'Home page',
+                    icon: Icons.home_rounded,
+                    onPressed: _onDone,
+                    width: double.infinity,
                   ),
                 ),
-
                 const SizedBox(height: 16),
               ],
             ),
@@ -337,76 +278,5 @@ class _SuccessScreenState extends State<SuccessScreen>
         ),
       ),
     );
-  }
-}
-
-/// Draws an animated checkmark stroke.
-class _CheckmarkPainter extends CustomPainter {
-  _CheckmarkPainter({
-    required this.progress,
-    required this.color,
-    required this.strokeWidth,
-  });
-
-  final double progress;
-  final Color color;
-  final double strokeWidth;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    // Circle outline
-    final circlePaint = Paint()
-      ..color = color.withOpacity(0.3)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = math.min(size.width, size.height) / 2 - strokeWidth;
-
-    canvas.drawCircle(center, radius, circlePaint);
-
-    if (progress <= 0) return;
-
-    // Checkmark path
-    final path = Path();
-    final startX = size.width * 0.28;
-    final startY = size.height * 0.52;
-    final midX = size.width * 0.44;
-    final midY = size.height * 0.66;
-    final endX = size.width * 0.72;
-    final endY = size.height * 0.38;
-
-    path.moveTo(startX, startY);
-
-    if (progress <= 0.5) {
-      // First stroke segment (going down-right)
-      final t = progress / 0.5;
-      path.lineTo(
-        startX + (midX - startX) * t,
-        startY + (midY - startY) * t,
-      );
-    } else {
-      // Complete first segment and draw second
-      path.lineTo(midX, midY);
-      final t = (progress - 0.5) / 0.5;
-      path.lineTo(
-        midX + (endX - midX) * t,
-        midY + (endY - midY) * t,
-      );
-    }
-
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _CheckmarkPainter oldDelegate) {
-    return oldDelegate.progress != progress;
   }
 }

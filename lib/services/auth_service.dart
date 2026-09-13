@@ -78,8 +78,10 @@ class AuthService extends ChangeNotifier {
     const charset =
         '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-._';
     final random = Random.secure();
-    return List.generate(length, (_) => charset[random.nextInt(charset.length)])
-        .join();
+    return List.generate(
+      length,
+      (_) => charset[random.nextInt(charset.length)],
+    ).join();
   }
 
   // ── State ─────────────────────────────────────────────────────────────
@@ -151,11 +153,9 @@ class AuthService extends ChangeNotifier {
   ///
   /// Accepts optional [secureStorage] and [httpClient] for testability;
   /// production callers can rely on the defaults.
-  AuthService({
-    FlutterSecureStorage? secureStorage,
-    http.Client? httpClient,
-  })  : _secureStorage = secureStorage ?? _tokenStorage,
-        _httpClient = httpClient ?? createResilientClient();
+  AuthService({FlutterSecureStorage? secureStorage, http.Client? httpClient})
+    : _secureStorage = secureStorage ?? _tokenStorage,
+      _httpClient = httpClient ?? createResilientClient();
 
   // ── Initialisation ────────────────────────────────────────────────────
 
@@ -200,8 +200,8 @@ class AuthService extends ChangeNotifier {
       final savedPrimary = _normaliseDeviceMac(prefs.getString(_keyPrimaryMac));
       _primaryMac =
           _isUsableDeviceMac(savedPrimary) && _deviceMacs.contains(savedPrimary)
-              ? savedPrimary
-              : (_deviceMacs.isEmpty ? null : _deviceMacs.first);
+          ? savedPrimary
+          : (_deviceMacs.isEmpty ? null : _deviceMacs.first);
 
       _isAuthenticated = _token != null;
     } catch (e) {
@@ -249,6 +249,7 @@ class AuthService extends ChangeNotifier {
             },
             body: jsonEncode({
               'identityToken': identityToken,
+              'authorizationCode': credential.authorizationCode,
               // The Worker verifies that Apple's signed token belongs to this
               // exact sign-in attempt, preventing replayed identity tokens.
               'rawNonce': rawNonce,
@@ -265,7 +266,8 @@ class AuthService extends ChangeNotifier {
       _token = data['token'] as String?;
       _email = data['email'] as String?;
       // Apple only sends givenName on the FIRST sign-in
-      _username = credential.givenName ??
+      _username =
+          credential.givenName ??
           credential.familyName ??
           _email?.split('@').first ??
           'User';
@@ -360,16 +362,18 @@ class AuthService extends ChangeNotifier {
 
   /// Creates an account with an email and password.
   ///
-  /// POST /ai/auth/register. The backend stores the password as PBKDF2-SHA256
-  /// and returns a session token, so a successful sign-up also signs the user
-  /// in — there is no second round trip.
+  /// POST /ai/auth/register. A new account must verify its email before
+  /// receiving a session; the outcome routes to the verification screen.
   Future<EmailAuthOutcome> signUpWithEmail(String email, String password) =>
       _emailAuth('/auth/register', email, password);
 
   /// Shared body for the two email flows. They differ only by path and by
   /// which errors the backend can return.
   Future<EmailAuthOutcome> _emailAuth(
-      String path, String email, String password) async {
+    String path,
+    String email,
+    String password,
+  ) async {
     _error = null;
     _setLoading(true);
     try {
@@ -377,10 +381,7 @@ class AuthService extends ChangeNotifier {
           .post(
             Uri.parse('$_baseUrl$path'),
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'email': email.trim(),
-              'password': password,
-            }),
+            body: jsonEncode({'email': email.trim(), 'password': password}),
           )
           .timeout(const Duration(seconds: 30));
 
@@ -722,9 +723,7 @@ class AuthService extends ChangeNotifier {
         await _saveToStorage();
         notifyListeners();
       } else {
-        logDebug(
-          'AuthService.fetchDevices failed: ${response.statusCode}',
-        );
+        logDebug('AuthService.fetchDevices failed: ${response.statusCode}');
       }
     } catch (e) {
       logDebug('AuthService.fetchDevices error: $e');
@@ -801,19 +800,53 @@ class AuthService extends ChangeNotifier {
     _setLoading(true);
 
     try {
-      final response = await _httpClient.delete(
-        Uri.parse('$_baseUrl/account/delete'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $_token',
-        },
-      ).timeout(const Duration(seconds: 30));
+      var response = await _httpClient
+          .delete(
+            Uri.parse('$_baseUrl/account/delete'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $_token',
+            },
+          )
+          .timeout(const Duration(seconds: 30));
+
+      if (response.statusCode == 409 &&
+          (jsonDecode(response.body) as Map<String, dynamic>)['error'] ==
+              'apple_reauthorization_required') {
+        // Older accounts predate server-side refresh-token storage. Reauthorize
+        // the same Apple identity; the backend binds it to the current account.
+        final rawNonce = _generateNonce();
+        final credential = await SignInWithApple.getAppleIDCredential(
+          scopes: [AppleIDAuthorizationScopes.email],
+          nonce: sha256.convert(utf8.encode(rawNonce)).toString(),
+        );
+        response = await _httpClient
+            .post(
+              Uri.parse('$_baseUrl/account/delete'),
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer $_token',
+              },
+              body: jsonEncode({
+                'identityToken': credential.identityToken,
+                'authorizationCode': credential.authorizationCode,
+                'rawNonce': rawNonce,
+              }),
+            )
+            .timeout(const Duration(seconds: 45));
+      }
 
       if (response.statusCode != 200) {
         String message = 'Failed to delete account (${response.statusCode}).';
         try {
           final body = jsonDecode(response.body) as Map<String, dynamic>;
-          message = body['error']?.toString() ?? message;
+          message = switch (body['error']) {
+            'apple_not_configured' || 'apple_revocation_failed' =>
+              'Apple could not complete account deletion. Please try again later.',
+            'apple_identity_mismatch' =>
+              'Use the Apple account originally linked to CalcAI.',
+            _ => 'Account deletion did not finish. Please try again.',
+          };
         } catch (_) {}
         return message;
       }
@@ -920,74 +953,5 @@ class AuthService extends ChangeNotifier {
   void dispose() {
     _httpClient.close();
     super.dispose();
-  }
-}
-
-/// Test double for [AuthService] that boots signed-in with a paired device.
-///
-/// Constructed only by tests — nothing in lib/ instantiates it. It fakes the
-/// session and pairing so widgets can be pumped without a network; it does not
-/// fabricate any user content.
-class PreviewAuthService extends AuthService {
-  @override
-  Future<void> init() async {
-    _isAuthenticated = true;
-    _username = 'Preview';
-    _email = 'preview@calcai.cc';
-    _token = 'preview-token';
-    _deviceMacs = ['ca1ca1000001'];
-    _primaryMac = 'ca1ca1000001';
-    _error = null;
-    notifyListeners();
-  }
-
-  @override
-  Future<void> fetchDevices() async {}
-
-  @override
-  Future<String?> signInWithApple() async {
-    await init();
-    return null;
-  }
-
-  @override
-  Future<bool> signInWithGoogle() async {
-    await init();
-    return true;
-  }
-
-  @override
-  Future<EmailAuthOutcome> signInWithEmail(
-      String email, String password) async {
-    await init();
-    return EmailAuthOutcome.success;
-  }
-
-  @override
-  Future<EmailAuthOutcome> signUpWithEmail(
-      String email, String password) async {
-    await init();
-    return EmailAuthOutcome.success;
-  }
-
-  @override
-  Future<bool> verifyEmailCode(String email, String code) async {
-    await init();
-    return true;
-  }
-
-  @override
-  Future<void> resendVerificationCode(String email) async {}
-
-  @override
-  Future<void> requestPasswordReset(String email) async {}
-
-  @override
-  Future<bool> verifyResetCode(String email, String code) async => true;
-
-  @override
-  Future<bool> resetPassword(String email, String code, String password) async {
-    await init();
-    return true;
   }
 }

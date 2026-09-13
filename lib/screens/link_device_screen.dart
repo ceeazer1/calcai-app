@@ -9,6 +9,7 @@ import '../services/cloud_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/app_settings.dart';
 import '../widgets/scanning_animation.dart';
+import '../widgets/silver_shimmer_name.dart';
 import 'pair_device_screen.dart';
 import 'wifi_setup_screen.dart';
 
@@ -26,6 +27,7 @@ class LinkDeviceScreen extends StatefulWidget {
 }
 
 class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
+  late final BleService _ble;
   _Phase _phase = _Phase.idle;
   String? _error;
 
@@ -36,12 +38,13 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
   @override
   void initState() {
     super.initState();
-    context.read<BleService>().addListener(_onBleChanged);
+    _ble = context.read<BleService>();
+    _ble.addListener(_onBleChanged);
   }
 
   @override
   void dispose() {
-    context.read<BleService>().removeListener(_onBleChanged);
+    _ble.removeListener(_onBleChanged);
     super.dispose();
   }
 
@@ -305,7 +308,9 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
   @override
   Widget build(BuildContext context) {
     final busy = _phase != _Phase.idle;
-    final revoked = context.watch<AuthService>().unpairedNotice;
+    final auth = context.watch<AuthService>();
+    final revoked = auth.unpairedNotice;
+    final firstName = auth.username?.trim().split(RegExp(r'\s+')).first ?? '';
 
     return Scaffold(
       body: Container(
@@ -355,35 +360,37 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
                         : Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
-                                revoked
-                                    ? Icons.link_off_rounded
-                                    : Icons.bluetooth_rounded,
-                                size: 40,
-                                color: revoked
-                                    ? AppColors.warning
-                                    : AppColors.electricBlue,
-                              ),
-                              const SizedBox(height: 18),
+                              if (revoked) ...[
+                                const Icon(Icons.link_off_rounded,
+                                    size: 40, color: AppColors.warning),
+                                const SizedBox(height: 18),
+                              ],
                               Text(
                                 revoked
                                     ? 'Calculator unpaired'
-                                    : 'Pair your device',
+                                    : firstName.isEmpty
+                                        ? 'Welcome'
+                                        : 'Welcome,',
                                 textAlign: TextAlign.center,
                                 style: GoogleFonts.outfit(
-                                  fontSize: 26,
+                                  fontSize: revoked ? 26 : 42,
+                                  height: 1.12,
+                                  letterSpacing: -0.8,
                                   fontWeight: FontWeight.w600,
                                   color: AppColors.textPrimary,
                                 ),
                               ),
-                              if (revoked) ...[
-                                const SizedBox(height: 8),
+                              if (!revoked && firstName.isNotEmpty)
+                                SilverShimmerName(name: firstName),
+                              ...[
+                                const SizedBox(height: 16),
                                 Text(
-                                  'Your calculator was removed from this '
-                                  'account.',
+                                  revoked
+                                      ? 'Your calculator was removed from this account.'
+                                      : 'Let’s pair your new CalcAI device.',
                                   textAlign: TextAlign.center,
                                   style: GoogleFonts.inter(
-                                    fontSize: 14,
+                                    fontSize: 15,
                                     height: 1.45,
                                     color: AppColors.textSecondary,
                                   ),
@@ -447,7 +454,7 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.electricBlue,
                       disabledBackgroundColor: AppColors.surfaceLight,
-                      foregroundColor: Colors.white,
+                      foregroundColor: AppColors.textOnAccent,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
@@ -470,20 +477,6 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
                   ),
                 ),
 
-                const SizedBox(height: 8),
-                TextButton(
-                  onPressed: busy
-                      ? null
-                      : () => context.read<AuthService>().skipSetup(),
-                  child: Text(
-                    'Set up later',
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: AppColors.textTertiary,
-                    ),
-                  ),
-                ),
                 const SizedBox(height: 20),
               ],
             ),

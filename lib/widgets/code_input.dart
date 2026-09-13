@@ -32,10 +32,12 @@ class CodeInput extends StatefulWidget {
 
 class _CodeInputState extends State<CodeInput> {
   final _focus = FocusNode();
+  late String _lastText;
 
   @override
   void initState() {
     super.initState();
+    _lastText = widget.controller.text;
     widget.controller.addListener(_onChanged);
     _focus.addListener(() => setState(() {}));
   }
@@ -48,8 +50,12 @@ class _CodeInputState extends State<CodeInput> {
   }
 
   void _onChanged() {
+    final changed = widget.controller.text != _lastText;
+    _lastText = widget.controller.text;
     setState(() {});
-    if (widget.controller.text.length == widget.length) {
+    if (changed &&
+        widget.enabled &&
+        widget.controller.text.length == widget.length) {
       widget.onCompleted?.call(widget.controller.text);
     }
   }
@@ -69,10 +75,12 @@ class _CodeInputState extends State<CodeInput> {
             children: List.generate(widget.length, (i) {
               final filled = i < text.length;
               // Highlight where the next digit will land.
-              final active = _focus.hasFocus && i == text.length.clamp(0, widget.length - 1);
+              final active = _focus.hasFocus &&
+                  i == text.length.clamp(0, widget.length - 1);
               return Expanded(
                 child: Padding(
-                  padding: EdgeInsets.only(right: i == widget.length - 1 ? 0 : 8),
+                  padding:
+                      EdgeInsets.only(right: i == widget.length - 1 ? 0 : 8),
                   child: AspectRatio(
                     aspectRatio: 1,
                     child: AnimatedContainer(
@@ -103,12 +111,12 @@ class _CodeInputState extends State<CodeInput> {
             }),
           ),
 
-          // The real input, invisible but on top so taps and the caret land
-          // here. Opacity rather than Offstage: an offstage field cannot hold
-          // focus or receive autofill.
+          // Keep the actual field painted and accessible so Flutter web can
+          // focus its native input. Only its text is transparent: Opacity(0)
+          // removes the editable field from the browser accessibility tree.
           Positioned.fill(
-            child: Opacity(
-              opacity: 0,
+            child: Semantics(
+              label: 'Pairing code',
               child: TextField(
                 controller: widget.controller,
                 focusNode: _focus,
@@ -122,8 +130,14 @@ class _CodeInputState extends State<CodeInput> {
                 showCursor: false,
                 style: const TextStyle(color: Colors.transparent),
                 decoration: const InputDecoration(
+                  filled: false,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
                   counterText: '',
                   border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
                 ),
               ),
             ),

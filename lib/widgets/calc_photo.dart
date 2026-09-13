@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../services/auth_service.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../screens/photo_view_screen.dart';
@@ -50,7 +52,10 @@ class _CalcPhotoState extends State<CalcPhoto> {
       child: ClipRRect(
         borderRadius: radius,
         child: Image(
-          image: ResilientNetworkImage(widget.imageUrl),
+          image: ResilientNetworkImage(
+            widget.imageUrl,
+            token: context.read<AuthService>().token,
+          ),
           key: ValueKey('${widget.imageUrl}#$_attempt'),
           width: double.infinity,
           height: widget.height,
@@ -76,8 +81,11 @@ class _CalcPhotoState extends State<CalcPhoto> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.refresh_rounded,
-                      color: AppColors.textTertiary, size: 26),
+                  const Icon(
+                    Icons.refresh_rounded,
+                    color: AppColors.textTertiary,
+                    size: 26,
+                  ),
                   const SizedBox(height: 6),
                   Text(
                     'Tap to load photo',

@@ -7,8 +7,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 
-/// Hostnames we resolve via DNS-over-HTTPS and connect to over a manually
-/// TLS-wrapped socket. Everything else uses the normal client.
+/// Hosts with an optional DNS-over-HTTPS fallback. Native hostname resolution
+/// runs first so IPv6 and network-specific DNS64/NAT64 synthesis can work.
 const Set<String> _dohHosts = {'ai.calcai.cc'};
 
 /// DoH JSON endpoints, addressed **by IP** so no bootstrap DNS is needed. We
@@ -59,17 +59,19 @@ Future<String?> _firstNonNull(List<Future<String?>> futures) {
   var remaining = futures.length;
   if (remaining == 0) return Future.value(null);
   for (final f in futures) {
-    f.then((v) {
-      remaining--;
-      if (v != null && v.isNotEmpty) {
-        if (!c.isCompleted) c.complete(v);
-      } else if (remaining == 0 && !c.isCompleted) {
-        c.complete(null);
-      }
-    }).catchError((_) {
-      remaining--;
-      if (remaining == 0 && !c.isCompleted) c.complete(null);
-    });
+    f
+        .then((v) {
+          remaining--;
+          if (v != null && v.isNotEmpty) {
+            if (!c.isCompleted) c.complete(v);
+          } else if (remaining == 0 && !c.isCompleted) {
+            c.complete(null);
+          }
+        })
+        .catchError((_) {
+          remaining--;
+          if (remaining == 0 && !c.isCompleted) c.complete(null);
+        });
   }
   return c.future;
 }
@@ -83,16 +85,17 @@ Future<String?> _resolveViaDoh(String host) async {
     _dohEndpoints.map((e) => _queryDoh(e, host)).toList(),
   );
   if (ip != null) {
-    _dohCache[host] =
-        _DohEntry(ip, DateTime.now().add(const Duration(minutes: 5)));
+    _dohCache[host] = _DohEntry(
+      ip,
+      DateTime.now().add(const Duration(minutes: 5)),
+    );
   }
   return ip;
 }
 
-/// An [http.Client] that, for our API host, resolves the IP via DoH and talks
-/// to it over a socket TLS-wrapped with the real hostname as SNI. This is
-/// immune to routers/ISPs that hijack or block the domain at the DNS layer
-/// (Dart's HttpClient can't do DoH + custom SNI, so we do the request by hand).
+/// Connects by hostname first, preserving IPv6 support. If connecting fails,
+/// tries DoH with the original hostname for certificate verification and SNI.
+/// Only connection establishment is retried; requests are never replayed.
 http.Client createResilientClient() {
   // dart:io (HttpClient / Socket / IOClient) doesn't exist on web — touching it
   // throws `Unsupported operation: Platform._version` and takes down every
@@ -124,52 +127,71 @@ class _ResilientClient extends http.BaseClient {
     final uri = request.url;
     final host = uri.host;
     final port = uri.hasPort ? uri.port : 443;
-    final ip = await _resolveViaDoh(host) ?? host;
-
-    final raw = await Socket.connect(ip, port,
-        timeout: const Duration(seconds: 12));
     SecureSocket tls;
     try {
-      tls = await SecureSocket.secure(raw, host: host)
-          .timeout(const Duration(seconds: 12));
-    } catch (e) {
+      tls = await _connectTls(host, host, port);
+    } catch (_) {
+      final ip = await _resolveViaDoh(host);
+      if (ip == null) rethrow;
+      tls = await _connectTls(ip, host, port);
+    }
+
+    try {
+      final bodyBytes = await request.finalize().toBytes();
+
+      final path = uri.path.isEmpty ? '/' : uri.path;
+      final query = uri.hasQuery ? '?${uri.query}' : '';
+      final head = StringBuffer()
+        ..write('${request.method} $path$query HTTP/1.1\r\n')
+        ..write('Host: $host\r\n');
+      request.headers.forEach((k, v) {
+        final lk = k.toLowerCase();
+        // We manage these ourselves.
+        if (lk == 'host' ||
+            lk == 'content-length' ||
+            lk == 'connection' ||
+            lk == 'accept-encoding') {
+          return;
+        }
+        head.write('$k: $v\r\n');
+      });
+      head
+        ..write('Accept-Encoding: identity\r\n')
+        ..write('Content-Length: ${bodyBytes.length}\r\n')
+        ..write('Connection: close\r\n\r\n');
+
+      tls.add(utf8.encode(head.toString()));
+      if (bodyBytes.isNotEmpty) tls.add(bodyBytes);
+      await tls.flush();
+
+      // Connection: close → read until EOF, then parse.
+      final resBytes = await _readAll(tls).timeout(const Duration(seconds: 35));
+
+      return _parse(resBytes, request);
+    } finally {
+      tls.destroy();
+    }
+  }
+
+  Future<SecureSocket> _connectTls(
+    String address,
+    String host,
+    int port,
+  ) async {
+    final raw = await Socket.connect(
+      address,
+      port,
+      timeout: const Duration(seconds: 5),
+    );
+    try {
+      return await SecureSocket.secure(
+        raw,
+        host: host,
+      ).timeout(const Duration(seconds: 8));
+    } catch (_) {
       raw.destroy();
       rethrow;
     }
-
-    final bodyBytes = await request.finalize().toBytes();
-
-    final path = uri.path.isEmpty ? '/' : uri.path;
-    final query = uri.hasQuery ? '?${uri.query}' : '';
-    final head = StringBuffer()
-      ..write('${request.method} $path$query HTTP/1.1\r\n')
-      ..write('Host: $host\r\n');
-    request.headers.forEach((k, v) {
-      final lk = k.toLowerCase();
-      // We manage these ourselves.
-      if (lk == 'host' ||
-          lk == 'content-length' ||
-          lk == 'connection' ||
-          lk == 'accept-encoding') {
-        return;
-      }
-      head.write('$k: $v\r\n');
-    });
-    head
-      ..write('Accept-Encoding: identity\r\n')
-      ..write('Content-Length: ${bodyBytes.length}\r\n')
-      ..write('Connection: close\r\n\r\n');
-
-    tls.add(utf8.encode(head.toString()));
-    if (bodyBytes.isNotEmpty) tls.add(bodyBytes);
-    await tls.flush();
-
-    // Connection: close → read until EOF, then parse.
-    final resBytes =
-        await _readAll(tls).timeout(const Duration(seconds: 35));
-    tls.destroy();
-
-    return _parse(resBytes, request);
   }
 
   /// Largest response body we will buffer.
@@ -211,8 +233,9 @@ class _ResilientClient extends http.BaseClient {
     final lines = headText.split('\r\n');
     final statusLine = lines.isNotEmpty ? lines.first : 'HTTP/1.1 502';
     final parts = statusLine.split(' ');
-    final statusCode =
-        parts.length >= 2 ? (int.tryParse(parts[1]) ?? 502) : 502;
+    final statusCode = parts.length >= 2
+        ? (int.tryParse(parts[1]) ?? 502)
+        : 502;
     final reason = parts.length >= 3 ? parts.sublist(2).join(' ') : null;
 
     final headers = <String, String>{};
@@ -225,7 +248,9 @@ class _ResilientClient extends http.BaseClient {
       headers[key] = headers.containsKey(key) ? '${headers[key]}, $val' : val;
     }
 
-    if ((headers['transfer-encoding'] ?? '').toLowerCase().contains('chunked')) {
+    if ((headers['transfer-encoding'] ?? '').toLowerCase().contains(
+      'chunked',
+    )) {
       body = _dechunk(body);
     }
     if ((headers['content-encoding'] ?? '').toLowerCase().contains('gzip')) {
@@ -255,7 +280,11 @@ class _ResilientClient extends http.BaseClient {
         j++;
       }
       if (j + 1 >= data.length) break;
-      final sizeLine = latin1.decode(data.sublist(i, j)).split(';').first.trim();
+      final sizeLine = latin1
+          .decode(data.sublist(i, j))
+          .split(';')
+          .first
+          .trim();
       final size = int.tryParse(sizeLine, radix: 16) ?? 0;
       i = j + 2; // skip CRLF
       if (size == 0) break;

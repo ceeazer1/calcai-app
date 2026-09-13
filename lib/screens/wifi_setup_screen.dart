@@ -9,10 +9,9 @@ import '../models/wifi_network.dart';
 import '../services/auth_service.dart';
 import '../services/ble_service.dart';
 import '../theme/app_colors.dart';
-import '../widgets/glass_card.dart';
 import '../widgets/gradient_button.dart';
 import '../widgets/wifi_network_tile.dart';
-import 'main_shell.dart';
+import '../app.dart';
 import 'success_screen.dart';
 
 /// WiFi setup screen — lists networks discovered by the ESP32 and
@@ -30,19 +29,24 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
   late final Animation<double> _fadeIn;
 
   String? _connectingSsid;
+  WifiNetwork? _selectedNetwork;
+  final _password = TextEditingController();
+  final _networkScroll = ScrollController();
+  String? _passwordError;
+  bool _obscure = true;
+  bool _iphoneHotspot = false;
+  late final BleService _ble;
 
   @override
   void initState() {
     super.initState();
+    _ble = context.read<BleService>();
 
     _enterController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
     );
-    _fadeIn = CurvedAnimation(
-      parent: _enterController,
-      curve: Curves.easeOut,
-    );
+    _fadeIn = CurvedAnimation(parent: _enterController, curve: Curves.easeOut);
     _enterController.forward();
 
     // Tell the calculator what this authenticated connection is doing, then
@@ -58,171 +62,133 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
   void dispose() {
     // Best effort only. A disconnect also clears this volatile firmware flag,
     // so an interrupted route can never leave the device stuck in Wi-Fi mode.
-    unawaited(context.read<BleService>().setWifiUiMode(false));
+    unawaited(_ble.setWifiUiMode(false));
     _enterController.dispose();
+    _password.dispose();
+    _networkScroll.dispose();
     super.dispose();
   }
 
-  Future<void> _onNetworkTapped(WifiNetwork network) async {
-    if (network.isSecured) {
-      final details = await _showPasswordDialog(network.ssid);
-      if (details == null) return; // User cancelled
-      _provisionWifi(
-        network.ssid,
-        details.password,
-        iphoneHotspot: details.iphoneHotspot,
+  void _onNetworkTapped(WifiNetwork network) {
+    if (_connectingSsid != null) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _selectedNetwork = _selectedNetwork?.ssid == network.ssid
+          ? null
+          : network;
+      _password.clear();
+      _passwordError = null;
+      _obscure = true;
+      _iphoneHotspot = false;
+    });
+    if (_networkScroll.hasClients) {
+      _networkScroll.animateTo(
+        0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
       );
-    } else {
-      _provisionWifi(network.ssid, '');
     }
   }
 
-  Future<({String password, bool iphoneHotspot})?> _showPasswordDialog(
-      String ssid) async {
-    final controller = TextEditingController();
-    bool obscure = true;
-    bool iphoneHotspot = false;
+  void _connectSelected() {
+    final network = _selectedNetwork;
+    if (network == null || _connectingSsid != null) return;
+    if (network.isSecured && _password.text.isEmpty) {
+      setState(() => _passwordError = 'Enter the network password.');
+      return;
+    }
+    FocusScope.of(context).unfocus();
+    _provisionWifi(
+      network.ssid,
+      network.isSecured ? _password.text : '',
+      iphoneHotspot: _iphoneHotspot,
+    );
+  }
 
-    return showDialog<({String password, bool iphoneHotspot})>(
-      context: context,
-      barrierColor: AppColors.scrim,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setDialogState) {
-            return AlertDialog(
-              backgroundColor: AppColors.surface,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
-                side: const BorderSide(
-                  color: AppColors.glassBorder,
-                  width: 0.5,
-                ),
-              ),
-              title: Column(
-                children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: AppColors.electricBlue.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Icon(
-                      Icons.wifi_lock_rounded,
-                      color: AppColors.electricBlue,
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    ssid,
-                    style: GoogleFonts.outfit(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Enter the WiFi password to connect your CalcAI device.',
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      color: AppColors.textSecondary,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 20),
-                  TextField(
-                    controller: controller,
-                    obscureText: obscure,
-                    autofocus: true,
-                    style: GoogleFonts.inter(
-                      color: AppColors.textPrimary,
-                      fontSize: 15,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: 'Password',
-                      prefixIcon: const Icon(
-                        Icons.lock_outline_rounded,
-                        size: 20,
-                        color: AppColors.textTertiary,
-                      ),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          obscure
-                              ? Icons.visibility_off_rounded
-                              : Icons.visibility_rounded,
-                          size: 20,
-                          color: AppColors.textTertiary,
-                        ),
-                        onPressed: () {
-                          setDialogState(() => obscure = !obscure);
-                        },
-                      ),
-                    ),
-                    onSubmitted: (value) {
-                      if (value.isNotEmpty) {
-                        Navigator.pop(ctx, (
-                          password: value,
-                          iphoneHotspot: iphoneHotspot,
-                        ));
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  SwitchListTile.adaptive(
-                    contentPadding: EdgeInsets.zero,
-                    value: iphoneHotspot,
-                    activeColor: AppColors.lightBlue,
-                    title: Text(
-                      'iPhone hotspot',
-                      style: GoogleFonts.inter(
-                        color: AppColors.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    subtitle: Text(
-                      'Keep it active while your iPhone is locked.',
-                      style: GoogleFonts.inter(
-                        color: AppColors.textTertiary,
-                        fontSize: 11,
-                      ),
-                    ),
-                    onChanged: (value) =>
-                        setDialogState(() => iphoneHotspot = value),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: Text(
-                    'Cancel',
-                    style: GoogleFonts.inter(color: AppColors.textTertiary),
+  Widget _networkDetails() {
+    final secured = _selectedNetwork?.isSecured ?? false;
+    final busy = _connectingSsid != null;
+    return Padding(
+      padding: const EdgeInsets.only(top: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Divider(height: 1, color: AppColors.glassBorder),
+          const SizedBox(height: 18),
+          if (secured)
+            TextField(
+              controller: _password,
+              enabled: !busy,
+              obscureText: _obscure,
+              autocorrect: false,
+              enableSuggestions: false,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _connectSelected(),
+              onChanged: (_) {
+                if (_passwordError != null) {
+                  setState(() => _passwordError = null);
+                }
+              },
+              decoration: InputDecoration(
+                labelText: 'Wi-Fi password',
+                errorText: _passwordError,
+                suffixIcon: IconButton(
+                  tooltip: _obscure ? 'Show password' : 'Hide password',
+                  onPressed: busy
+                      ? null
+                      : () => setState(() => _obscure = !_obscure),
+                  icon: Icon(
+                    _obscure
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                    size: 20,
+                    color: AppColors.textSecondary,
                   ),
                 ),
-                ElevatedButton(
-                  onPressed: () {
-                    if (controller.text.isNotEmpty) {
-                      Navigator.pop(ctx, (
-                        password: controller.text,
-                        iphoneHotspot: iphoneHotspot,
-                      ));
-                    }
-                  },
-                  child: const Text('Connect'),
+              ),
+            )
+          else
+            Text(
+              'No password needed.',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          const SizedBox(height: 8),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            value: _iphoneHotspot,
+            activeTrackColor: AppColors.textSecondary,
+            title: Text(
+              'iPhone hotspot',
+              maxLines: 1,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            onChanged: busy
+                ? null
+                : (value) => setState(() => _iphoneHotspot = value),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 46,
+            child: ElevatedButton(
+              onPressed: busy ? null : _connectSelected,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.textPrimary,
+                foregroundColor: AppColors.background,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-              ],
-            );
-          },
-        );
-      },
+              ),
+              child: const Text('Connect'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -254,7 +220,7 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
   void _navigateToSuccess(String ssid) {
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
-        pageBuilder: (_, __, ___) => SuccessScreen(ssid: ssid),
+        pageBuilder: (_, __, ___) => const SuccessScreen(),
         transitionDuration: const Duration(milliseconds: 600),
         reverseTransitionDuration: const Duration(milliseconds: 400),
         transitionsBuilder: (context, animation, _, child) {
@@ -265,10 +231,7 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
             ),
             child: ScaleTransition(
               scale: Tween<double>(begin: 0.9, end: 1.0).animate(
-                CurvedAnimation(
-                  parent: animation,
-                  curve: Curves.easeOutCubic,
-                ),
+                CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
               ),
               child: child,
             ),
@@ -283,22 +246,20 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
       SnackBar(
         content: Row(
           children: [
-            const Icon(Icons.error_outline_rounded,
-                color: AppColors.error, size: 18),
+            const Icon(
+              Icons.error_outline_rounded,
+              color: AppColors.error,
+              size: 18,
+            ),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(
-                message,
-                style: GoogleFonts.inter(fontSize: 13),
-              ),
+              child: Text(message, style: GoogleFonts.inter(fontSize: 13)),
             ),
           ],
         ),
         backgroundColor: AppColors.surfaceLight,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         action: SnackBarAction(
           label: 'Retry',
           textColor: AppColors.electricBlue,
@@ -322,7 +283,7 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
     await ble.disconnect();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const MainShell()),
+      MaterialPageRoute(builder: (_) => const AppGate(restoreSession: false)),
       (_) => false,
     );
   }
@@ -331,9 +292,7 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: AppColors.backgroundGradient,
-        ),
+        decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
         child: SafeArea(
           child: FadeTransition(
             opacity: _fadeIn,
@@ -341,101 +300,150 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
               builder: (context, ble, _) {
                 final isScanning =
                     ble.provisioningState == ProvisioningState.scanning;
-                final isSending = ble.provisioningState ==
+                final isSending =
+                    ble.provisioningState ==
                         ProvisioningState.sendingCredentials ||
                     ble.provisioningState ==
                         ProvisioningState.waitingForConnection;
 
-                return Column(
-                  children: [
-                    // ── App Bar ───────────────────────────────────
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
-                      child: Row(
-                        children: [
-                          IconButton(
-                            onPressed: () => Navigator.pop(context),
-                            icon: const Icon(
-                              Icons.arrow_back_ios_rounded,
-                              size: 20,
+                return PopScope(
+                  canPop: !isSending,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      ExcludeSemantics(
+                        excluding: isSending,
+                        child: Column(
+                          children: [
+                            // ── App Bar ───────────────────────────────────
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
+                              child: Row(
+                                children: [
+                                  IconButton(
+                                    onPressed: () => Navigator.pop(context),
+                                    icon: const Icon(
+                                      Icons.arrow_back_ios_rounded,
+                                      size: 20,
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Text(
+                                      'WiFi Setup',
+                                      textAlign: TextAlign.center,
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                  // Refresh button
+                                  IconButton(
+                                    onPressed: isScanning || isSending
+                                        ? null
+                                        : () => ble.requestWifiScan(),
+                                    icon: AnimatedSwitcher(
+                                      duration: const Duration(
+                                        milliseconds: 300,
+                                      ),
+                                      child: isScanning
+                                          ? const SizedBox(
+                                              width: 18,
+                                              height: 18,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                valueColor:
+                                                    AlwaysStoppedAnimation<
+                                                      Color
+                                                    >(AppColors.electricBlue),
+                                              ),
+                                            )
+                                          : const Icon(
+                                              Icons.refresh_rounded,
+                                              size: 22,
+                                            ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          Expanded(
-                            child: Text(
-                              'WiFi Setup',
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.outfit(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textPrimary,
+
+                            // ── Content ──────────────────────────────────
+                            Expanded(
+                              child: isScanning && ble.wifiNetworks.isEmpty
+                                  ? _ScanningState()
+                                  : ble.wifiNetworks.isEmpty
+                                  ? _EmptyNetworkState(
+                                      onRetry: () => ble.requestWifiScan(),
+                                    )
+                                  : _NetworkList(
+                                      networks: ble.wifiNetworks,
+                                      selectedNetwork: _selectedNetwork,
+                                      selectedDetails: _networkDetails(),
+                                      scrollController: _networkScroll,
+                                      connectingSsid: _connectingSsid,
+                                      onTap: _onNetworkTapped,
+                                      isSending: isSending,
+                                    ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(24, 4, 24, 16),
+                              child: TextButton(
+                                onPressed: isSending ? null : _skipForNow,
+                                child: Text(
+                                  'Skip for now',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppColors.textTertiary,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (isSending) ...[
+                        const ModalBarrier(
+                          dismissible: false,
+                          color: Color(0x99000000),
+                        ),
+                        Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 28),
+                            child: Semantics(
+                              liveRegion: true,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const SizedBox(
+                                    width: 42,
+                                    height: 42,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.5,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 24),
+                                  Text(
+                                    'Connecting to ${_connectingSsid ?? _selectedNetwork?.ssid ?? 'Wi-Fi'}',
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 17,
+                                      height: 1.4,
+                                      fontWeight: FontWeight.w500,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
-                          // Refresh button
-                          IconButton(
-                            onPressed: isScanning || isSending
-                                ? null
-                                : () => ble.requestWifiScan(),
-                            icon: AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 300),
-                              child: isScanning
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                          AppColors.electricBlue,
-                                        ),
-                                      ),
-                                    )
-                                  : const Icon(
-                                      Icons.refresh_rounded,
-                                      size: 22,
-                                    ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    // ── Provisioning progress ────────────────────
-                    if (isSending) ...[
-                      const SizedBox(height: 8),
-                      _ProvisioningProgress(state: ble.provisioningState),
-                    ],
-
-                    // ── Content ──────────────────────────────────
-                    Expanded(
-                      child: isScanning && ble.wifiNetworks.isEmpty
-                          ? _ScanningState()
-                          : ble.wifiNetworks.isEmpty
-                              ? _EmptyNetworkState(
-                                  onRetry: () => ble.requestWifiScan(),
-                                )
-                              : _NetworkList(
-                                  networks: ble.wifiNetworks,
-                                  connectingSsid: _connectingSsid,
-                                  onTap: _onNetworkTapped,
-                                  isSending: isSending,
-                                ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 4, 24, 16),
-                      child: TextButton(
-                        onPressed: isSending ? null : _skipForNow,
-                        child: Text(
-                          'Skip for now',
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            color: AppColors.textTertiary,
-                          ),
                         ),
-                      ),
-                    ),
-                  ],
+                      ],
+                    ],
+                  ),
                 );
               },
             ),
@@ -447,59 +455,6 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
 }
 
 // ── Supporting widgets ──────────────────────────────────────────────────
-
-class _ProvisioningProgress extends StatelessWidget {
-  const _ProvisioningProgress({required this.state});
-
-  final ProvisioningState state;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: GlassCard(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor:
-                    AlwaysStoppedAnimation<Color>(AppColors.electricBlue),
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    state.label,
-                    style: GoogleFonts.inter(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Please wait while your device connects…',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: AppColors.textTertiary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 class _ScanningState extends StatelessWidget {
   @override
@@ -552,11 +507,7 @@ class _EmptyNetworkState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.wifi_off_rounded,
-            color: AppColors.textTertiary,
-            size: 48,
-          ),
+          Icon(Icons.wifi_off_rounded, color: AppColors.textTertiary, size: 48),
           const SizedBox(height: 16),
           Text(
             'No networks found',
@@ -592,18 +543,28 @@ class _EmptyNetworkState extends StatelessWidget {
 class _NetworkList extends StatelessWidget {
   const _NetworkList({
     required this.networks,
+    required this.selectedNetwork,
+    required this.selectedDetails,
+    required this.scrollController,
     required this.connectingSsid,
     required this.onTap,
     required this.isSending,
   });
 
   final List<WifiNetwork> networks;
+  final WifiNetwork? selectedNetwork;
+  final Widget selectedDetails;
+  final ScrollController scrollController;
   final String? connectingSsid;
   final Function(WifiNetwork) onTap;
   final bool isSending;
 
   @override
   Widget build(BuildContext context) {
+    final orderedNetworks = [
+      if (selectedNetwork != null) selectedNetwork!,
+      ...networks.where((network) => network.ssid != selectedNetwork?.ssid),
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -611,20 +572,19 @@ class _NetworkList extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
           child: Row(
             children: [
-              Text(
-                'Available Networks',
-                style: GoogleFonts.outfit(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
+              Flexible(
+                child: Text(
+                  'Available Networks',
+                  style: GoogleFonts.outfit(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 2,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: AppColors.electricBlue.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(8),
@@ -642,34 +602,146 @@ class _NetworkList extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            itemCount: networks.length,
-            itemBuilder: (context, index) {
-              final network = networks[index];
-              return TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0, end: 1),
-                duration: Duration(milliseconds: 300 + (index * 80)),
-                curve: Curves.easeOutCubic,
-                builder: (context, value, child) {
-                  return Opacity(
-                    opacity: value,
-                    child: Transform.translate(
-                      offset: Offset(0, 16 * (1 - value)),
-                      child: child,
-                    ),
-                  );
-                },
-                child: WifiNetworkTile(
-                  network: network,
-                  isConnecting: connectingSsid == network.ssid,
-                  onTap: isSending ? () {} : () => onTap(network),
-                ),
-              );
-            },
+          child: _RisingNetworkCards(
+            networks: orderedNetworks,
+            selectedSsid: selectedNetwork?.ssid,
+            selectedDetails: selectedDetails,
+            scrollController: scrollController,
+            connectingSsid: connectingSsid,
+            onTap: onTap,
+            isSending: isSending,
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Preserve each card's previous position while the new order is laid out,
+/// then ease it into place. Measuring actual rows also handles expanded forms.
+class _RisingNetworkCards extends StatefulWidget {
+  const _RisingNetworkCards({
+    required this.networks,
+    required this.selectedSsid,
+    required this.selectedDetails,
+    required this.scrollController,
+    required this.connectingSsid,
+    required this.onTap,
+    required this.isSending,
+  });
+  final List<WifiNetwork> networks;
+  final String? selectedSsid;
+  final Widget selectedDetails;
+  final ScrollController scrollController;
+  final String? connectingSsid;
+  final Function(WifiNetwork) onTap;
+  final bool isSending;
+
+  @override
+  State<_RisingNetworkCards> createState() => _RisingNetworkCardsState();
+}
+
+class _RisingNetworkCardsState extends State<_RisingNetworkCards>
+    with SingleTickerProviderStateMixin {
+  final _keys = <String, GlobalKey>{};
+  final _deltas = <String, double>{};
+  bool _showDetails = false;
+  late final AnimationController _move = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 500),
+    value: 1,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _move.addStatusListener((status) {
+      if (status == AnimationStatus.completed && mounted) {
+        setState(() => _showDetails = true);
+      }
+    });
+  }
+
+  double? _top(String ssid) {
+    final box = _keys[ssid]?.currentContext?.findRenderObject();
+    return box is RenderBox && box.hasSize
+        ? box.localToGlobal(Offset.zero).dy
+        : null;
+  }
+
+  @override
+  void didUpdateWidget(covariant _RisingNetworkCards oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectedSsid == widget.selectedSsid) return;
+    final remaining = 1 - Curves.easeInOutCubic.transform(_move.value);
+    final previous = <String, double>{};
+    for (final network in oldWidget.networks) {
+      final top = _top(network.ssid);
+      if (top != null) {
+        previous[network.ssid] = top + (_deltas[network.ssid] ?? 0) * remaining;
+      }
+    }
+    _move.stop();
+    _showDetails = false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _deltas.clear();
+      for (final network in widget.networks) {
+        final top = _top(network.ssid);
+        final before = previous[network.ssid];
+        if (top != null && before != null) _deltas[network.ssid] = before - top;
+      }
+      if (MediaQuery.disableAnimationsOf(context)) {
+        setState(() {
+          _deltas.clear();
+          _showDetails = true;
+        });
+        _move.value = 1;
+      } else {
+        _move.forward(from: 0);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _move.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      controller: widget.scrollController,
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        children: widget.networks.map((network) {
+          final selected = widget.selectedSsid == network.ssid;
+          return SizedBox(
+            key: _keys.putIfAbsent(network.ssid, () => GlobalKey()),
+            child: AnimatedBuilder(
+              animation: _move,
+              builder: (context, child) => Transform.translate(
+                offset: Offset(
+                  0,
+                  (_deltas[network.ssid] ?? 0) *
+                      (1 - Curves.easeInOutCubic.transform(_move.value)),
+                ),
+                child: child,
+              ),
+              child: WifiNetworkTile(
+                network: network,
+                isSelected: selected,
+                expandedChild: selected && _showDetails
+                    ? widget.selectedDetails
+                    : null,
+                isConnecting: false,
+                onTap: widget.isSending ? () {} : () => widget.onTap(network),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
     );
   }
 }
