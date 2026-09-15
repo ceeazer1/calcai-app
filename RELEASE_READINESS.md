@@ -116,15 +116,16 @@ Apple requires iOS/iPadOS 26 SDK or newer for uploads; CI checks this:
    agreements. Create/verify the CalcAI App Store record with the bundle ID above.
    Its numeric Apple ID is needed for CI.
 2. Commit the app source, lockfile, and `codemagic.yaml` from the independent
-   `calcai_app` repository (`ceeazer1/calcai-app`). Changes are uncommitted.
-   Nothing was staged, committed, pushed, or deployed; unrelated changes were preserved.
+   `calcai_app` repository (`ceeazer1/calcai-app`). The release source was pushed
+   as `d6a4997`; production backend/dashboard deployment remains separate.
 3. Configure Codemagic's App Store integration named `CalcAI`. Put the numeric
-   `APP_STORE_APP_ID` in `app_store_credentials`. Configure the matching Apple
-   Distribution certificate/private key and App Store profile under Code signing
-   identities. Keep private keys out of chat and Git.
+   `APP_STORE_APP_ID` in `app_store_credentials` (configured as `6780132992`).
+   Keep the existing `CERTIFICATE_PRIVATE_KEY` in that group. The workflow fetches
+   the matching certificate and App Store profile through the Apple integration,
+   creating missing signing files when needed. Keep private keys out of chat and Git.
 4. Run `ios-check`, resolve native compiler/plugin/entitlement issues, then run
    `ios-testflight` manually for internal testing. This never submits to public
-   App Review. See [Codemagic signing](https://docs.codemagic.io/yaml-code-signing/signing-ios/)
+   App Review. See [Codemagic signing](https://docs.codemagic.io/yaml-code-signing/alternative-code-signing-methods/)
    and [build-number tooling](https://github.com/codemagic-ci-cd/cli-tools/blob/master/docs/app-store-connect/get-latest-testflight-build-number.md).
 5. Finish the blocking fixes and hardware checks. Fill the submission draft with
    real screenshots, review credentials/access, privacy answers, age rating,

@@ -58,9 +58,6 @@ workflows:
       flutter: 3.44.2
       xcode: latest
       groups: [app_store_credentials]
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.calcai.calcaiApp
     # Run manually after the release checklist is complete. Validation builds
     # do not upload, and this workflow never submits to public App Review.
     scripts:
@@ -69,7 +66,11 @@ workflows:
       - name: Use configured signing identities
         script: |
           set -euo pipefail
+          : "${CERTIFICATE_PRIVATE_KEY:?Set the existing signing key in app_store_credentials}"
           keychain initialize
+          # Reuse the certificate matching the saved private key and fetch its profile.
+          app-store-connect fetch-signing-files "com.calcai.calcaiApp" \
+            --type IOS_APP_STORE --create
           keychain add-certificates
           xcode-project use-profiles
       - name: Build signed candidate
