@@ -135,6 +135,17 @@ Apple requires iOS/iPadOS 26 SDK or newer for uploads; CI checks this:
 
 ## Physical-device acceptance checks
 
+September 15, 2026: signed version 1.0.0 (1084), commit `8869837`, was uploaded
+successfully. Apple reports `VALID` and internal state `IN_BETA_TESTING`.
+Codemagic build `6aa9ff93de3ea5e17effe360` passed native compilation, source
+checks, tests, privacy-manifest checks, and strict signature verification.
+Its later external beta-review submission failed because feedback email and
+reviewer contact information are missing. Future CI uploads leave external
+beta review manual (`submit_to_testflight: false`); internal testing is already
+enabled by the existing group. No public App Review submission occurred.
+The consent backend and matching dashboard still need coordinated deployment
+before this build can be treated as usable end to end.
+
 - [ ] Fresh install/offline launch; Bluetooth denied/off/on; slow service.
 - [ ] Apple/Google/email login, verification/reset, cancellation, expired session,
       Hide My Email/relay, sign-out, account deletion, and reinstall.
