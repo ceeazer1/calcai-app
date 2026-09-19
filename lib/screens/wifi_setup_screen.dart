@@ -1,3 +1,4 @@
+import 'ai_consent_screen.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -220,7 +221,7 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
   void _navigateToSuccess(String ssid) {
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
-        pageBuilder: (_, __, ___) => const SuccessScreen(),
+        pageBuilder: (_, __, ___) => const AiConsentGate(child: SuccessScreen()),
         transitionDuration: const Duration(milliseconds: 600),
         reverseTransitionDuration: const Duration(milliseconds: 400),
         transitionsBuilder: (context, animation, _, child) {

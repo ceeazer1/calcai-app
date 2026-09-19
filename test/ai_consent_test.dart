@@ -1,3 +1,5 @@
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:calcai_app/screens/ai_consent_screen.dart';
 import 'package:calcai_app/services/auth_service.dart';
 import 'package:calcai_app/services/cloud_service.dart';
@@ -52,6 +54,28 @@ Future<void> _mount(WidgetTester tester, _ConsentCloud cloud) async {
 }
 
 void main() {
+  test(
+    'missing consent endpoint reports the server mismatch, not a false save',
+    () async {
+      final cloud = CloudService(
+        client: MockClient((_) async => http.Response('not found', 404)),
+      );
+      addTearDown(cloud.dispose);
+      for (final choice in [true, false]) {
+        await expectLater(
+          cloud.saveAiConsent('test-token', choice),
+          throwsA(
+            isA<AiConsentException>().having(
+              (e) => e.message,
+              'message',
+              contains('server yet'),
+            ),
+          ),
+        );
+      }
+    },
+  );
+
   for (final allowed in [false, true]) {
     testWidgets('explicit choice $allowed is saved before setup opens', (
       tester,
@@ -65,11 +89,17 @@ void main() {
         findsOneWidget,
       );
       final button = find.text(
-        allowed ? 'Allow AI sharing' : 'Continue without AI',
+        allowed ? 'Allow AI sharing' : 'Continue with AI off',
       );
       await tester.ensureVisible(button);
       await tester.tap(button);
       await tester.pumpAndSettle();
+      if (!allowed) {
+        expect(cloud.choices, isEmpty);
+        expect(find.text('AI features will be off'), findsOneWidget);
+        await tester.tap(find.text('Keep AI off'));
+        await tester.pumpAndSettle();
+      }
       expect(cloud.choices, [allowed]);
       expect(find.text('Device setup'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -101,8 +131,9 @@ void main() {
         findsOneWidget,
       );
       cloud.failSave = false;
-      await tester.ensureVisible(button);
-      await tester.tap(button);
+      final retry = find.text('Retry');
+      await tester.ensureVisible(retry);
+      await tester.tap(retry);
       await tester.pumpAndSettle();
       expect(find.text('Device setup'), findsOneWidget);
     },
@@ -121,6 +152,8 @@ void main() {
     final button = find.text('Turn off AI sharing');
     await tester.ensureVisible(button);
     await tester.tap(button);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Keep AI off'));
     await tester.pumpAndSettle();
     expect(cloud.choices, [false]);
     expect(cloud.allowed, false);

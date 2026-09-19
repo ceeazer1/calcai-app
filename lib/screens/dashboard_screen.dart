@@ -1,3 +1,4 @@
+import '../widgets/fast_mode_card.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -54,6 +55,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   late final AnimationController _enterController;
   late final Animation<double> _fadeIn;
   bool _isLoadingModel = false;
+  bool _savingFastMode = false;
 
   /// Collapsed (skinny bar) vs expanded (original two-column card) usage view.
 
@@ -118,6 +120,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                 _buildSectionHeader('AI', Icons.auto_awesome_rounded),
                 const SizedBox(height: 12),
                 _buildModelSelector(),
+                const SizedBox(height: 10),
+                _buildFastMode(),
                 const SizedBox(height: 10),
                 _buildStyleDropdown(),
                 const SizedBox(height: 10),
@@ -306,6 +310,42 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
+  Widget _buildFastMode() => Consumer2<AuthService, CloudService>(
+    builder: (context, auth, cloud, _) {
+      final model = cloud.currentModel ?? kDefaultModel;
+      final provider = fastModeProvider(model);
+      return FastModeCard(
+        model: model,
+        enabled: cloud.fastMode,
+        hasPersonalKey:
+            provider != null &&
+            cloud.hasApiKey(provider) &&
+            cloud.apiKeyEnabled(provider),
+        saving: _savingFastMode,
+        onChanged:
+            _isLoadingModel || auth.token == null || auth.primaryMac == null
+            ? null
+            : (value) async {
+                setState(() => _savingFastMode = true);
+                await cloud.setModel(
+                  auth.token!,
+                  auth.primaryMac!,
+                  model,
+                  cloud.responseStyle,
+                  fastMode: value,
+                );
+                if (!mounted || !context.mounted) return;
+                setState(() => _savingFastMode = false);
+                if (cloud.error != null) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(cloud.error!)));
+                }
+              },
+      );
+    },
+  );
+
   /// Response-style presets, shared by the dropdown row and its picker sheet.
   ///
   /// No icons: a bolt, a page and a book said nothing the labels didn't, and
@@ -322,7 +362,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   /// models don't allow it to be changed at all, so the worker maps one level to
   /// whatever that model actually supports — nothing here ever greys out.
   static const List<(String, String, String)> _efforts = [
-    ('fast', 'Fast', 'Answers right away'),
+    ('fast', 'Minimal', 'Less thinking before answering'),
     ('balanced', 'Balanced', 'Thinks a little first'),
     ('thorough', 'Take your time', 'Thinks hard, slower to answer'),
   ];

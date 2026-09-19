@@ -36,6 +36,7 @@ class _AiConsentScreenState extends State<AiConsentScreen> {
   bool _saving = false;
   bool _allowed = false;
   String? _error;
+  bool? _pendingChoice;
 
   @override
   void initState() {
@@ -61,8 +62,12 @@ class _AiConsentScreenState extends State<AiConsentScreen> {
         widget.onComplete!();
         return;
       }
-    } catch (_) {
-      if (mounted) _error = 'Could not load your choice. Please try again.';
+    } catch (error) {
+      if (mounted) {
+        _error = error is AiConsentException
+            ? error.message
+            : 'Could not load your choice. Please try again.';
+      }
     }
     if (mounted) setState(() => _loading = false);
   }
@@ -72,6 +77,7 @@ class _AiConsentScreenState extends State<AiConsentScreen> {
     if (token == null || _saving) return;
     setState(() {
       _saving = true;
+      _pendingChoice = allowed;
       _error = null;
     });
     try {
@@ -82,13 +88,41 @@ class _AiConsentScreenState extends State<AiConsentScreen> {
       } else {
         Navigator.of(context).pop();
       }
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
-        setState(() => _error = 'Your choice was not saved. Please try again.');
+        setState(
+          () => _error = error is AiConsentException
+              ? error.message
+              : 'Your choice was not saved. Please try again.',
+        );
       }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _confirmAiOff() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('AI features will be off'),
+        content: const Text(
+          'Your calculator will not answer AI questions or solve photos. '
+          'Pairing and Wi-Fi still work. Turn AI sharing on anytime in Settings.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Go back'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Keep AI off'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) await _save(false);
   }
 
   @override
@@ -110,67 +144,113 @@ class _AiConsentScreenState extends State<AiConsentScreen> {
     body: SafeArea(
       child: _loading
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(24),
-              children: [
-                const Icon(Icons.auto_awesome_outlined, size: 48),
-                const SizedBox(height: 24),
-                Text(
-                  'Choose how you use AI',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  'When you ask your calculator for AI help, CalcAI sends your question, photos, and relevant custom instructions to the provider for your selected model: OpenAI, Google (Gemini), or Anthropic.',
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'They process this content to generate answers. CalcAI stores your activity history and usage with your account and device. Provider data handling follows their own policies.',
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'This choice applies to all calculators on your account, including when this app is closed. You can turn AI sharing off in Settings. New AI requests will stop; content already sent cannot be recalled.',
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'You can continue without AI and still set up your device, manage Wi-Fi, and use non-AI features.',
-                ),
-                TextButton(
-                  onPressed: () => openPublicLink(context, privacyPolicyUrl),
-                  child: const Text('Read Privacy Policy'),
-                ),
-                if (widget.onComplete == null)
-                  Text(
-                    'Current choice: ${_allowed ? 'AI sharing on' : 'AI sharing off'}',
+          : Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 460),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Icon(Icons.auto_awesome_outlined, size: 30),
+                      ),
+                      const SizedBox(height: 20),
+                      Text(
+                        'AI, your choice',
+                        style: Theme.of(context).textTheme.headlineMedium,
+                      ),
+                      const SizedBox(height: 14),
+                      const Text(
+                        'To answer your questions, CalcAI shares your prompts, photos and relevant custom instructions with OpenAI, Google (Gemini), or Anthropic, depending on your selected model.',
+                        style: TextStyle(height: 1.5),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'With AI sharing off, your calculator cannot answer questions or solve photos. Pairing and Wi-Fi still work. You can enable AI sharing later in Settings.',
+                        style: TextStyle(height: 1.5, color: Color(0xFF8E8E96)),
+                      ),
+                      const SizedBox(height: 8),
+                      ExpansionTile(
+                        tilePadding: EdgeInsets.zero,
+                        childrenPadding: const EdgeInsets.only(bottom: 12),
+                        title: const Text(
+                          'Learn more',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                        children: [
+                          const Text(
+                            'Your choice covers every calculator on your account, even while this app is closed. CalcAI stores activity history and usage with your account and device. Providers process the content under their own policies. Turning sharing off stops new AI requests; content already sent cannot be recalled.',
+                            style: TextStyle(
+                              height: 1.5,
+                              color: Color(0xFF8E8E96),
+                            ),
+                          ),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton(
+                              onPressed: () =>
+                                  openPublicLink(context, privacyPolicyUrl),
+                              child: const Text('Read Privacy Policy'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (widget.onComplete == null)
+                        Text(
+                          'Current choice: ${_allowed ? 'AI sharing on' : 'AI sharing off'}',
+                        ),
+                      if (_error != null) ...[
+                        const SizedBox(height: 12),
+                        Semantics(liveRegion: true, child: Text(_error!)),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton(
+                            onPressed: _saving
+                                ? null
+                                : () {
+                                    final choice = _pendingChoice;
+                                    if (choice == null) {
+                                      _load();
+                                    } else {
+                                      _save(choice);
+                                    }
+                                  },
+                            child: const Text('Retry'),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 20),
+                      FilledButton(
+                        onPressed: _saving ? null : () => _save(true),
+                        child: const Text('Allow AI sharing'),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton(
+                        onPressed: _saving ? null : _confirmAiOff,
+                        child: Text(
+                          widget.onComplete == null
+                              ? 'Turn off AI sharing'
+                              : 'Continue with AI off',
+                        ),
+                      ),
+                      if (_saving)
+                        const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-                if (_error != null) ...[
-                  const SizedBox(height: 12),
-                  Text(_error!, semanticsLabel: _error),
-                  TextButton(
-                    onPressed: _saving ? null : _load,
-                    child: const Text('Retry'),
-                  ),
-                ],
-                const SizedBox(height: 24),
-                FilledButton(
-                  onPressed: _saving ? null : () => _save(true),
-                  child: const Text('Allow AI sharing'),
                 ),
-                const SizedBox(height: 12),
-                OutlinedButton(
-                  onPressed: _saving ? null : () => _save(false),
-                  child: Text(
-                    widget.onComplete == null
-                        ? 'Turn off AI sharing'
-                        : 'Continue without AI',
-                  ),
-                ),
-                if (_saving)
-                  const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Center(child: CircularProgressIndicator()),
-                  ),
-              ],
+              ),
             ),
     ),
   );

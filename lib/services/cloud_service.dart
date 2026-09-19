@@ -23,6 +23,13 @@ bool isDeviceOwnershipRevocation(http.Response response) {
   }
 }
 
+class AiConsentException implements Exception {
+  const AiConsentException(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
+
 /// Cloud service for the CalcAI REST API at [_baseUrl].
 ///
 /// Uses [ChangeNotifier] so the UI can reactively rebuild via [Provider].
@@ -53,7 +60,7 @@ class CloudService extends ChangeNotifier {
           headers: {'Authorization': 'Bearer $token'},
         )
         .timeout(const Duration(seconds: 20));
-    _assertSuccess(response);
+    _checkConsentResponse(response);
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
@@ -68,13 +75,27 @@ class CloudService extends ChangeNotifier {
           body: jsonEncode({'version': aiConsentVersion, 'allowed': allowed}),
         )
         .timeout(const Duration(seconds: 20));
-    _assertSuccess(response);
+    _checkConsentResponse(response);
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (data['ok'] != true ||
         data['allowed'] != allowed ||
         data['version'] != aiConsentVersion) {
       throw const FormatException('Consent was not confirmed.');
     }
+  }
+
+  void _checkConsentResponse(http.Response response) {
+    if (response.statusCode == 404 || response.statusCode == 405) {
+      throw const AiConsentException(
+        'AI sharing is not available on the server yet. Your choice has not been saved.',
+      );
+    }
+    if (response.statusCode == 401) {
+      throw const AiConsentException(
+        'Your session expired. Please sign out and sign in again.',
+      );
+    }
+    _assertSuccess(response);
   }
 
   int _keyGeneration = 0;
@@ -146,6 +167,8 @@ class CloudService extends ChangeNotifier {
 
   /// How hard the model may think before answering ("fast", "balanced" or
   /// "thorough"). The worker translates it per provider.
+  bool get fastMode => _modelInfo?['fastMode'] == true;
+
   String get thinkingEffort => _modelInfo?['effort']?.toString() ?? 'fast';
 
   /// The user's own standing instructions, appended to every prompt.
@@ -505,6 +528,7 @@ class CloudService extends ChangeNotifier {
     String model,
     String style, {
     String? effort,
+    bool? fastMode,
   }) async {
     try {
       _setLoading(true);
@@ -520,16 +544,23 @@ class CloudService extends ChangeNotifier {
           // Omitted rather than guessed: the worker keeps the stored value when
           // the field is absent, so a partial update can't reset it.
           if (effort != null) 'effort': effort,
+          if (fastMode != null) 'fastMode': fastMode,
         }),
       );
 
       _assertSuccess(response);
 
-      // Optimistic update so the UI reflects changes immediately.
+      // Use the server's accepted values, including model-switch resets.
+      final accepted = jsonDecode(response.body) as Map<String, dynamic>;
+      if (fastMode != null && accepted['fastMode'] is! bool) {
+        throw StateError('Fast mode needs the updated CalcAI server.');
+      }
       _modelInfo = {
-        'model': model,
-        'style': style,
-        'effort': effort ?? thinkingEffort,
+        ...?_modelInfo,
+        'model': accepted['model'] ?? model,
+        'style': accepted['style'] ?? style,
+        'effort': accepted['effort'] ?? effort ?? thinkingEffort,
+        'fastMode': accepted['fastMode'] == true,
       };
       notifyListeners();
     } catch (e) {

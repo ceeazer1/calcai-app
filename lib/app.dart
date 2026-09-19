@@ -176,10 +176,7 @@ class AppGateState extends State<AppGate> {
     // before they reach the main shell.
     if ((auth.primaryMac == null || auth.primaryMac!.isEmpty) &&
         !auth.setupSkipped) {
-      return AiConsentGate(
-        key: ValueKey(auth.token),
-        child: const LinkDeviceScreen(),
-      );
+      return const LinkDeviceScreen();
     }
 
     // ── Authenticated + device linked → main navigation shell ─────────

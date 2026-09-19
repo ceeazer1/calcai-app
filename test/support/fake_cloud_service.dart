@@ -107,11 +107,13 @@ class FakeCloudService extends CloudService {
     String model,
     String style, {
     String? effort,
+    bool? fastMode,
   }) async {
     _modelInfo = {
       'model': model,
       'style': style,
       'effort': effort ?? thinkingEffort,
+      'fastMode': fastMode ?? false,
     };
     notifyListeners();
   }
