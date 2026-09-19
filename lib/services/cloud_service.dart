@@ -30,6 +30,13 @@ class AiConsentException implements Exception {
   String toString() => message;
 }
 
+class PairingReleaseException implements Exception {
+  const PairingReleaseException(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
+
 /// Cloud service for the CalcAI REST API at [_baseUrl].
 ///
 /// Uses [ChangeNotifier] so the UI can reactively rebuild via [Provider].
@@ -446,30 +453,55 @@ class CloudService extends ChangeNotifier {
   ///
   /// POST /ai/pair/release  body: {mac, nonce}
   ///
-  /// Returns the signature, or null when the device is still owned by someone
-  /// (409) or was never released (403) — the backend decides, not the app.
+  /// Null means the server explicitly confirmed an existing owner.
+  /// Other failures retain their cause instead of pretending another owner exists.
   Future<String?> requestPairingRelease(
     String token,
     String mac,
     String nonce,
   ) async {
     try {
-      final response = await _client.post(
-        Uri.parse('$_baseUrl/ai/pair/release'),
-        headers: _jsonAuthHeaders(token),
-        body: jsonEncode({'mac': mac, 'nonce': nonce}),
-      );
-      if (response.statusCode != 200) {
-        logDebug('release refused: ${response.statusCode} ${response.body}');
+      final response = await _client
+          .post(
+            Uri.parse('$_baseUrl/ai/pair/release'),
+            headers: _jsonAuthHeaders(token),
+            body: jsonEncode({'mac': mac, 'nonce': nonce}),
+          )
+          .timeout(const Duration(seconds: 20));
+      Map<String, dynamic>? body;
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) body = decoded;
+      } catch (_) {}
+      if (response.statusCode == 409 && body?['error'] == 'still_owned') {
         return null;
       }
-      final j = jsonDecode(response.body);
-      if (j is! Map || j['ok'] != true) return null;
-      final sig = (j['response'] ?? '').toString();
-      return RegExp(r'^[0-9a-f]{64}$').hasMatch(sig) ? sig : null;
-    } catch (e) {
-      logDebug('release request failed: $e');
-      return null;
+      if (response.statusCode == 401) {
+        throw const PairingReleaseException(
+          'Sign out and sign in again, then scan your calculator.',
+        );
+      }
+      if (response.statusCode == 503) {
+        throw const PairingReleaseException(
+          'Pairing recovery is unavailable on the server. Contact CalcAI support.',
+        );
+      }
+      final signature = body?['response'];
+      if (response.statusCode != 200 ||
+          body?['ok'] != true ||
+          signature is! String ||
+          !RegExp(r'^[0-9a-f]{64}$').hasMatch(signature)) {
+        throw const PairingReleaseException(
+          'The server could not reset this pairing. Try again or contact CalcAI support.',
+        );
+      }
+      return signature;
+    } on PairingReleaseException {
+      rethrow;
+    } catch (_) {
+      throw const PairingReleaseException(
+        'Could not reach CalcAI to reset the pairing. Check your internet connection and retry.',
+      );
     }
   }
 

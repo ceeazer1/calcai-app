@@ -951,7 +951,11 @@ class BleService extends ChangeNotifier {
       'response': response,
     });
     final ok = r?['ok'] == true;
-    if (ok) _pairedOwner = null;
+    if (ok) {
+      _pairedOwner = null;
+    } else {
+      _lastCommandError = r?['error']?.toString() ?? _lastCommandError;
+    }
     return ok;
   }
 

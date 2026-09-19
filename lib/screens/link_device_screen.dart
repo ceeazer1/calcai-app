@@ -30,6 +30,8 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
   late final BleService _ble;
   _Phase _phase = _Phase.idle;
   String? _error;
+  String? _recoveryError;
+  String? _recoveryMac;
 
   /// Set when the only fix is the iOS Settings app, so the error can carry a
   /// button instead of asking the user to go find it.
@@ -83,16 +85,16 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
         _error = err == null
             ? 'This calculator needs a firmware update before it can pair.'
             : "Lost the connection before pairing could start. If you've just "
-                'updated the calculator, forget it in iPhone Settings > '
-                'Bluetooth, then scan again.';
+                  'updated the calculator, forget it in iPhone Settings > '
+                  'Bluetooth, then scan again.';
       });
       return;
     }
 
     if (paired == false) {
-      final ok = await Navigator.of(context).push<bool>(
-        MaterialPageRoute(builder: (_) => const PairDeviceScreen()),
-      );
+      final ok = await Navigator.of(
+        context,
+      ).push<bool>(MaterialPageRoute(builder: (_) => const PairDeviceScreen()));
       if (!mounted) return;
       if (ok != true) {
         setState(() => _phase = _Phase.idle);
@@ -130,7 +132,8 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
         } else {
           setState(() {
             _phase = _Phase.idle;
-            _error = 'This calculator belongs to another account.';
+            _error =
+                _recoveryError ?? 'This calculator belongs to another account.';
           });
           return;
         }
@@ -168,8 +171,11 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
     final ask = await ble.requestAuthNonce();
     if (!mounted || ask == null) return false;
 
-    final signature =
-        await cloud.requestOwnershipProof(token, ask.mac, ask.nonce);
+    final signature = await cloud.requestOwnershipProof(
+      token,
+      ask.mac,
+      ask.nonce,
+    );
     if (!mounted || signature == null) return false;
 
     final proved = await ble.proveOwnership(ask.nonce, signature, owner);
@@ -190,16 +196,35 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
     final token = auth.token;
     if (token == null) return false;
 
+    _recoveryError = null;
     final ask = await ble.requestReleaseNonce();
-    if (!mounted || ask == null) return false;
-
-    final signature =
-        await cloud.requestPairingRelease(token, ask.mac, ask.nonce);
-    if (!mounted || signature == null) return false;
-
-    final released = await ble.releaseOwnership(ask.nonce, signature);
     if (!mounted) return false;
-    return released;
+    if (ask == null) {
+      _recoveryError = ble.lastCommandError == null
+          ? 'The calculator did not answer the pairing reset. Reopen BLE on the calculator and scan again. If it repeats, its firmware may need updating.'
+          : 'Lost Bluetooth connection while resetting the pairing. Reopen BLE on the calculator and scan again.';
+      return false;
+    }
+    _recoveryMac = ask.mac;
+    try {
+      final signature = await cloud.requestPairingRelease(
+        token,
+        ask.mac,
+        ask.nonce,
+      );
+      if (!mounted || signature == null) return false;
+      final released = await ble.releaseOwnership(ask.nonce, signature);
+      if (!mounted) return false;
+      if (!released) {
+        _recoveryError = ble.lastCommandError == 'bad_signature'
+            ? 'The calculator could not verify the pairing reset. Contact CalcAI support to check its firmware.'
+            : 'The calculator did not accept the pairing reset. Reopen BLE and scan again.';
+      }
+      return released;
+    } on PairingReleaseException catch (error) {
+      _recoveryError = error.message;
+      return false;
+    }
   }
 
   /// Records the calculator against this account. Returns false when it could
@@ -252,6 +277,8 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
     context.read<AuthService>().clearUnpairedNotice();
     setState(() {
       _error = null;
+      _recoveryError = null;
+      _recoveryMac = null;
       _needsSettings = false;
       _phase = _Phase.scanning;
     });
@@ -329,8 +356,11 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
                       context.read<AuthService>().signOut();
                       context.read<CloudService>().reset();
                     },
-                    icon: const Icon(Icons.logout_rounded,
-                        color: AppColors.textTertiary, size: 20),
+                    icon: const Icon(
+                      Icons.logout_rounded,
+                      color: AppColors.textTertiary,
+                      size: 20,
+                    ),
                     tooltip: 'Sign out',
                   ),
                 ),
@@ -361,16 +391,19 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               if (revoked) ...[
-                                const Icon(Icons.link_off_rounded,
-                                    size: 40, color: AppColors.warning),
+                                const Icon(
+                                  Icons.link_off_rounded,
+                                  size: 40,
+                                  color: AppColors.warning,
+                                ),
                                 const SizedBox(height: 18),
                               ],
                               Text(
                                 revoked
                                     ? 'Calculator unpaired'
                                     : firstName.isEmpty
-                                        ? 'Welcome'
-                                        : 'Welcome,',
+                                    ? 'Welcome'
+                                    : 'Welcome,',
                                 textAlign: TextAlign.center,
                                 style: GoogleFonts.outfit(
                                   fontSize: revoked ? 26 : 42,
@@ -428,6 +461,16 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
                             color: AppColors.error,
                           ),
                         ),
+                        if (_recoveryMac != null) ...[
+                          const SizedBox(height: 8),
+                          SelectableText(
+                            'Calculator ID: $_recoveryMac',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
                         if (_needsSettings) ...[
                           const SizedBox(height: 6),
                           TextButton(
