@@ -6,8 +6,9 @@ import 'package:calcai_app/services/ble_service.dart';
 import 'package:calcai_app/screens/wifi_screen.dart';
 
 void main() {
-  testWidgets('Home Wi-Fi edits, adds and removes saved networks',
-      (tester) async {
+  testWidgets('Home Wi-Fi edits, adds and removes saved networks', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1000, 1100);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -32,6 +33,14 @@ void main() {
 
     await tester.tap(find.text('My iPhone'));
     await advance();
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.text('Phone hotspot'), findsOneWidget);
+    expect(tester.getSize(find.byType(SwitchListTile)).height, lessThan(140));
+    await tester.tap(find.text('Learn more'));
+    await advance();
+    expect(find.textContaining('occasional small requests'), findsOneWidget);
+    await tester.tap(find.text('Got it'));
+    await advance();
     await tester.tap(find.byType(SwitchListTile));
     await advance();
     expect(ble.isIphoneHotspotNetwork('My iPhone'), isFalse);
@@ -42,6 +51,20 @@ void main() {
     await advance();
     expect(ble.connectedSsid, 'My iPhone');
     expect(ble.savedNetworks.length, 2);
+
+    await tester.tap(find.byTooltip('Scan network'));
+    await advance();
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.text('Saved Networks'), findsOneWidget);
+    expect(find.text('Available networks'), findsOneWidget);
+    await tester.ensureVisible(find.text('Guest network'));
+    await tester.tap(find.text('Guest network'));
+    await advance();
+    expect(find.text('No password needed.'), findsOneWidget);
+    expect(find.byType(TextField), findsNothing);
+    await tester.tap(find.text('Connect'));
+    await advance();
+    expect(ble.connectedSsid, 'Guest network');
 
     await tester.tap(find.text('Add network manually'));
     await advance();

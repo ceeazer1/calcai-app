@@ -1,11 +1,23 @@
 import 'dart:io';
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:calcai_app/services/resilient_http_client.dart';
 
 class _RealHttpOverrides extends HttpOverrides {}
 
 void main() {
+  test('connection messages do not expose raw errors or request URLs', () {
+    final message = connectionFailureMessage(
+      http.ClientException(
+        'private diagnostic data',
+        Uri.parse('https://example.com/?token=private-token'),
+      ),
+    );
+    expect(message, contains('Could not reach CalcAI'));
+    expect(message, isNot(contains('private')));
+    expect(message, isNot(contains('example.com')));
+  });
   test('an unsuccessful sign-in POST is not automatically replayed', () async {
     final previous = HttpOverrides.current;
     HttpOverrides.global = _RealHttpOverrides();

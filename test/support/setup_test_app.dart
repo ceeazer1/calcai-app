@@ -42,6 +42,7 @@ class SetupTestAppAuth extends FakeAuthService {
 }
 
 class SetupTestAppCloud extends FakeCloudService {
+  SetupTestAppCloud({super.client});
   @override
   Future<String?> requestOwnershipProof(
     String token,

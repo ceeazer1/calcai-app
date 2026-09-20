@@ -1,3 +1,5 @@
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:calcai_app/services/cloud_service.dart';
 
 /// Test double for [CloudService].
@@ -38,7 +40,14 @@ class FakeCloudService extends CloudService {
 
   /// Notes envelope, exactly as the real backend would store it.
   String _notesPayload = '';
-  FakeCloudService();
+  FakeCloudService({http.Client? client})
+    : super(
+        client:
+            client ??
+            MockClient(
+              (_) async => http.Response('{"error":"usage_unavailable"}', 503),
+            ),
+      );
 
   @override
   Future<void> loadDashboard(String token, String mac) async {

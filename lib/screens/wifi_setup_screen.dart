@@ -12,6 +12,7 @@ import '../services/ble_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/gradient_button.dart';
 import '../widgets/wifi_network_tile.dart';
+import '../widgets/phone_hotspot_option.dart';
 import '../app.dart';
 import 'success_screen.dart';
 
@@ -157,18 +158,8 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
               ),
             ),
           const SizedBox(height: 8),
-          SwitchListTile.adaptive(
-            contentPadding: EdgeInsets.zero,
+          PhoneHotspotOption(
             value: _iphoneHotspot,
-            activeTrackColor: AppColors.textSecondary,
-            title: Text(
-              'iPhone hotspot',
-              maxLines: 1,
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                color: AppColors.textPrimary,
-              ),
-            ),
             onChanged: busy
                 ? null
                 : (value) => setState(() => _iphoneHotspot = value),
@@ -221,7 +212,8 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
   void _navigateToSuccess(String ssid) {
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
-        pageBuilder: (_, __, ___) => const AiConsentGate(child: SuccessScreen()),
+        pageBuilder: (_, __, ___) =>
+            const AiConsentGate(child: SuccessScreen()),
         transitionDuration: const Duration(milliseconds: 600),
         reverseTransitionDuration: const Duration(milliseconds: 400),
         transitionsBuilder: (context, animation, _, child) {

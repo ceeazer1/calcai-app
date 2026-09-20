@@ -1,3 +1,4 @@
+import '../widgets/daily_usage_card.dart';
 import '../widgets/fast_mode_card.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -22,8 +23,7 @@ const String kDefaultModel = 'gpt-5.6-luna';
 
 /// Model IDs usable on the free plan. Everything else is premium.
 ///
-/// Mirrors `CHEAP_MODELS` in the worker — if the two drift, the app shows a
-/// model as free that the backend then bills against the premium quota.
+/// Used only for model selection labels; daily allowance comes from the API.
 const Set<String> kFreeModels = {
   'gpt-5.6-luna',
   'gemini-3.5-flash',
@@ -44,7 +44,8 @@ class SwitchToWifiTabNotification extends Notification {}
 ///
 /// Shows device status, AI model selector, usage info, and quick actions.
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+  const DashboardScreen({super.key, this.isActive = true});
+  final bool isActive;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -57,8 +58,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   bool _isLoadingModel = false;
   bool _savingFastMode = false;
 
-  /// Collapsed (skinny bar) vs expanded (original two-column card) usage view.
-
   /// Whether the response-style inline dropdown is open.
   bool _styleExpanded = false;
   bool _effortExpanded = false;
@@ -70,10 +69,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       vsync: this,
       duration: const Duration(milliseconds: 600),
     );
-    _fadeIn = CurvedAnimation(
-      parent: _enterController,
-      curve: Curves.easeOut,
-    );
+    _fadeIn = CurvedAnimation(parent: _enterController, curve: Curves.easeOut);
     _enterController.forward();
 
     // Load dashboard data
@@ -83,8 +79,11 @@ class _DashboardScreenState extends State<DashboardScreen>
   Future<void> _loadData() async {
     final auth = context.read<AuthService>();
     final cloud = context.read<CloudService>();
-    if (auth.token != null && auth.primaryMac != null) {
+    if (auth.token == null) return;
+    if (auth.primaryMac != null) {
       await cloud.loadDashboard(auth.token!, auth.primaryMac!);
+    } else {
+      await cloud.getUsage(auth.token!);
     }
   }
 
@@ -97,9 +96,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        gradient: AppColors.backgroundGradient,
-      ),
+      decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
       child: SafeArea(
         child: FadeTransition(
           opacity: _fadeIn,
@@ -113,8 +110,7 @@ class _DashboardScreenState extends State<DashboardScreen>
               children: [
                 _buildTopBar(),
                 _buildPairBanner(),
-                _buildSectionHeader('Today', Icons.calendar_today_rounded),
-                const SizedBox(height: 12),
+                _buildSectionHeader('AI Usage', Icons.data_usage_rounded),
                 _buildUsage(),
                 const SizedBox(height: 16),
                 _buildSectionHeader('AI', Icons.auto_awesome_rounded),
@@ -160,13 +156,16 @@ class _DashboardScreenState extends State<DashboardScreen>
           padding: const EdgeInsets.only(bottom: 16),
           child: GlassCard(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const LinkDeviceScreen()),
-            ),
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const LinkDeviceScreen())),
             child: Row(
               children: [
-                const Icon(Icons.add_link_rounded,
-                    color: AppColors.electricBlue, size: 20),
+                const Icon(
+                  Icons.add_link_rounded,
+                  color: AppColors.electricBlue,
+                  size: 20,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
@@ -178,8 +177,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                     ),
                   ),
                 ),
-                const Icon(Icons.chevron_right_rounded,
-                    color: AppColors.textTertiary, size: 20),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppColors.textTertiary,
+                  size: 20,
+                ),
               ],
             ),
           ),
@@ -272,8 +274,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          const Icon(Icons.vpn_key_rounded,
-                              size: 11, color: AppColors.electricBlue),
+                          const Icon(
+                            Icons.vpn_key_rounded,
+                            size: 11,
+                            color: AppColors.electricBlue,
+                          ),
                           const SizedBox(width: 4),
                           Text(
                             'Using your ${_byokProvider(cloud)} key',
@@ -433,9 +438,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         onTap: () async {
           setState(() => _styleExpanded = false);
           await Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => const CustomInstructionsScreen(),
-            ),
+            MaterialPageRoute(builder: (_) => const CustomInstructionsScreen()),
           );
         },
         child: Padding(
@@ -495,96 +498,99 @@ class _DashboardScreenState extends State<DashboardScreen>
     Widget? extraOption,
   }) {
     return GlassCard(
-          padding: EdgeInsets.zero,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // ── Header row (tap to toggle) ────────────────
-              Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: onToggle,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 13),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                label,
-                                style: GoogleFonts.inter(
-                                  fontSize: 12,
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                selectedLabel,
-                                style: GoogleFonts.inter(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.textPrimary,
-                                ),
-                              ),
-                            ],
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── Header row (tap to toggle) ────────────────
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: onToggle,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 13,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            label,
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
                           ),
-                        ),
-                        AnimatedRotation(
-                          turns: expanded ? 0.5 : 0.0,
-                          duration: const Duration(milliseconds: 220),
-                          child: const Icon(
-                            Icons.keyboard_arrow_down_rounded,
-                            color: AppColors.textSecondary,
+                          const SizedBox(height: 2),
+                          Text(
+                            selectedLabel,
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textPrimary,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
+                    AnimatedRotation(
+                      turns: expanded ? 0.5 : 0.0,
+                      duration: const Duration(milliseconds: 220),
+                      child: const Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-
-              // ── Animated options list ─────────────────────
-              AnimatedSize(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOut,
-                alignment: Alignment.topCenter,
-                child: expanded
-                    ? Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Container(
-                            height: 0.5,
-                            margin:
-                                const EdgeInsets.symmetric(horizontal: 14),
-                            color: AppColors.glassBorder,
-                          ),
-                          ...presets.map((s) => _option(s, current, onSelect)),
-                          if (extraOption != null) ...[
-                            Container(
-                              height: 0.5,
-                              margin:
-                                  const EdgeInsets.symmetric(horizontal: 14),
-                              color: AppColors.glassBorder,
-                            ),
-                            extraOption,
-                          ],
-                          const SizedBox(height: 6),
-                        ],
-                      )
-                    : const SizedBox(width: double.infinity),
-              ),
-            ],
+            ),
           ),
-        );
+
+          // ── Animated options list ─────────────────────
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
+            alignment: Alignment.topCenter,
+            child: expanded
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
+                        height: 0.5,
+                        margin: const EdgeInsets.symmetric(horizontal: 14),
+                        color: AppColors.glassBorder,
+                      ),
+                      ...presets.map((s) => _option(s, current, onSelect)),
+                      if (extraOption != null) ...[
+                        Container(
+                          height: 0.5,
+                          margin: const EdgeInsets.symmetric(horizontal: 14),
+                          color: AppColors.glassBorder,
+                        ),
+                        extraOption,
+                      ],
+                      const SizedBox(height: 6),
+                    ],
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
+        ],
+      ),
+    );
   }
 
   /// A single option row inside either dropdown.
-  Widget _option((String, String, String) s, String current,
-      ValueChanged<String> onSelect) {
+  Widget _option(
+    (String, String, String) s,
+    String current,
+    ValueChanged<String> onSelect,
+  ) {
     final isSelected = s.$1 == current;
     return Material(
       color: Colors.transparent,
@@ -602,8 +608,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                       s.$2,
                       style: GoogleFonts.inter(
                         fontSize: 14,
-                        fontWeight:
-                            isSelected ? FontWeight.w600 : FontWeight.w500,
+                        fontWeight: isSelected
+                            ? FontWeight.w600
+                            : FontWeight.w500,
                         color: AppColors.textPrimary,
                       ),
                     ),
@@ -633,9 +640,9 @@ class _DashboardScreenState extends State<DashboardScreen>
   /// Opens the full Wi-Fi management page, which connects to the CalcAI over
   /// Bluetooth and walks the user through adding a network.
   void _openWifi() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const WifiScreen()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const WifiScreen()));
   }
 
   /// Home-screen Wi-Fi section: the saved networks sit inside a boxed card, and
@@ -659,8 +666,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                           padding: const EdgeInsets.all(16),
                           child: Row(
                             children: [
-                              const Icon(Icons.wifi_off_rounded,
-                                  color: AppColors.textTertiary, size: 20),
+                              const Icon(
+                                Icons.wifi_off_rounded,
+                                color: AppColors.textTertiary,
+                                size: 20,
+                              ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
@@ -683,7 +693,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                           children: [
                             Padding(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 13),
+                                horizontal: 16,
+                                vertical: 13,
+                              ),
                               child: Row(
                                 children: [
                                   Icon(
@@ -726,7 +738,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                               Container(
                                 height: 0.5,
                                 margin: const EdgeInsets.symmetric(
-                                    horizontal: 16),
+                                  horizontal: 16,
+                                ),
                                 color: AppColors.glassBorder,
                               ),
                           ],
@@ -744,7 +757,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                 onTap: _openWifi,
                 borderRadius: BorderRadius.circular(12),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 6,
+                  ),
                   child: Row(
                     children: [
                       Container(
@@ -780,131 +796,30 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  /// Collapsible usage indicator. Collapsed = a bare skinny bar showing the two
-  /// remaining counts (silver standard → blue premium). Tapping expands it back
-  /// to the original two-column card, and tapping again collapses it.
-  /// Bare skinny usage bar: the two remaining counts with small labels, over
-  /// a silver standard segment easing into a blue premium one.
-  ///
-  /// There used to be a second, boxed layout you could tap to swap into. It
-  /// showed the same two numbers in a card, so it was a second way to read
-  /// one fact — dropped, along with the toggle chevron.
-  Widget _buildUsage() {
-    return Consumer<CloudService>(
-      builder: (context, cloud, _) {
-        final isPro = cloud.planType?.toLowerCase() == 'pro';
-        const premiumBlue = Color(0xFF9DB6DA);
-        const premiumBlueDark = Color(0xFF6E8FBE);
-
-        final sLeft = isPro
-            ? -1
-            : (cloud.cheapLimit - cloud.cheapUsage)
-                .clamp(0, cloud.cheapLimit > 0 ? cloud.cheapLimit : 0);
-        final pLeft = isPro
-            ? -1
-            : (cloud.premiumLimit - cloud.premiumUsage)
-                .clamp(0, cloud.premiumLimit > 0 ? cloud.premiumLimit : 0);
-
-        // Widths track what's left, so the bar empties as the day is used up.
-        final sFlex = isPro ? 1 : (sLeft > 0 ? sLeft : 1);
-        final pFlex = isPro ? 0 : (pLeft > 0 ? pLeft : 1);
-
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 2),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  _UsageCount(
-                    value: isPro ? '∞' : '$sLeft',
-                    label: 'Standard',
-                    color: AppColors.textPrimary,
-                  ),
-                  _UsageCount(
-                    value: isPro ? '∞' : '$pLeft',
-                    label: 'Premium',
-                    color: premiumBlue,
-                    trailing: true,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 9),
-              SizedBox(
-                height: 10,
-                child: Row(
-                  children: [
-                    Expanded(
-                      flex: sFlex,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(6),
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFFE8E8F0), AppColors.electricBlue],
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (!isPro) const SizedBox(width: 4),
-                    if (!isPro)
-                      Expanded(
-                        flex: pFlex,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(6),
-                            gradient: const LinearGradient(
-                              colors: [
-                                AppColors.electricBlue,
-                                premiumBlue,
-                                premiumBlueDark,
-                              ],
-                              stops: [0.0, 0.6, 1.0],
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
+  Widget _buildUsage() => DailyUsageCard(active: widget.isActive);
 
   Widget _buildLastPromptCard() {
     return Consumer<CloudService>(
       builder: (context, cloud, _) {
         if (cloud.history.isEmpty) {
-          return GlassCard(
+          return Padding(
             padding: const EdgeInsets.all(20),
             child: Center(
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
+                  const Icon(
                     Icons.chat_bubble_outline_rounded,
                     color: AppColors.textTertiary,
                     size: 32,
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'No prompts yet',
+                    'No prompt yet',
                     style: GoogleFonts.inter(
                       fontSize: 14,
                       color: AppColors.textTertiary,
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Use CalcAI on your calculator to see activity here',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: AppColors.textTertiary.withOpacity(0.6),
-                    ),
-                    textAlign: TextAlign.center,
                   ),
                 ],
               ),
@@ -933,8 +848,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                 CalcPhoto(
                   imageUrl: imageUrl,
                   height: 140,
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(16)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(16),
+                  ),
                 ),
               Padding(
                 padding: const EdgeInsets.all(16),
@@ -980,14 +896,20 @@ class _DashboardScreenState extends State<DashboardScreen>
     // not on that list is rejected by the backend.
     final providers = [
       _ModelProvider('OpenAI', Icons.auto_awesome_rounded, [
-        'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna',
+        'gpt-5.6-sol',
+        'gpt-5.6-terra',
+        'gpt-5.6-luna',
       ]),
       _ModelProvider('Google', Icons.cloud_rounded, [
-        'gemini-3.1-pro-preview', 'gemini-3.6-flash', 'gemini-3.5-flash',
+        'gemini-3.1-pro-preview',
+        'gemini-3.6-flash',
+        'gemini-3.5-flash',
         'gemini-3.5-flash-lite',
       ]),
       _ModelProvider('Anthropic', Icons.psychology_rounded, [
-        'claude-opus-5', 'claude-sonnet-5', 'claude-fable-5',
+        'claude-opus-5',
+        'claude-sonnet-5',
+        'claude-fable-5',
         'claude-haiku-4-5',
       ]),
     ];
@@ -1013,7 +935,11 @@ class _DashboardScreenState extends State<DashboardScreen>
     final cloud = context.read<CloudService>();
     if (auth.token != null && auth.primaryMac != null) {
       await cloud.setModel(
-          auth.token!, auth.primaryMac!, model, cloud.responseStyle);
+        auth.token!,
+        auth.primaryMac!,
+        model,
+        cloud.responseStyle,
+      );
     }
     if (mounted) setState(() => _isLoadingModel = false);
   }
@@ -1022,8 +948,12 @@ class _DashboardScreenState extends State<DashboardScreen>
     final auth = context.read<AuthService>();
     final cloud = context.read<CloudService>();
     if (auth.token != null && auth.primaryMac != null) {
-      await cloud.setModel(auth.token!, auth.primaryMac!,
-          cloud.currentModel ?? kDefaultModel, style);
+      await cloud.setModel(
+        auth.token!,
+        auth.primaryMac!,
+        cloud.currentModel ?? kDefaultModel,
+        style,
+      );
     }
   }
 
@@ -1031,9 +961,13 @@ class _DashboardScreenState extends State<DashboardScreen>
     final auth = context.read<AuthService>();
     final cloud = context.read<CloudService>();
     if (auth.token != null && auth.primaryMac != null) {
-      await cloud.setModel(auth.token!, auth.primaryMac!,
-          cloud.currentModel ?? kDefaultModel, cloud.responseStyle,
-          effort: effort);
+      await cloud.setModel(
+        auth.token!,
+        auth.primaryMac!,
+        cloud.currentModel ?? kDefaultModel,
+        cloud.responseStyle,
+        effort: effort,
+      );
     }
   }
 }
@@ -1283,53 +1217,6 @@ class _TierTag extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// One side of the usage bar: the number with a small label beneath it.
-class _UsageCount extends StatelessWidget {
-  const _UsageCount({
-    required this.value,
-    required this.label,
-    required this.color,
-    this.trailing = false,
-  });
-
-  final String value;
-  final String label;
-  final Color color;
-
-  /// Right-hand side of the bar, so the text aligns to its own edge.
-  final bool trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment:
-          trailing ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          value,
-          style: GoogleFonts.outfit(
-            fontSize: 22,
-            fontWeight: FontWeight.w700,
-            color: color,
-          ),
-        ),
-        const SizedBox(height: 1),
-        Text(
-          label.toUpperCase(),
-          style: GoogleFonts.inter(
-            fontSize: 10.5,
-            fontWeight: FontWeight.w800,
-            // Matches its own number, so Premium reads blue like the bar does.
-            color: color,
-            letterSpacing: 0.9,
-          ),
-        ),
-      ],
     );
   }
 }

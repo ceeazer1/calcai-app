@@ -40,9 +40,9 @@ class _MainShellState extends State<MainShell> {
     // on top of the shell.
     return NotificationListener<SwitchToWifiTabNotification>(
       onNotification: (notification) {
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const WifiScreen()),
-        );
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const WifiScreen()));
         return true;
       },
       child: Scaffold(
@@ -50,11 +50,11 @@ class _MainShellState extends State<MainShell> {
         extendBody: true,
         body: IndexedStack(
           index: _currentIndex,
-          children: const [
-            DashboardScreen(),
-            HistoryScreen(),
-            NotesScreen(),
-            SettingsScreen(),
+          children: [
+            DashboardScreen(isActive: _currentIndex == 0),
+            const HistoryScreen(),
+            const NotesScreen(),
+            const SettingsScreen(),
           ],
         ),
         bottomNavigationBar: _buildBottomBar(context),
@@ -70,11 +70,7 @@ class _MainShellState extends State<MainShell> {
     return Padding(
       // Float the bar above the system navigation area with some breathing
       // room on the sides and bottom.
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        bottom: bottomPadding + 12,
-      ),
+      padding: EdgeInsets.only(left: 20, right: 20, bottom: bottomPadding + 12),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
         child: BackdropFilter(
@@ -84,10 +80,7 @@ class _MainShellState extends State<MainShell> {
             decoration: BoxDecoration(
               color: AppColors.glassBackground,
               borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: AppColors.glassBorder,
-                width: 0.5,
-              ),
+              border: Border.all(color: AppColors.glassBorder, width: 0.5),
             ),
             // Expanded, not spaceAround: the items have fixed padding, so on
             // a narrow phone (320pt) four of them are wider than the bar and

@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'usage_tracker.dart';
+import 'auth_service.dart';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -51,12 +54,35 @@ class CloudService extends ChangeNotifier {
   /// Base URL for all CalcAI cloud endpoints.
   static const String _baseUrl = 'https://ai.calcai.cc';
 
-  /// Shared client that resolves the API host over DoH, so requests work even
-  /// on networks whose router DNS blocks the domain.
+  /// Session-guarded platform HTTP transport.
   final SessionHttpClient _client;
 
-  CloudService({http.Client? client})
-    : _client = SessionHttpClient(client ?? createResilientClient());
+  CloudService({http.Client? client, AuthService? auth})
+    : _client = SessionHttpClient(client ?? createResilientClient()) {
+    usageTracker = UsageTracker(fetch: _fetchAccountUsage);
+    usageTracker.addListener(notifyListeners);
+    if (auth != null) {
+      _auth = auth;
+      _syncAuthUsage();
+      auth.addListener(_syncAuthUsage);
+    }
+  }
+
+  AuthService? _auth;
+  String? _usageSession;
+  late final UsageTracker usageTracker;
+  void _syncAuthUsage() => bindUsageSession(_auth?.token);
+
+  void bindUsageSession(String? token) {
+    if (_usageSession == token) return;
+    reset();
+    _usageSession = token;
+    usageTracker.bind(token);
+    if (token != null) {
+      unawaited(usageTracker.refresh());
+      unawaited(listApiKeys(token));
+    }
+  }
 
   static const aiConsentVersion = '2026-09-13';
 
@@ -139,9 +165,8 @@ class CloudService extends ChangeNotifier {
   List<Map<String, dynamic>> _history = [];
   List<Map<String, dynamic>> get history => List.unmodifiable(_history);
 
-  /// Token / usage status for the current device.
-  Map<String, dynamic>? _usage;
-  Map<String, dynamic>? get usage => _usage;
+  /// Authoritative account usage; independent of calculator pairing.
+  Map<String, dynamic>? get usage => usageTracker.data?.json;
 
   /// Whether a network request is in progress.
   bool _isLoading = false;
@@ -184,19 +209,7 @@ class CloudService extends ChangeNotifier {
 
   /// Plan type (e.g. "Free", "Pro").
   String? get planType =>
-      _usage?['plan']?.toString() ?? _usage?['planType']?.toString();
-
-  /// Number of standard/cheap model calls used today.
-  int get cheapUsage => (_usage?['cheapCount'] as num?)?.toInt() ?? 0;
-
-  /// Number of premium model calls used today.
-  int get premiumUsage => (_usage?['expensiveCount'] as num?)?.toInt() ?? 0;
-
-  /// Daily limit for cheap calls (-1 = unlimited/pro).
-  int get cheapLimit => (_usage?['cheapLimit'] as num?)?.toInt() ?? 50;
-
-  /// Daily limit for premium calls (-1 = unlimited/pro).
-  int get premiumLimit => (_usage?['expensiveLimit'] as num?)?.toInt() ?? 10;
+      usage?['plan']?.toString() ?? usage?['planType']?.toString();
 
   // ── Device Management ─────────────────────────────────────────────
 
@@ -685,6 +698,7 @@ class CloudService extends ChangeNotifier {
     String mac, {
     int limit = 50,
   }) async {
+    if (_usageSession != token) bindUsageSession(token);
     try {
       _setLoading(true);
       _clearError();
@@ -702,7 +716,13 @@ class CloudService extends ChangeNotifier {
       final List<dynamic> raw = data is List
           ? data
           : (data['items'] ?? data['logs'] ?? []);
-      _history = raw.cast<Map<String, dynamic>>();
+      final updated = raw.cast<Map<String, dynamic>>();
+      final hasNewSolve =
+          updated.isNotEmpty &&
+          (_history.isEmpty ||
+              jsonEncode(updated.first) != jsonEncode(_history.first));
+      _history = updated;
+      if (hasNewSolve) unawaited(refreshUsageAfterSolve(token));
 
       notifyListeners();
       return _history;
@@ -743,30 +763,52 @@ class CloudService extends ChangeNotifier {
 
   // ── Usage ─────────────────────────────────────────────────────────
 
-  /// Gets token / usage status for a device.
-  ///
-  /// GET /ai/usage/status?mac=
-  Future<Map<String, dynamic>> getUsage(String token, String mac) async {
-    try {
-      _setLoading(true);
-      _clearError();
-
-      final response = await _client.get(
-        Uri.parse('$_baseUrl/ai/usage/status?mac=$mac'),
-        headers: _authHeaders(token),
+  Future<Map<String, dynamic>> _fetchAccountUsage(String token) async {
+    final response = await _client
+        .get(
+          Uri.parse('$_baseUrl/ai/usage/status'),
+          headers: _authHeaders(token),
+        )
+        .timeout(const Duration(seconds: 20));
+    _client.ensureCurrent(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      // Preserve the app's explicit ownership-revocation handling.
+      try {
+        _assertSuccess(response, updateUsage: false);
+      } on CloudException {
+        /* handled below */
+      }
+      Map body = {};
+      try {
+        body = jsonDecode(response.body) as Map;
+      } catch (_) {}
+      final seconds = int.tryParse(response.headers['retry-after'] ?? '');
+      throw UsageRequestException(
+        response.statusCode,
+        body['error']?.toString() ?? '',
+        retryAfter: seconds == null
+            ? null
+            : Duration(seconds: seconds < 15 ? 15 : seconds),
+        resetsAt: DateTime.tryParse(body['resetsAt']?.toString() ?? ''),
       );
-
-      _assertSuccess(response);
-
-      _usage = jsonDecode(response.body) as Map<String, dynamic>;
-      notifyListeners();
-      return _usage!;
-    } catch (e) {
-      _setError('Failed to load usage: ${_friendlyError(e)}');
-      return {};
-    } finally {
-      _setLoading(false);
     }
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    if (body['ok'] != true) throw const FormatException('Usage not confirmed');
+    return body;
+  }
+
+  /// The optional MAC is retained for existing callers, never sent to the API.
+  Future<Map<String, dynamic>> getUsage(String token, [String? mac]) async {
+    if (_usageSession != token) {
+      bindUsageSession(token);
+    }
+    await usageTracker.refresh();
+    return usage ?? {};
+  }
+
+  /// Called when newly fetched calculator history reveals a completed solve.
+  Future<void> refreshUsageAfterSolve(String token) async {
+    if (_usageSession == token) await usageTracker.refreshAfterSolve();
   }
 
   // ── Dashboard Aggregator ──────────────────────────────────────────
@@ -778,6 +820,7 @@ class CloudService extends ChangeNotifier {
   /// Errors from individual calls are surfaced through [error]; partial
   /// successes still populate the corresponding state fields.
   Future<void> loadDashboard(String token, String mac) async {
+    if (_usageSession != token) bindUsageSession(token);
     _currentMac = mac;
     _clearError();
     _setLoading(true);
@@ -833,7 +876,7 @@ class CloudService extends ChangeNotifier {
     _deviceRevoked = false;
   }
 
-  void _assertSuccess(http.Response response) {
+  void _assertSuccess(http.Response response, {bool updateUsage = true}) {
     _client.ensureCurrent(response);
     // Only the Worker's explicit ownership error revokes a device. Other 403s
     // are independent security checks and must not erase a valid pairing.
@@ -848,6 +891,22 @@ class CloudService extends ChangeNotifier {
         message = body['error'] ?? body['message'] ?? response.reasonPhrase;
       } catch (_) {
         message = response.reasonPhrase ?? 'Unknown error';
+      }
+      if (updateUsage &&
+          (message == 'usage_limit_reached' ||
+              message == 'usage_syncing' ||
+              message == 'usage_unavailable')) {
+        final body = jsonDecode(response.body) as Map;
+        final retry =
+            int.tryParse(response.headers['retry-after'] ?? '15') ?? 15;
+        usageTracker.handleError(
+          UsageRequestException(
+            response.statusCode,
+            message,
+            resetsAt: DateTime.tryParse(body['resetsAt']?.toString() ?? ''),
+            retryAfter: Duration(seconds: retry < 15 ? 15 : retry),
+          ),
+        );
       }
       throw CloudException(response.statusCode, message.toString());
     }
@@ -1035,7 +1094,8 @@ class CloudService extends ChangeNotifier {
     _customContext = '';
     _notes = null;
     _history = [];
-    _usage = null;
+    usageTracker.clear();
+    _usageSession = null;
     _error = null;
     _historyError = null;
     _notesError = null;
@@ -1047,6 +1107,9 @@ class CloudService extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _auth?.removeListener(_syncAuthUsage);
+    usageTracker.removeListener(notifyListeners);
+    usageTracker.dispose();
     _keyGeneration++;
     _client.close();
     super.dispose();

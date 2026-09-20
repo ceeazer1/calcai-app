@@ -45,7 +45,9 @@ void main() {
       providers: [
         ChangeNotifierProvider(create: (_) => BleService()),
         ChangeNotifierProvider(create: (_) => AuthService()),
-        ChangeNotifierProvider(create: (_) => CloudService()),
+        ChangeNotifierProvider(
+          create: (context) => CloudService(auth: context.read<AuthService>()),
+        ),
       ],
       child: const CalcAIApp(),
     ),

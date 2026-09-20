@@ -3,6 +3,15 @@ import 'dart:io';
 import 'package:cupertino_http/cupertino_http.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
+import 'package:objective_c/objective_c.dart';
+
+/// Include only the numeric native code, never request URLs or credentials.
+String connectionFailureMessage(http.ClientException error) {
+  final detail = error is NSErrorClientException
+      ? ' (Apple network error ${error.error.code})'
+      : '';
+  return 'Could not reach CalcAI$detail. Check your internet connection and try again.';
+}
 
 /// Reuse this client for the service lifetime and close it on disposal.
 /// Platform transports own DNS, certificate validation, and connection pooling.
