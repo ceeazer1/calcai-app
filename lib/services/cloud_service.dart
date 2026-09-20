@@ -350,8 +350,8 @@ class CloudService extends ChangeNotifier {
 
       _assertSuccess(response);
 
-      // Refresh device list after successful claim.
-      await getDevices(token);
+      // The successful claim is authoritative; avoid a second network request
+      // before opening Wi-Fi setup. Dashboard refresh loads the full list later.
       return true;
     } catch (e) {
       _setError('Failed to claim device: ${_friendlyError(e)}');

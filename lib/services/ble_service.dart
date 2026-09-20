@@ -252,7 +252,7 @@ class BleService extends ChangeNotifier {
       // Cancel any existing scan
       await FlutterBluePlus.stopScan();
 
-      _scanSub = FlutterBluePlus.scanResults.listen((results) {
+      _scanSub = FlutterBluePlus.onScanResults.listen((results) {
         for (final r in results) {
           final name = r.advertisementData.advName;
           if (name.isEmpty) continue;
@@ -278,6 +278,10 @@ class BleService extends ChangeNotifier {
       });
 
       await FlutterBluePlus.startScan(timeout: timeout);
+      // startScan completes when scanning STARTS, not when its timer expires.
+      // Keep the result subscription until native scanning ends (or connection
+      // stops it early). isScanning replays its current state to new listeners.
+      await FlutterBluePlus.isScanning.where((scanning) => !scanning).first;
     } catch (e) {
       _setError('Scan failed: ${_friendlyError(e)}');
     } finally {

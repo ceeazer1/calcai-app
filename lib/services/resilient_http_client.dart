@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
@@ -106,195 +105,64 @@ http.Client createResilientClient() {
 }
 
 class _ResilientClient extends http.BaseClient {
-  final http.Client _fallback = IOClient();
+  late final http.Client _client;
+
+  _ResilientClient() {
+    final native = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 15)
+      ..idleTimeout = const Duration(seconds: 30);
+    native.connectionFactory = (uri, proxyHost, proxyPort) async {
+      if (proxyHost != null || !_dohHosts.contains(uri.host)) {
+        return Socket.startConnect(
+          proxyHost ?? uri.host,
+          proxyPort ?? uri.port,
+        );
+      }
+      var cancelled = false;
+      Socket? connected;
+      Future<Socket> connect() async {
+        Socket socket;
+        try {
+          socket = await Socket.connect(
+            uri.host,
+            uri.port,
+            timeout: const Duration(seconds: 5),
+          );
+        } catch (_) {
+          if (cancelled) rethrow;
+          final ip = await _resolveViaDoh(uri.host);
+          if (ip == null || cancelled) rethrow;
+          socket = await Socket.connect(
+            ip,
+            uri.port,
+            timeout: const Duration(seconds: 5),
+          );
+        }
+        connected = socket;
+        if (cancelled) {
+          socket.destroy();
+          throw const SocketException('Connection cancelled');
+        }
+        return socket;
+      }
+
+      // HttpClient owns HTTP framing, connection reuse and TLS verification
+      // against the original URI hostname, including after a DNS fallback.
+      return ConnectionTask.fromSocket(connect(), () {
+        cancelled = true;
+        connected?.destroy();
+      });
+    };
+    _client = IOClient(native);
+  }
 
   @override
-  Future<http.StreamedResponse> send(http.BaseRequest request) {
-    final uri = request.url;
-    if (uri.scheme == 'https' && _dohHosts.contains(uri.host)) {
-      return _sendSecure(request);
-    }
-    return _fallback.send(request);
-  }
+  Future<http.StreamedResponse> send(http.BaseRequest request) =>
+      _client.send(request);
 
   @override
   void close() {
-    _fallback.close();
+    _client.close();
     super.close();
-  }
-
-  Future<http.StreamedResponse> _sendSecure(http.BaseRequest request) async {
-    final uri = request.url;
-    final host = uri.host;
-    final port = uri.hasPort ? uri.port : 443;
-    SecureSocket tls;
-    try {
-      tls = await _connectTls(host, host, port);
-    } catch (_) {
-      final ip = await _resolveViaDoh(host);
-      if (ip == null) rethrow;
-      tls = await _connectTls(ip, host, port);
-    }
-
-    try {
-      final bodyBytes = await request.finalize().toBytes();
-
-      final path = uri.path.isEmpty ? '/' : uri.path;
-      final query = uri.hasQuery ? '?${uri.query}' : '';
-      final head = StringBuffer()
-        ..write('${request.method} $path$query HTTP/1.1\r\n')
-        ..write('Host: $host\r\n');
-      request.headers.forEach((k, v) {
-        final lk = k.toLowerCase();
-        // We manage these ourselves.
-        if (lk == 'host' ||
-            lk == 'content-length' ||
-            lk == 'connection' ||
-            lk == 'accept-encoding') {
-          return;
-        }
-        head.write('$k: $v\r\n');
-      });
-      head
-        ..write('Accept-Encoding: identity\r\n')
-        ..write('Content-Length: ${bodyBytes.length}\r\n')
-        ..write('Connection: close\r\n\r\n');
-
-      tls.add(utf8.encode(head.toString()));
-      if (bodyBytes.isNotEmpty) tls.add(bodyBytes);
-      await tls.flush();
-
-      // Connection: close → read until EOF, then parse.
-      final resBytes = await _readAll(tls).timeout(const Duration(seconds: 35));
-
-      return _parse(resBytes, request);
-    } finally {
-      tls.destroy();
-    }
-  }
-
-  Future<SecureSocket> _connectTls(
-    String address,
-    String host,
-    int port,
-  ) async {
-    final raw = await Socket.connect(
-      address,
-      port,
-      timeout: const Duration(seconds: 5),
-    );
-    try {
-      return await SecureSocket.secure(
-        raw,
-        host: host,
-      ).timeout(const Duration(seconds: 8));
-    } catch (_) {
-      raw.destroy();
-      rethrow;
-    }
-  }
-
-  /// Largest response body we will buffer.
-  ///
-  /// This client reads to EOF into memory, so without a ceiling a server that
-  /// never stops sending would grow the buffer until the app is killed. 24 MB
-  /// is far above anything the API returns (the biggest is a few hundred KB of
-  /// history) while still bounding the damage.
-  static const int _maxResponseBytes = 24 * 1024 * 1024;
-
-  static Future<Uint8List> _readAll(Stream<List<int>> s) async {
-    final b = BytesBuilder(copy: false);
-    await for (final chunk in s) {
-      b.add(chunk);
-      if (b.length > _maxResponseBytes) {
-        throw const HttpException('Response too large');
-      }
-    }
-    return b.takeBytes();
-  }
-
-  static int _indexOfCrlfCrlf(Uint8List b) {
-    for (var i = 0; i + 3 < b.length; i++) {
-      if (b[i] == 13 && b[i + 1] == 10 && b[i + 2] == 13 && b[i + 3] == 10) {
-        return i;
-      }
-    }
-    return -1;
-  }
-
-  http.StreamedResponse _parse(Uint8List bytes, http.BaseRequest request) {
-    final sep = _indexOfCrlfCrlf(bytes);
-    if (sep < 0) {
-      throw const HttpException('Malformed HTTP response');
-    }
-    final headText = latin1.decode(bytes.sublist(0, sep));
-    var body = bytes.sublist(sep + 4);
-
-    final lines = headText.split('\r\n');
-    final statusLine = lines.isNotEmpty ? lines.first : 'HTTP/1.1 502';
-    final parts = statusLine.split(' ');
-    final statusCode = parts.length >= 2
-        ? (int.tryParse(parts[1]) ?? 502)
-        : 502;
-    final reason = parts.length >= 3 ? parts.sublist(2).join(' ') : null;
-
-    final headers = <String, String>{};
-    for (var i = 1; i < lines.length; i++) {
-      final line = lines[i];
-      final idx = line.indexOf(':');
-      if (idx <= 0) continue;
-      final key = line.substring(0, idx).trim().toLowerCase();
-      final val = line.substring(idx + 1).trim();
-      headers[key] = headers.containsKey(key) ? '${headers[key]}, $val' : val;
-    }
-
-    if ((headers['transfer-encoding'] ?? '').toLowerCase().contains(
-      'chunked',
-    )) {
-      body = _dechunk(body);
-    }
-    if ((headers['content-encoding'] ?? '').toLowerCase().contains('gzip')) {
-      body = Uint8List.fromList(gzip.decode(body));
-      headers.remove('content-encoding');
-    }
-    // Length now reflects the decoded body.
-    headers['content-length'] = body.length.toString();
-
-    return http.StreamedResponse(
-      Stream<List<int>>.value(body),
-      statusCode,
-      contentLength: body.length,
-      request: request,
-      headers: headers,
-      reasonPhrase: reason,
-    );
-  }
-
-  static Uint8List _dechunk(Uint8List data) {
-    final out = BytesBuilder(copy: false);
-    var i = 0;
-    while (i < data.length) {
-      // Read the chunk-size line.
-      var j = i;
-      while (j + 1 < data.length && !(data[j] == 13 && data[j + 1] == 10)) {
-        j++;
-      }
-      if (j + 1 >= data.length) break;
-      final sizeLine = latin1
-          .decode(data.sublist(i, j))
-          .split(';')
-          .first
-          .trim();
-      final size = int.tryParse(sizeLine, radix: 16) ?? 0;
-      i = j + 2; // skip CRLF
-      if (size == 0) break;
-      if (i + size > data.length) break;
-      out.add(data.sublist(i, i + size));
-      i += size;
-      if (i + 1 < data.length && data[i] == 13 && data[i + 1] == 10) {
-        i += 2; // trailing CRLF after chunk
-      }
-    }
-    return out.takeBytes();
   }
 }

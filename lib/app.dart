@@ -52,6 +52,7 @@ class AppGate extends StatefulWidget {
 
 class AppGateState extends State<AppGate> {
   bool _initialized = false;
+  String? _setupSession;
   bool _handlingDeviceRevocation = false;
 
   @override
@@ -168,14 +169,21 @@ class AppGateState extends State<AppGate> {
 
     // ── Not authenticated → sign-in screen ──────────────────────────
     if (!auth.isAuthenticated) {
+      _setupSession = null;
       return const AuthScreen();
     }
 
     // ── Authenticated, no device linked → first-time setup ────────────
     // Walk the user through the one-time Bluetooth WiFi-provisioning flow
     // before they reach the main shell.
-    if ((auth.primaryMac == null || auth.primaryMac!.isEmpty) &&
-        !auth.setupSkipped) {
+    if (_setupSession != auth.token || auth.setupSkipped) _setupSession = null;
+    if (!auth.setupSkipped &&
+        ((auth.primaryMac == null || auth.primaryMac!.isEmpty) ||
+            _setupSession == auth.token)) {
+      // Keep this gate on setup while a claim persists its MAC. Provider
+      // notifications must not replace the welcome route before it can push
+      // Wi-Fi setup. Completion opens a fresh AppGate in SuccessScreen.
+      _setupSession = auth.token;
       return const LinkDeviceScreen();
     }
 
