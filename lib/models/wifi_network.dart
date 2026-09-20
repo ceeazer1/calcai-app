@@ -24,6 +24,27 @@ class WifiNetwork {
   /// The authentication mode of the network.
   final WifiAuthMode authMode;
 
+  /// Provisioning selects an SSID, not an access point. Mesh nodes and radios
+  /// can advertise the same name, so expose one selectable row per exact SSID.
+  static List<WifiNetwork> uniqueBySsid(Iterable<WifiNetwork> results) {
+    final bySsid = <String, WifiNetwork>{};
+    for (final network in results) {
+      if (network.ssid.isEmpty) continue;
+      final previous = bySsid[network.ssid];
+      // A stronger open advertisement must not hide a password requirement.
+      if (previous == null ||
+          (network.isSecured && !previous.isSecured) ||
+          (network.isSecured == previous.isSecured &&
+              network.rssi > previous.rssi)) {
+        bySsid[network.ssid] = network;
+      }
+    }
+    return bySsid.values.toList()..sort((a, b) {
+      final signal = b.rssi.compareTo(a.rssi);
+      return signal != 0 ? signal : a.ssid.compareTo(b.ssid);
+    });
+  }
+
   /// Returns a 0–4 signal quality level.
   int get signalLevel {
     if (rssi >= -50) return 4;
@@ -80,11 +101,11 @@ class WifiNetwork {
 
   /// Serialises the network to a JSON-compatible map.
   Map<String, dynamic> toJson() => {
-        'ssid': ssid,
-        'rssi': rssi,
-        'secured': isSecured,
-        'auth': authMode.index,
-      };
+    'ssid': ssid,
+    'rssi': rssi,
+    'secured': isSecured,
+    'auth': authMode.index,
+  };
 
   @override
   bool operator ==(Object other) =>

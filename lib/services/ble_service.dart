@@ -616,8 +616,7 @@ class BleService extends ChangeNotifier {
             }
           }
         }
-        // Sort by signal strength (strongest first)
-        _wifiNetworks.sort((a, b) => b.rssi.compareTo(a.rssi));
+        _normalizeWifiNetworks();
       }
     } catch (e) {
       logDebug('CalcAI BLE: Error parsing WiFi scan results: $e');
@@ -645,13 +644,20 @@ class BleService extends ChangeNotifier {
           );
         }
       }
-      _wifiNetworks.sort((a, b) => b.rssi.compareTo(a.rssi));
+      _normalizeWifiNetworks();
     } catch (_) {
       // Silently fail; user will see empty list
     }
   }
 
   // ── Saved Networks ────────────────────────────────────────────────
+
+  void _normalizeWifiNetworks() {
+    final networks = WifiNetwork.uniqueBySsid(_wifiNetworks);
+    _wifiNetworks
+      ..clear()
+      ..addAll(networks);
+  }
 
   /// Requests saved/configured networks from the ESP32 via BLE.
   /// Sends `{"cmd":"list"}` to the scan characteristic and reads the response.

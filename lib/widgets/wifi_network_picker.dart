@@ -50,7 +50,9 @@ class _WifiNetworkPickerState extends State<WifiNetworkPicker> {
   Widget build(BuildContext context) {
     final networks = [
       if (_selected != null) _selected!,
-      ...widget.networks.where((n) => n.ssid != _selected?.ssid),
+      ...WifiNetwork.uniqueBySsid(
+        widget.networks,
+      ).where((n) => n.ssid != _selected?.ssid),
     ];
     if (networks.isEmpty) {
       return const Padding(

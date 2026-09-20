@@ -554,9 +554,12 @@ class _NetworkList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final uniqueNetworks = WifiNetwork.uniqueBySsid(networks);
     final orderedNetworks = [
       if (selectedNetwork != null) selectedNetwork!,
-      ...networks.where((network) => network.ssid != selectedNetwork?.ssid),
+      ...uniqueNetworks.where(
+        (network) => network.ssid != selectedNetwork?.ssid,
+      ),
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -583,7 +586,7 @@ class _NetworkList extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  '${networks.length}',
+                  '${uniqueNetworks.length}',
                   style: GoogleFonts.inter(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
