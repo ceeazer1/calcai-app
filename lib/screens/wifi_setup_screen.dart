@@ -1,4 +1,3 @@
-import 'ai_consent_screen.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -59,7 +58,7 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted || _leaving) return;
       final ble = context.read<BleService>();
-      await ble.setWifiUiMode(true);
+      await ble.setWifiUiMode(true, finishOnConnect: true);
       if (mounted && !_leaving) await ble.requestWifiScan();
     });
   }
@@ -232,8 +231,7 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
-        pageBuilder: (_, __, ___) =>
-            const AiConsentGate(child: SuccessScreen()),
+        pageBuilder: (_, __, ___) => const SuccessScreen(),
         transitionDuration: const Duration(milliseconds: 600),
         reverseTransitionDuration: const Duration(milliseconds: 400),
         transitionsBuilder: (context, animation, _, child) {

@@ -860,10 +860,16 @@ class BleService extends ChangeNotifier {
 
   /// Changes only the short status shown on the calculator's BLE page.
   /// Pairing, authorization, Wi-Fi state, and advertising are untouched.
-  Future<bool> setWifiUiMode(bool enabled) async {
+  Future<bool> setWifiUiMode(
+    bool enabled, {
+    bool finishOnConnect = false,
+  }) async {
     final r = await _command({
       'cmd': 'uimode',
       'mode': enabled ? 'wifi' : 'normal',
+      // Setup ends on a successful join; the Wi-Fi editor stays open until
+      // the user leaves it. Older firmware safely ignores this field.
+      'finishOnConnect': enabled && finishOnConnect,
     });
     return r?['ok'] == true && r?['mode'] == (enabled ? 'wifi' : 'normal');
   }

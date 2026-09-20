@@ -46,7 +46,7 @@ Future<void> _mount(WidgetTester tester, _ConsentCloud cloud) async {
       ],
       child: MaterialApp(
         theme: AppTheme.darkTheme,
-        home: const AiConsentGate(child: Scaffold(body: Text('Device setup'))),
+        home: const AiConsentGate(child: Scaffold(body: Text('Home'))),
       ),
     ),
   );
@@ -77,13 +77,32 @@ void main() {
   );
 
   for (final allowed in [false, true]) {
-    testWidgets('explicit choice $allowed is saved before setup opens', (
+    testWidgets('explicit choice $allowed is saved before Home is unlocked', (
       tester,
     ) async {
       final cloud = _ConsentCloud();
       await _mount(tester, cloud);
       expect(cloud.choices, isEmpty);
-      expect(find.text('Device setup'), findsNothing);
+      expect(find.text('Home'), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-consent-popup')), findsOneWidget);
+      expect(find.byType(BackdropFilter), findsOneWidget);
+      expect(
+        tester
+            .widget<IgnorePointer>(
+              find
+                  .ancestor(
+                    of: find.text('Home'),
+                    matching: find.byType(IgnorePointer),
+                  )
+                  .first,
+            )
+            .ignoring,
+        isTrue,
+      );
+      await tester.tapAt(const Offset(5, 5));
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('ai-consent-popup')), findsOneWidget);
       expect(
         find.textContaining('OpenAI, Google (Gemini), or Anthropic'),
         findsOneWidget,
@@ -101,7 +120,8 @@ void main() {
         await tester.pumpAndSettle();
       }
       expect(cloud.choices, [allowed]);
-      expect(find.text('Device setup'), findsOneWidget);
+      expect(find.text('Home'), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-consent-popup')), findsNothing);
       expect(tester.takeException(), isNull);
     });
   }
@@ -111,7 +131,8 @@ void main() {
   ) async {
     final cloud = _ConsentCloud()..reviewed = true;
     await _mount(tester, cloud);
-    expect(find.text('Device setup'), findsOneWidget);
+    expect(find.text('Home'), findsOneWidget);
+    expect(find.byKey(const ValueKey('ai-consent-popup')), findsNothing);
     expect(cloud.choices, isEmpty);
     expect(cloud.allowed, false);
   });
@@ -125,7 +146,8 @@ void main() {
       await tester.ensureVisible(button);
       await tester.tap(button);
       await tester.pumpAndSettle();
-      expect(find.text('Device setup'), findsNothing);
+      expect(find.text('Home'), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-consent-popup')), findsOneWidget);
       expect(
         find.text('Your choice was not saved. Please try again.'),
         findsOneWidget,
@@ -135,7 +157,8 @@ void main() {
       await tester.ensureVisible(retry);
       await tester.tap(retry);
       await tester.pumpAndSettle();
-      expect(find.text('Device setup'), findsOneWidget);
+      expect(find.text('Home'), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-consent-popup')), findsNothing);
     },
   );
 

@@ -162,12 +162,17 @@ class SetupTestAppBle extends BleService {
   }
 
   @override
-  Future<bool> setWifiUiMode(bool enabled) async {
+  Future<bool> setWifiUiMode(
+    bool enabled, {
+    bool finishOnConnect = false,
+  }) async {
     wifiUiMode = enabled;
+    finishWifiSetupOnConnect = enabled && finishOnConnect;
     return true;
   }
 
   bool wifiUiMode = false;
+  bool finishWifiSetupOnConnect = false;
   bool portalClosed = false;
   bool canClosePortal = true;
   @override

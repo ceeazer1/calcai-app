@@ -17,7 +17,10 @@ class PortalBle extends SetupTestAppBle {
   @override
   DeviceConnectionState get connectionState => state;
   @override
-  Future<bool> setWifiUiMode(bool enabled) async {
+  Future<bool> setWifiUiMode(
+    bool enabled, {
+    bool finishOnConnect = false,
+  }) async {
     if (!enabled) resetAttempts++;
     return resetAttempts > failures;
   }

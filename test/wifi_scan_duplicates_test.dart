@@ -41,12 +41,15 @@ class PendingExitBle extends MeshScanBle {
   final resetAck = Completer<bool>();
   bool resetRequested = false;
   @override
-  Future<bool> setWifiUiMode(bool enabled) async {
+  Future<bool> setWifiUiMode(
+    bool enabled, {
+    bool finishOnConnect = false,
+  }) async {
     if (!enabled) {
       resetRequested = true;
       await resetAck.future;
     }
-    return super.setWifiUiMode(enabled);
+    return super.setWifiUiMode(enabled, finishOnConnect: finishOnConnect);
   }
 }
 
@@ -73,6 +76,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      expect(ble.finishWifiSetupOnConnect, isTrue);
       await tester.tap(find.text('Guest'));
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('Connect'));

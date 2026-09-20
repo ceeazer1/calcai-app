@@ -31,7 +31,12 @@ void main() {
       await tester.pump(const Duration(milliseconds: 1200));
       await tester.pump(const Duration(milliseconds: 1200));
       await tester.pumpAndSettle();
-      expect(find.text('Device paired'), findsNothing);
+      expect(find.text('Device paired'), findsOneWidget);
+      expect(find.text('AI, your choice'), findsNothing);
+      await tester.tap(find.text('Home page'));
+      await tester.pumpAndSettle();
+      expect(find.text('Home'), findsWidgets);
+      expect(find.byKey(const ValueKey('ai-consent-popup')), findsOneWidget);
       final choice = find.text(
         allow ? 'Allow AI sharing' : 'Continue with AI off',
       );
@@ -42,9 +47,7 @@ void main() {
         await tester.tap(find.text('Keep AI off'));
         await tester.pumpAndSettle();
       }
-      expect(find.text('Device paired'), findsOneWidget);
-      await tester.tap(find.text('Home page'));
-      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('ai-consent-popup')), findsNothing);
       expect(find.text('Home'), findsWidgets);
       expect(tester.takeException(), isNull);
       await tester.tap(find.text('Restart'));
