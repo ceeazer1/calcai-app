@@ -865,7 +865,27 @@ class BleService extends ChangeNotifier {
       'cmd': 'uimode',
       'mode': enabled ? 'wifi' : 'normal',
     });
-    return r?['ok'] == true;
+    return r?['ok'] == true && r?['mode'] == (enabled ? 'wifi' : 'normal');
+  }
+
+  /// Leave the calculator's Wi-Fi page without relying on widget disposal.
+  /// A transient missed acknowledgement gets a retry. If both fail, closing
+  /// the link clears the volatile firmware flag without changing saved data.
+  Future<void> endWifiUiMode() async {
+    for (var attempt = 0; attempt < 2; attempt++) {
+      if (!connectionState.isConnected) return;
+      if (await setWifiUiMode(false)) return;
+    }
+    await disconnect();
+  }
+
+  /// Ask the authenticated calculator to stop advertising as well as drop
+  /// this link. Older firmware echoes normal mode, so cannot fake success.
+  Future<bool> closeBlePortal() async {
+    final reply = await _command({'cmd': 'uimode', 'mode': 'closed'});
+    if (reply?['ok'] != true || reply?['mode'] != 'closed') return false;
+    await disconnect();
+    return true;
   }
 
   /// Claims an unpaired calculator with the six digits shown on its screen.

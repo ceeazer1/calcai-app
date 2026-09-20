@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:calcai_app/models/wifi_network.dart';
+import 'package:calcai_app/models/calcai_device.dart';
 import 'package:calcai_app/screens/wifi_setup_screen.dart';
 import 'package:calcai_app/services/auth_service.dart';
 import 'package:calcai_app/services/ble_service.dart';
@@ -29,10 +31,66 @@ class MeshScanBle extends SetupTestAppBle {
   @override
   List<WifiNetwork> get wifiNetworks => meshScan;
   @override
+  DeviceConnectionState get connectionState => DeviceConnectionState.ready;
+  @override
   Future<void> requestWifiScan() async => notifyListeners();
 }
 
+class PendingExitBle extends MeshScanBle {
+  PendingExitBle() : super(saved: true);
+  final resetAck = Completer<bool>();
+  bool resetRequested = false;
+  @override
+  Future<bool> setWifiUiMode(bool enabled) async {
+    if (!enabled) {
+      resetRequested = true;
+      await resetAck.future;
+    }
+    return super.setWifiUiMode(enabled);
+  }
+}
+
 void main() {
+  testWidgets(
+    'setup waits for the normal-mode acknowledgement before success',
+    (tester) async {
+      final ble = PendingExitBle();
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<AuthService>(
+              create: (_) => SetupTestAppAuth(paired: true)..init(),
+            ),
+            ChangeNotifierProvider<BleService>.value(value: ble),
+            ChangeNotifierProvider<CloudService>(
+              create: (_) => SetupTestAppCloud(),
+            ),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: const WifiSetupScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Guest'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Connect'));
+      await tester.tap(find.text('Connect'));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(ble.resetRequested, isTrue);
+      expect(ble.wifiUiMode, isTrue);
+      expect(find.text('Device paired'), findsNothing);
+      ble.resetAck.complete(true);
+      await tester.pumpAndSettle();
+      expect(ble.wifiUiMode, isFalse);
+      expect(find.text('Device paired'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      ble.dispose();
+    },
+  );
   test('mesh results keep the strongest signal once per exact SSID', () {
     final networks = WifiNetwork.uniqueBySsid(meshScan);
     expect(networks.length, 6);
@@ -90,6 +148,7 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
+        expect(ble.wifiUiMode, isTrue);
         expect(find.text('6'), findsOneWidget);
         expect(find.byType(WifiNetworkTile), findsNWidgets(6));
         expect(
@@ -123,6 +182,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(ble.connectedSsid, 'Phone');
         expect(find.text('Device paired'), findsOneWidget);
+        expect(ble.wifiUiMode, isFalse);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox());
         ble.dispose();

@@ -1,5 +1,6 @@
 import '../widgets/daily_usage_card.dart';
 import '../widgets/fast_mode_card.dart';
+import '../widgets/ble_portal_status.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -109,6 +110,7 @@ class _DashboardScreenState extends State<DashboardScreen>
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
               children: [
                 _buildTopBar(),
+                const BlePortalStatus(),
                 _buildPairBanner(),
                 _buildSectionHeader('AI Usage', Icons.data_usage_rounded),
                 _buildUsage(),

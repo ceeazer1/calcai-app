@@ -38,6 +38,9 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
   bool _obscure = true;
   bool _iphoneHotspot = false;
   late final BleService _ble;
+  bool _leaving = false;
+  bool _allowPop = false;
+  Future<void>? _modeCleanup;
 
   @override
   void initState() {
@@ -54,9 +57,10 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
     // Tell the calculator what this authenticated connection is doing, then
     // start the scan. Both commands share BleService's serialized queue.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || _leaving) return;
       final ble = context.read<BleService>();
       await ble.setWifiUiMode(true);
-      if (mounted) await ble.requestWifiScan();
+      if (mounted && !_leaving) await ble.requestWifiScan();
     });
   }
 
@@ -64,15 +68,26 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
   void dispose() {
     // Best effort only. A disconnect also clears this volatile firmware flag,
     // so an interrupted route can never leave the device stuck in Wi-Fi mode.
-    unawaited(_ble.setWifiUiMode(false));
+    unawaited(_clearWifiMode());
     _enterController.dispose();
     _password.dispose();
     _networkScroll.dispose();
     super.dispose();
   }
 
+  Future<void> _clearWifiMode() => _modeCleanup ??= _ble.endWifiUiMode();
+
+  Future<void> _goBack() async {
+    if (_leaving || _connectingSsid != null) return;
+    _leaving = true;
+    await _clearWifiMode();
+    if (!mounted) return;
+    setState(() => _allowPop = true);
+    Navigator.of(context).pop();
+  }
+
   void _onNetworkTapped(WifiNetwork network) {
-    if (_connectingSsid != null) return;
+    if (_connectingSsid != null || _leaving) return;
     FocusScope.of(context).unfocus();
     setState(() {
       _selectedNetwork = _selectedNetwork?.ssid == network.ssid
@@ -94,7 +109,7 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
 
   void _connectSelected() {
     final network = _selectedNetwork;
-    if (network == null || _connectingSsid != null) return;
+    if (network == null || _connectingSsid != null || _leaving) return;
     if (network.isSecured && _password.text.isEmpty) {
       setState(() => _passwordError = 'Enter the network password.');
       return;
@@ -200,16 +215,21 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
 
     if (!mounted) return;
 
-    setState(() => _connectingSsid = null);
-
     if (success) {
-      _navigateToSuccess(ssid);
+      await _navigateToSuccess();
     } else {
+      setState(() => _connectingSsid = null);
       _showProvisioningError(ble.error ?? 'Connection failed');
     }
   }
 
-  void _navigateToSuccess(String ssid) {
+  Future<void> _navigateToSuccess() async {
+    if (_leaving) return;
+    _leaving = true;
+    // Complete the calculator status change before the consent/success page
+    // appears. Route disposal is only a fallback, not the normal exit path.
+    await _clearWifiMode();
+    if (!mounted) return;
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         pageBuilder: (_, __, ___) =>
@@ -265,6 +285,8 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
   }
 
   Future<void> _skipForNow() async {
+    if (_leaving || _connectingSsid != null) return;
+    _leaving = true;
     final auth = context.read<AuthService>();
     final ble = context.read<BleService>();
     final mac = auth.primaryMac;
@@ -273,6 +295,7 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
       // saved device now that the setup route is safely on screen.
       await auth.addDevice(mac);
     }
+    await _clearWifiMode();
     await ble.disconnect();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
@@ -300,7 +323,10 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
                         ProvisioningState.waitingForConnection;
 
                 return PopScope(
-                  canPop: !isSending,
+                  canPop: _allowPop,
+                  onPopInvokedWithResult: (didPop, _) {
+                    if (!didPop && !isSending) unawaited(_goBack());
+                  },
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
@@ -314,7 +340,9 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
                               child: Row(
                                 children: [
                                   IconButton(
-                                    onPressed: () => Navigator.pop(context),
+                                    onPressed: isSending || _leaving
+                                        ? null
+                                        : _goBack,
                                     icon: const Icon(
                                       Icons.arrow_back_ios_rounded,
                                       size: 20,

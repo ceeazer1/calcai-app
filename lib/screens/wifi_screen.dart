@@ -37,6 +37,7 @@ class _WifiScreenState extends State<WifiScreen> {
   bool _bleListenerAttached = false;
   bool _closing = false;
   bool _allowPop = false;
+  bool _askingToLeave = false;
 
   /// True while we're scanning for + connecting to the device from this tab.
   bool _autoConnecting = false;
@@ -102,7 +103,7 @@ class _WifiScreenState extends State<WifiScreen> {
   Future<void> _setNormalCalculatorStatus() async {
     final ble = _ble;
     if (ble == null || !ble.connectionState.isConnected) return;
-    await ble.setWifiUiMode(false);
+    await ble.endWifiUiMode();
   }
 
   Future<void> _endWifiSession() async {
@@ -126,9 +127,54 @@ class _WifiScreenState extends State<WifiScreen> {
   }
 
   Future<void> _leaveScreen() async {
-    if (_closing) return;
-    _closing = true;
-    await _endWifiSession();
+    if (_closing || _askingToLeave || _isAddingNetwork) return;
+    final ble = _ble;
+    if (ble != null && ble.connectionState.isConnected) {
+      _askingToLeave = true;
+      final closePortal = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Leave Bluetooth open?'),
+          content: const Text(
+            'Keep the portal open for this phone, or close it on your calculator.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Keep open'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Close BLE portal'),
+            ),
+          ],
+        ),
+      );
+      _askingToLeave = false;
+      if (!mounted || closePortal == null) return;
+      _closing = true;
+      _connectTimeout?.cancel();
+      if (closePortal) {
+        final closed = await ble.closeBlePortal();
+        if (!mounted) return;
+        if (!closed) {
+          _closing = false;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Could not close the portal. Check the Bluetooth connection and update the calculator firmware, then retry.',
+              ),
+            ),
+          );
+          return;
+        }
+      } else {
+        await _setNormalCalculatorStatus();
+      }
+    } else {
+      _closing = true;
+      await _endWifiSession();
+    }
     if (!mounted) return;
     setState(() => _allowPop = true);
     Navigator.of(context).pop();
@@ -186,13 +232,18 @@ class _WifiScreenState extends State<WifiScreen> {
   /// Scans for a nearby CalcAI and connects to it. Safe to call repeatedly.
   Future<void> _attemptAutoConnect() async {
     final ble = context.read<BleService>();
-    if (ble.connectionState.isConnected || _autoConnecting) return;
+    if (_autoConnecting || _closing) return;
 
     setState(() {
       _autoConnecting = true;
       _connectStarted = false;
       _btOff = false;
     });
+
+    if (ble.connectionState == DeviceConnectionState.ready) {
+      await _authenticateConnectedDevice();
+      return;
+    }
 
     final granted = await ble.requestPermissions();
     final on = granted && await ble.isBluetoothOn();
@@ -259,7 +310,7 @@ class _WifiScreenState extends State<WifiScreen> {
       _authenticating = false;
     }
 
-    if (!mounted) return;
+    if (!mounted || _closing || !widget.isActive) return;
     if (proved) {
       // Presentation only: the TI-84 BLE page shows "WIFI MODE" while this
       // authenticated management screen owns the connection. Disconnecting on

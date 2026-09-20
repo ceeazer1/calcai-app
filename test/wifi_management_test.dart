@@ -29,6 +29,7 @@ void main() {
     await advance();
     expect(find.text('Saved Networks'), findsOneWidget);
     final ble = tester.element(find.byType(WifiScreen)).read<BleService>();
+    expect((ble as SetupTestAppBle).wifiUiMode, isTrue);
     expect(ble.savedNetworks, ['Home Wi-Fi', 'My iPhone']);
 
     await tester.tap(find.text('My iPhone'));
@@ -65,6 +66,7 @@ void main() {
     await tester.tap(find.text('Connect'));
     await advance();
     expect(ble.connectedSsid, 'Guest network');
+    expect(ble.wifiUiMode, isTrue);
 
     await tester.tap(find.text('Add network manually'));
     await advance();
@@ -81,8 +83,36 @@ void main() {
     expect(ble.savedNetworks, isNot(contains('Office Wi-Fi')));
     await tester.tap(find.byIcon(Icons.arrow_back_rounded));
     await advance();
+    expect(find.text('Leave Bluetooth open?'), findsOneWidget);
+    await tester.tap(find.text('Keep open'));
+    await advance();
     expect(find.byType(WifiScreen), findsNothing);
+    expect(ble.wifiUiMode, isFalse);
+    expect(ble.connectionState.isConnected, isTrue);
+    expect(ble.portalClosed, isFalse);
     expect(find.text('Office Wi-Fi'), findsNothing);
     expect(find.text('Home Wi-Fi'), findsOneWidget);
+    await tester.ensureVisible(find.text('Edit network'));
+    await tester.tap(find.text('Edit network'));
+    await advance();
+    expect(ble.wifiUiMode, isTrue);
+    ble.canClosePortal = false;
+    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+    await advance();
+    await tester.tap(find.text('Close BLE portal'));
+    await advance();
+    expect(find.byType(WifiScreen), findsOneWidget);
+    expect(ble.connectionState.isConnected, isTrue);
+    expect(ble.portalClosed, isFalse);
+    expect(find.textContaining('Could not close the portal.'), findsOneWidget);
+    ble.canClosePortal = true;
+    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+    await advance();
+    await tester.tap(find.text('Close BLE portal'));
+    await advance();
+    expect(find.byType(WifiScreen), findsNothing);
+    expect(ble.connectionState.isConnected, isFalse);
+    expect(ble.portalClosed, isTrue);
+    expect(ble.savedNetworks, isNotEmpty);
   });
 }

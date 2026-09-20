@@ -162,7 +162,22 @@ class SetupTestAppBle extends BleService {
   }
 
   @override
-  Future<bool> setWifiUiMode(bool enabled) async => true;
+  Future<bool> setWifiUiMode(bool enabled) async {
+    wifiUiMode = enabled;
+    return true;
+  }
+
+  bool wifiUiMode = false;
+  bool portalClosed = false;
+  bool canClosePortal = true;
+  @override
+  Future<bool> closeBlePortal() async {
+    if (!canClosePortal) return false;
+    portalClosed = true;
+    await disconnect();
+    return true;
+  }
+
   @override
   Future<void> setPersistMac(String? mac) async {}
   @override
@@ -269,6 +284,7 @@ class SetupTestAppBle extends BleService {
 
   @override
   Future<void> disconnect() async {
+    wifiUiMode = false;
     _owner = null;
     _connection = DeviceConnectionState.disconnected;
     if (_alive) notifyListeners();
