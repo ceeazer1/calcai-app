@@ -285,6 +285,8 @@ class AuthService extends ChangeNotifier {
       return 'Apple sign-in failed: ${e.message}';
     } on TimeoutException {
       return 'Connection timed out. Please try again.';
+    } on http.ClientException {
+      return 'Could not reach CalcAI. Check your internet connection and try again.';
     } catch (e) {
       logDebug('signInWithApple error: $e');
       return 'Sign-in failed. Please try again.';

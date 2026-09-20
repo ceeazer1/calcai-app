@@ -6,6 +6,33 @@ import 'package:calcai_app/services/resilient_http_client.dart';
 class _RealHttpOverrides extends HttpOverrides {}
 
 void main() {
+  test('an unsuccessful sign-in POST is not automatically replayed', () async {
+    final previous = HttpOverrides.current;
+    HttpOverrides.global = _RealHttpOverrides();
+    addTearDown(() => HttpOverrides.global = previous);
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final client = createResilientClient();
+    var attempts = 0;
+    server.listen((request) async {
+      attempts++;
+      await request.drain<void>();
+      request.response.statusCode = 503;
+      await request.response.close();
+    });
+    try {
+      final response = await client
+          .post(
+            Uri.parse('http://127.0.0.1:${server.port}/auth/apple'),
+            body: 'single-use-test-code',
+          )
+          .timeout(const Duration(seconds: 3));
+      expect(response.statusCode, 503);
+      expect(attempts, 1);
+    } finally {
+      client.close();
+      await server.close(force: true);
+    }
+  });
   test(
     'API transport reuses connections and reads responses before socket closes',
     () async {

@@ -25,7 +25,11 @@ def visit(path):
     if path in seen or not path.is_file():
         return
     seen.add(path)
-    for uri in re.findall(r"(?:import|export|part)\s+['\"]([^'\"]+)['\"]", path.read_text()):
+    # Follow every platform branch of conditional imports/exports as well.
+    directives = re.findall(r"^\s*(?:import|export|part)\s+[^;]+;",
+                            path.read_text(), re.MULTILINE)
+    for uri in [uri for directive in directives
+                for uri in re.findall(r"['\"]([^'\"]+)['\"]", directive)]:
         if uri.startswith("package:calcai_app/"):
             visit(LIB / uri.split("/", 1)[1])
         elif ":" not in uri:
