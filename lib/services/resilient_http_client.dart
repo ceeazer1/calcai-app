@@ -112,7 +112,7 @@ class _ResilientClient extends http.BaseClient {
       ..connectionTimeout = const Duration(seconds: 15)
       ..idleTimeout = const Duration(seconds: 30);
     native.connectionFactory = (uri, proxyHost, proxyPort) async {
-      if (proxyHost != null || !_dohHosts.contains(uri.host)) {
+      if (proxyHost != null || uri.scheme != 'https') {
         return Socket.startConnect(
           proxyHost ?? uri.host,
           proxyPort ?? uri.port,
@@ -129,7 +129,7 @@ class _ResilientClient extends http.BaseClient {
             timeout: const Duration(seconds: 5),
           );
         } catch (_) {
-          if (cancelled) rethrow;
+          if (cancelled || !_dohHosts.contains(uri.host)) rethrow;
           final ip = await _resolveViaDoh(uri.host);
           if (ip == null || cancelled) rethrow;
           socket = await Socket.connect(
@@ -143,11 +143,27 @@ class _ResilientClient extends http.BaseClient {
           socket.destroy();
           throw const SocketException('Connection cancelled');
         }
-        return socket;
+        try {
+          // A custom connectionFactory MUST supply TLS for direct HTTPS.
+          // HttpClient only upgrades proxy CONNECT tunnels itself.
+          final secure = await SecureSocket.secure(
+            socket,
+            host: uri.host,
+          ).timeout(const Duration(seconds: 8));
+          connected = secure;
+          if (cancelled) {
+            secure.destroy();
+            throw const SocketException('Connection cancelled');
+          }
+          return secure;
+        } catch (_) {
+          socket.destroy();
+          rethrow;
+        }
       }
 
-      // HttpClient owns HTTP framing, connection reuse and TLS verification
-      // against the original URI hostname, including after a DNS fallback.
+      // Keep HTTP framing and pooling in HttpClient. Verify TLS against the
+      // original hostname even when TCP used a DNS-over-HTTPS fallback IP.
       return ConnectionTask.fromSocket(connect(), () {
         cancelled = true;
         connected?.destroy();
