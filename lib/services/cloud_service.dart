@@ -207,9 +207,21 @@ class CloudService extends ChangeNotifier {
   String _customContext = '';
   String get customContext => _customContext;
 
-  /// Plan type (e.g. "Free", "Pro").
-  String? get planType =>
-      usage?['plan']?.toString() ?? usage?['planType']?.toString();
+  /// The server's effective plan; the welcome allowance is finite, not paid Pro.
+  String? get planType {
+    if (usageTracker.expired) return 'Updating';
+    if (usageTracker.data?.welcomeActive == true) return 'Welcome';
+    final plan = usage?['plan']?.toString() ?? usage?['planType']?.toString();
+    return switch (plan?.toLowerCase()) {
+      'pro' => 'Pro',
+      'free' => 'Free',
+      _ => plan,
+    };
+  }
+
+  DateTime? get welcomeEndsAt => usageTracker.data?.welcomeActive == true
+      ? usageTracker.data?.welcomeExpiresAt
+      : null;
 
   // ── Device Management ─────────────────────────────────────────────
 

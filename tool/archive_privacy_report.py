@@ -30,6 +30,10 @@ def main():
         "manifests": manifests,
     }, indent=2) + "\n")
     print(f"Recorded {len(manifests)} archived privacy manifests in {output}")
+    # Keep the factual SDK declarations reviewable in CI even when the artifact
+    # download is unavailable. These are bundled public manifests, not secrets.
+    for manifest in manifests:
+        print("PRIVACY_MANIFEST " + json.dumps(manifest, separators=(",", ":")))
 
 
 if __name__ == "__main__":

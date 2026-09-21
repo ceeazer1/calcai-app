@@ -16,6 +16,11 @@ class AccountUsage {
   bool get syncing => json['status'] == 'syncing';
   bool get exhausted => allowance['exhausted'] == true;
   String get plan => json['plan']?.toString() ?? '';
+  Map? get _welcome =>
+      json['welcomeAllowance'] is Map ? json['welcomeAllowance'] as Map : null;
+  bool get welcomeActive => _welcome?['active'] == true;
+  DateTime? get welcomeExpiresAt =>
+      DateTime.tryParse(_welcome?['expiresAt']?.toString() ?? '')?.toUtc();
   double? get remainingPercent {
     if (syncing || unlimited) return null;
     final value = allowance['remainingPercent'];
@@ -67,7 +72,11 @@ class UsageTracker extends ChangeNotifier {
   DateTime? get serverNow => _serverAnchor?.add(_now - _anchorElapsed);
   DateTime? get resetsAt => limitReset ?? data?.resetsAt;
   bool get expired =>
-      resetsAt != null && serverNow != null && !serverNow!.isBefore(resetsAt!);
+      serverNow != null &&
+      ((resetsAt != null && !serverNow!.isBefore(resetsAt!)) ||
+          (data?.welcomeActive == true &&
+              data?.welcomeExpiresAt != null &&
+              !serverNow!.isBefore(data!.welcomeExpiresAt!)));
   bool get syncing => forcedSyncing || data?.syncing == true;
   bool get exhausted =>
       _limitReached ||
@@ -212,9 +221,17 @@ class UsageTracker extends ChangeNotifier {
         refresh,
       );
     } else if (resetIn != null) {
-      final period = resetsAt!.toIso8601String();
+      var refreshAt = resetsAt!;
+      final welcomeEnd = data?.welcomeExpiresAt;
+      if (data?.welcomeActive == true &&
+          welcomeEnd != null &&
+          welcomeEnd.isBefore(refreshAt)) {
+        refreshAt = welcomeEnd;
+      }
+      final period = refreshAt.toIso8601String();
       if (_resetRequested == period) return;
-      _timer = Timer(resetIn! > Duration.zero ? resetIn! : Duration.zero, () {
+      final wait = refreshAt.difference(serverNow!);
+      _timer = Timer(wait > Duration.zero ? wait : Duration.zero, () {
         _resetRequested = period;
         refresh();
       });

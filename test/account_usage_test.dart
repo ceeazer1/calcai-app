@@ -40,6 +40,72 @@ Map<String, dynamic> usage({
 void main() {
   GoogleFonts.config.allowRuntimeFetching = false;
 
+  testWidgets('welcome expiry refreshes before the daily reset', (
+    tester,
+  ) async {
+    var elapsed = Duration.zero;
+    var calls = 0;
+    final tracker = UsageTracker(
+      elapsed: () => elapsed,
+      fetch: (_) async {
+        calls++;
+        return {
+          ...usage(
+            plan: calls == 1 ? 'pro' : 'free',
+            time: calls == 1 ? '2032-04-03T12:00:00Z' : '2032-04-03T12:00:02Z',
+            reset: '2032-04-04T00:00:00Z',
+          ),
+          'welcomeAllowance': {
+            'active': calls == 1,
+            'expiresAt': '2032-04-03T12:00:02Z',
+          },
+        };
+      },
+    )..bind('a');
+    await tracker.refresh();
+    tracker.setVisible(true);
+    expect(tracker.data!.welcomeActive, isTrue);
+    expect(tracker.data!.unlimited, isFalse);
+    elapsed = const Duration(seconds: 2);
+    expect(tracker.expired, isTrue);
+    await tester.pump(elapsed);
+    expect(calls, 2);
+    expect(tracker.data!.plan, 'free');
+    expect(tracker.expired, isFalse);
+    tracker.dispose();
+  });
+
+  test('plan details distinguish welcome, Free and missing usage', () async {
+    Map<String, dynamic>? welcome = {
+      'active': true,
+      'expiresAt': '2032-05-03T12:00:00Z',
+    };
+    final cloud = CloudService(
+      client: MockClient(
+        (r) async => http.Response(
+          jsonEncode(
+            r.url.path.endsWith('/usage/status')
+                ? {
+                    ...usage(plan: welcome == null ? 'free' : 'pro'),
+                    'welcomeAllowance': welcome,
+                  }
+                : {'keys': {}},
+          ),
+          200,
+        ),
+      ),
+    );
+    addTearDown(cloud.dispose);
+    expect(cloud.planType, isNull);
+    await cloud.getUsage('a');
+    expect(cloud.planType, 'Welcome');
+    expect(cloud.welcomeEndsAt, DateTime.utc(2032, 5, 3, 12));
+    welcome = null;
+    await cloud.getUsage('a');
+    expect(cloud.planType, 'Free');
+    expect(cloud.welcomeEndsAt, isNull);
+  });
+
   test('account usage needs only Bearer auth, never a paired MAC', () async {
     final requests = <http.Request>[];
     final cloud = CloudService(

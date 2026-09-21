@@ -14,6 +14,7 @@ Prepared September 21, 2026. Core copy below is saved in App Store Connect; this
 | Copyright | 2026 CALCAI LLC (matches the public website; confirm rights before declaration) |
 | Keywords | calculator,device,setup,wifi,bluetooth,notes,history |
 | Release | Manual |
+| Download price / territory | Free ($0.00) / United States only; saved September 21 |
 
 ## Promotional text
 
@@ -28,6 +29,8 @@ Pair your calculator over Bluetooth using the code shown on its screen, then con
 
 YOUR AI SETTINGS
 Choose your AI model and response preferences, add custom instructions, and see your remaining AI allowance and reset time. Available models and usage limits depend on your plan. You can optionally add your own supported AI-provider API key in Settings; the provider’s billing and limits apply.
+
+Your first calculator link starts a 30-day welcome allowance with a higher daily AI limit. After 30 days, your account continues on Free. No payment is required and there is no automatic charge. Paid Pro is not offered in this release.
 
 NOTES AND ACTIVITY
 Write notes for your calculator and review past questions, answers and photos. Save or share calculator photos using the iPhone or iPad share controls.
@@ -51,10 +54,11 @@ Setup flow:
 
 Personal provider API keys are optional. They are sent to CalcAI’s backend over HTTPS for storage and use with the selected provider. Provider charges and limits apply.
 
+Launch business model: free download, United States only. The first verified calculator link starts a 30-day welcome allowance using the finite Pro daily AI limit; the account returns to Free afterward. No payment authorization, automatic renewal, in-app purchase or external Pro checkout is offered in this version. Personal provider keys remain optional. Paid Pro sales will be added separately in a future release.
+
 ## Add after the owner resolves these details
 
-- The 30-day grace period: when it starts, what it includes, and whether it needs any payment authorization. Confirm server enforcement before advertising it.
-- Pro purchase/renewal route, terms and storefront availability. The current app has no StoreKit checkout; no auto-renewal or Apple trial claim has been saved.
+- Welcome allowance deployed September 21 as API version `b98d3953-8a3f-45c7-a582-3ff37b0f8327`; expiry/relinking covered by backend tests. Confirm the new Settings date presentation in the next native candidate. Do not describe this as an Apple subscription trial.
 - Dedicated review account/password (App Store Connect only, never Git), contact name/phone/email, hardware-access arrangements and any useful review video.
 - Actual screenshot set and native archive selection, privacy questionnaire, age rating, rights and business declarations.
 

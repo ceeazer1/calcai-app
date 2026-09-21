@@ -134,7 +134,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            cloud.planType ?? 'Free',
+                            cloud.planType ?? 'Updating',
                             style: GoogleFonts.inter(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
@@ -145,6 +145,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ),
                       ),
+                      if (cloud.welcomeEndsAt != null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                          child: Text(
+                            'Welcome allowance ends ${MaterialLocalizations.of(context).formatMediumDate(cloud.welcomeEndsAt!.toLocal())}. '
+                            'Then Free. No automatic charge.',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 );
