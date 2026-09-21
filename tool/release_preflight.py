@@ -83,6 +83,7 @@ launch = ET.parse(APP / "ios/Runner/Base.lproj/LaunchScreen.storyboard")
 launch_dir = APP / "ios/Runner/Assets.xcassets/LaunchMark.imageset"
 launch_asset = launch_dir / "LaunchMark.png"
 check(launch.find('.//imageView[@image="LaunchMark"]') is not None and
+      launch.find('.//userDefinedRuntimeAttributes') is None and
       launch_asset.is_file() and
       launch_asset.read_bytes() == (APP / "assets/icon/app_icon.png").read_bytes(),
       "Native launch screen uses the current CalcAI artwork, not a template")
