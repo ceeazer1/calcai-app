@@ -72,7 +72,27 @@ Launch business model: free download, United States only. The first verified cal
 | Other User Content | Prompts, answers, notes and custom instructions; account-linked |
 | Photos or Videos | Calculator images for solving/history; account-linked |
 | Product Interaction | Usage allowance and request history; account-linked |
-| Name | Displayed/stored locally by the app; verify provider/SDK collection before final answer |
+| Name | Locally displayed by the app; Google Sign-In's archived manifest also declares account-linked collection for functionality |
+| Phone Number / Coarse Location | Google Sign-In's archived manifest declares account-linked collection for functionality; reconcile SDK documentation/configuration before final disclosure |
+| Other Usage Data / Other Data | Google Sign-In declares linked analytics collection (Other Data also functionality); reconcile actual SDK use |
 | Other categories | Reconcile actual provider credentials, diagnostics/logging and SDK collection; do not assume the list above is exhaustive |
 
 No advertising/tracking SDK was identified in app source. Verify actual third-party uses before making the tracking declaration. Wi-Fi credentials go to the calculator over Bluetooth. Personal AI keys go to CalcAI's backend and then the selected provider. Provider retention and any legacy deletion gaps remain separate verification items.
+
+Build 1096's 18 archived manifests were reviewed in Codemagic logs. All declare
+tracking false and no tracking domains. This is SDK evidence, not verification
+of every provider's contractual use of data. Google Sign-In also declares user
+IDs for functionality/analytics and device IDs for analytics. The App Privacy
+questionnaire has not been completed or published from these declarations alone.
+
+## Provider eligibility still unresolved
+
+The owner confirmed that under-18 students will use CalcAI and wants to retain
+Gemini. Google's Gemini API terms (Age Requirements) and Cloud Service Specific
+Terms 20(d) both restrict services likely to be accessed by under-18 users.
+Switching to Vertex alone is not an established solution. Seek an applicable
+written Google agreement/permission before this audience's public release, or
+decide on a provider change. Do not misstate the app as adults-only or silently
+remove Gemini. Sources checked September 21:
+https://ai.google.dev/gemini-api/terms and
+https://cloud.google.com/terms/service-terms
