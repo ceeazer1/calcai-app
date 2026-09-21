@@ -98,9 +98,11 @@ workflows:
           test -f "$APP/PrivacyInfo.xcprivacy"
           plutil -lint "$APP/PrivacyInfo.xcprivacy" "$APP/Info.plist"
           codesign --verify --deep --strict "$APP"
+          python3 tool/archive_privacy_report.py "$APP" build/privacy-manifests.json
     artifacts:
       - build/ios/ipa/*.ipa
       - build/ios/archive/*.xcarchive
+      - build/privacy-manifests.json
       - /tmp/xcodebuild_logs/*.log
     publishing:
       app_store_connect:

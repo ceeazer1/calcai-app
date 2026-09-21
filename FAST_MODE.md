@@ -1,6 +1,7 @@
 # Fast mode — September 16, 2026
 
-Implemented locally, not deployed or included in TestFlight build 1084.
+The app implementation is included in TestFlight build 1094. Backend/provider
+eligibility and paid-provider behavior require separate live verification.
 
 The Home screen has a separate, off-by-default Fast mode switch. It does not
 change the model, response length or thinking effort. The former Fast thinking
@@ -33,7 +34,6 @@ Sources:
 - https://platform.claude.com/docs/en/build-with-claude/fast-mode
 - https://ai.google.dev/gemini-api/docs/priority-inference
 
-Development preview: `flutter build web --target tool/fast_mode_preview.dart
---output build/fast-mode-preview --no-wasm-dry-run`. This uses the real dashboard
-and card with in-memory test services; it is not imported by lib/main.dart.
-Serve that output locally. Production CI continues to target lib/main.dart.
+The superseded Fast mode preview was removed during release cleanup.
+Regression coverage uses the production widgets in `test/fast_mode_test.dart`.
+Production CI targets `lib/main.dart`; the setup preview is isolated under `tool/`.

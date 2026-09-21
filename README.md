@@ -15,8 +15,10 @@ Bluetooth, Apple/Google sign-in, Keychain, Photos, and sharing require testing o
 a physical iPhone. Pairing/Wi-Fi require CalcAI hardware. The web target is for
 layout checks and does not validate native iOS behavior.
 
-Production starts at `lib/main.dart`. Standalone previews have been removed.
-Test fixtures live only in `test/support`; regression tests use the real screens.
+Production starts at `lib/main.dart`. The old Fast mode preview was removed.
+The setup preview under `tool/` remains useful for onboarding regression tests;
+it and the fixtures under `test/support` are excluded from the shipping app.
+Release preflight rejects imports of any tool/test file from production code.
 Fonts/licenses are bundled. Regenerate icons with `dart run flutter_launcher_icons`.
 
 Read [RELEASE_READINESS.md](RELEASE_READINESS.md) before upload. Listing copy and

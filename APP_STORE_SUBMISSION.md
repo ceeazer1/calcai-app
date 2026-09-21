@@ -1,114 +1,74 @@
-# App Store submission draft
+# CalcAI Link — submission draft
 
-Draft only. Fill REQUIRED fields and resolve RELEASE_READINESS.md before upload.
+Prepared September 21, 2026. Core copy below is saved in App Store Connect; this is not a submission or approval. Resolve [RELEASE_READINESS.md](RELEASE_READINESS.md) before sending.
 
-| Field | Draft |
+| Field | Value |
 | --- | --- |
-| Name | CalcAI |
+| Store name | CalcAI Link (existing name retained) |
 | Subtitle | Set up your CalcAI device |
-| Language / category | English (U.S.) / Utilities — confirm |
-| Bundle ID | com.calcai.calcaiApp |
-| Marketing URL | https://calcai.cc |
-| Privacy URL | https://calcai.cc/privacy — correct API-key disclosure first |
-| Support URL | REQUIRED: verified public support/help page |
-| Support email | info@calcai.cc — confirm inbox is monitored |
-| Copyright | REQUIRED: rights holder and year |
-| Price / territories | REQUIRED: owner decision |
+| Language / category | English (U.S.) / Utilities |
+| Apple ID / Bundle ID | 6780132992 / com.calcai.calcaiApp |
+| Support | https://calcai.cc/help |
+| Marketing | https://calcai.cc |
+| Privacy | https://calcai.cc/privacy — update live API-key disclosure before release |
+| Copyright | 2026 CALCAI LLC (matches the public website; confirm rights before declaration) |
 | Keywords | calculator,device,setup,wifi,bluetooth,notes,history |
+| Release | Manual |
 
 ## Promotional text
 
-Set up your CalcAI device, manage its Wi-Fi networks, and keep your notes,
-history, and device settings together.
+Pair your CalcAI calculator, manage Wi-Fi, and keep your notes, activity and AI settings together.
 
 ## Description
 
-CalcAI is the companion app for your CalcAI-enabled calculator.
+CalcAI Link is the companion app for your CalcAI-enabled calculator.
 
-Pair your device over Bluetooth and connect it to Wi-Fi. Add or update saved
-networks, manage your device's AI settings, write notes, and view past questions,
-answers, and photos associated with your account.
+DEVICE SETUP
+Pair your calculator over Bluetooth using the code shown on its screen, then connect it to Wi-Fi. Manage saved networks and phone-hotspot settings from the app.
 
-- Guided device pairing and Wi-Fi setup
-- Saved-network and phone-hotspot settings
-- Notes and conversation history
-- Calculator photo viewing, saving, and sharing
-- AI model and response preferences
-- Account management and in-app account deletion
+YOUR AI SETTINGS
+Choose your AI model and response preferences, add custom instructions, and see your remaining AI allowance and reset time. Available models and usage limits depend on your plan. You can optionally add your own supported AI-provider API key in Settings; the provider’s billing and limits apply.
 
-A compatible CalcAI device and a CalcAI account are required for device features.
-Internet access is required for cloud features. AI responses may be inaccurate;
-check important results. Use CalcAI only where permitted.
+NOTES AND ACTIVITY
+Write notes for your calculator and review past questions, answers and photos. Save or share calculator photos using the iPhone or iPad share controls.
 
-Before publishing, describe precisely any separately purchased hardware, paid AI
-service, limits, or provider-account requirements. The app has Free/Pro labels and
-customer API-key settings; no StoreKit purchasing flow was found. Confirm the
-business model against the rules for the selected storefronts. Do not invent a
-subscription or assume external purchasing is automatically allowed.
+YOUR CHOICE
+Before AI sharing is enabled, the app explains what content is shared with the selected AI provider and asks for your permission. You can change this choice in Settings. With AI sharing off, AI answers and photo solving are unavailable; pairing and Wi-Fi management remain available.
 
-## Review notes — complete before sending
+A compatible CalcAI device and a CalcAI account are required for device features. Internet access is required for cloud features. AI responses may be inaccurate; check important results. Use CalcAI only where permitted.
 
-CalcAI is a companion app for a physical CalcAI-enabled calculator. Bluetooth
-pairing and Wi-Fi management require that accessory. Cloud features use the
-account linked to the device.
+## Review notes saved
 
-REQUIRED review account/password: enter a dedicated account securely in App Store
-Connect. Do not commit credentials.
+CalcAI Link is a companion app for a physical CalcAI-enabled calculator. Bluetooth pairing and Wi-Fi management require that accessory.
 
-REQUIRED hardware/access arrangements: provide compatible CalcAI hardware and
-instructions so reviewers can exercise pairing and Wi-Fi.
+Setup flow:
+1. Sign in, open Bluetooth setup on the calculator, and tap Scan in the app.
+2. Enter the six-digit code displayed by that calculator. There is no fixed demo code in the shipping app.
+3. Select a Wi-Fi network and connect. Device paired appears next.
+4. Press Home page. If no AI-sharing choice has been saved, a popup appears over the blurred Home screen. Allow AI sharing enables AI requests. Continue with AI off explains the consequence before saving that choice. Pairing and Wi-Fi still work with AI off.
+5. On Home, open Edit network to manage networks and phone-hotspot settings. Leaving that screen offers to keep the Bluetooth portal open or close it.
+6. Notes, activity history and AI preferences are available in the main app. Settings includes AI sharing controls, personal provider keys, Privacy Policy, support and account deletion.
 
-1. Sign in using the review account. On AI sharing, review the provider/content
-   disclosure and choose Allow AI sharing or Continue without AI. The latter
-   keeps setup available while AI remains disabled. Verify the deployed flow
-   before using these instructions for review.
-2. Turn on the supplied calculator and enable its pairing mode. Tap Scan and
-   enter the code displayed by that device. There is no fixed demo code.
-3. Choose Wi-Fi, enter a password if needed, and connect. Home page opens the
-   dashboard after pairing.
-4. Open Edit network from Home to manage saved networks and hotspot settings.
-5. Review Notes, History, and Settings. Account deletion is in Settings; provide
-   another disposable account if deleting the review account would interrupt
-   the primary review setup.
+Personal provider API keys are optional. They are sent to CalcAI’s backend over HTTPS for storage and use with the selected provider. Provider charges and limits apply.
 
-REQUIRED review contact: name, reachable email, phone.
+## Add after the owner resolves these details
 
-REQUIRED business-model explanation: what hardware includes, what costs extra,
-and how any paid service is accessed.
-
-The removed previews are not a shipping demo mode. A recorded walkthrough can
-supplement reviewer access but does not validate actual connectivity.
+- The 30-day grace period: when it starts, what it includes, and whether it needs any payment authorization. Confirm server enforcement before advertising it.
+- Pro purchase/renewal route, terms and storefront availability. The current app has no StoreKit checkout; no auto-renewal or Apple trial claim has been saved.
+- Dedicated review account/password (App Store Connect only, never Git), contact name/phone/email, hardware-access arrangements and any useful review video.
+- Actual screenshot set and native archive selection, privacy questionnaire, age rating, rights and business declarations.
 
 ## Privacy worksheet
 
-Confirm against the deployed backend, logging/retention jobs and SDKs. The app's
-privacy manifest does not complete App Store Connect's questionnaire.
+| Category | Observed purpose / linkage |
+| --- | --- |
+| Email Address | Account sign-in and recovery; account-linked |
+| User ID | Authentication/ownership; account-linked |
+| Device ID | Calculator ownership and settings/content; account-linked |
+| Other User Content | Prompts, answers, notes and custom instructions; account-linked |
+| Photos or Videos | Calculator images for solving/history; account-linked |
+| Product Interaction | Usage allowance and request history; account-linked |
+| Name | Displayed/stored locally by the app; verify provider/SDK collection before final answer |
+| Other categories | Reconcile actual provider credentials, diagnostics/logging and SDK collection; do not assume the list above is exhaustive |
 
-| Data | Purpose observed/expected | Linked to account? |
-| --- | --- | --- |
-| Email | Authentication/recovery | Yes |
-| User/account ID | Authorization and ownership | Yes |
-| CalcAI device ID | Pairing and device content/configuration | Yes |
-| Other user content | Notes, prompts, responses, custom instructions | Yes |
-| Photos/videos category | Calculator images used for AI and history | Yes |
-| Product interaction | Stored usage counts/request history | Yes |
-| Name, diagnostics, IP/location, other categories | Verify actual SDK/backend collection and storage | Confirm |
-
-No advertising/tracking SDK was identified; confirm all provider uses before
-answering tracking questions. Provisioning sends Wi-Fi passwords to the calculator
-over Bluetooth, not to the cloud. Customer AI API keys do reach CalcAI's backend
-and need accurate disclosure and protection.
-
-## Screenshots and remaining fields
-
-Capture the final native build with an authorized test account: setup, code
-entry, selected Wi-Fi, Home, network editing, Notes/History. Do not show real
-customer data or the removed preview phone frame. Because iPad is enabled,
-prepare its screenshots too. Use the sizes App Store Connect requests:
-[Apple screenshot specifications](https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications/).
-No App Store screenshots were certified by this audit.
-
-Complete the current age-rating questionnaire based on actual AI content and
-controls, content rights, export compliance, availability, pricing, and any
-territory-specific business information. Do not choose a Kids category or fixed
-age rating without that assessment.
+No advertising/tracking SDK was identified in app source. Verify actual third-party uses before making the tracking declaration. Wi-Fi credentials go to the calculator over Bluetooth. Personal AI keys go to CalcAI's backend and then the selected provider. Provider retention and any legacy deletion gaps remain separate verification items.

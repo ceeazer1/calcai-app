@@ -5,6 +5,7 @@ import json
 import plistlib
 import re
 import struct
+import xml.etree.ElementTree as ET
 
 APP = Path(__file__).resolve().parents[1]
 LIB = APP / "lib"
@@ -41,6 +42,8 @@ unreachable = set(p.resolve() for p in LIB.rglob("*.dart")) - seen
 check(not unreachable, "All shipping Dart files are reachable from main.dart" +
       (": " + ", ".join(str(p.relative_to(APP)) for p in unreachable) if unreachable else ""))
 source = "\n".join(p.read_text() for p in seen)
+check(all(p.is_relative_to(LIB.resolve()) for p in seen),
+      "Shipping imports stay inside lib; no tool or test fixtures")
 check(not re.search(r"class\s+(?:Preview|SetupDemo|Fake\w*Service)|void main\(\).*demo", source),
       "No preview/test services in shipping source")
 check(not re.search(r"-----BEGIN (?:RSA |EC )?PRIVATE KEY-----|badCertificateCallback\s*=", source),
@@ -76,6 +79,18 @@ for icon in icons:
         bad_icons.append(p.name)
 check(not bad_icons, "All declared iOS icons have correct dimensions and no alpha" +
       (": " + ", ".join(bad_icons) if bad_icons else ""))
+launch = ET.parse(APP / "ios/Runner/Base.lproj/LaunchScreen.storyboard")
+launch_dir = APP / "ios/Runner/Assets.xcassets/LaunchMark.imageset"
+launch_asset = launch_dir / "LaunchMark.png"
+check(launch.find('.//imageView[@image="LaunchMark"]') is not None and
+      launch_asset.is_file() and
+      launch_asset.read_bytes() == (APP / "assets/icon/app_icon.png").read_bytes(),
+      "Native launch screen uses the current CalcAI artwork, not a template")
+workflow = (APP / "codemagic.yaml").read_text()
+check("--target lib/main.dart" in workflow and
+      not re.search(r"--target\s+(?:tool|test)/", workflow) and
+      "submit_to_app_store: false" in workflow,
+      "CI builds the production app and keeps public submission manual")
 font_dir = APP / "assets/fonts"
 fonts = json.loads((font_dir / "sources.json").read_text())
 check(bool(fonts) and all(hashlib.sha256((font_dir / f["file"]).read_bytes()).hexdigest() ==
