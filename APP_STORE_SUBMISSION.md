@@ -21,7 +21,7 @@ Pair your CalcAI calculator, manage Wi-Fi, and keep your notes, activity and AI 
 
 ## Description
 
-CalcAI Link is the companion app for your CalcAI-enabled calculator.
+CalcAI Link is the companion app for your CalcAI enabled calculator.
 
 DEVICE SETUP
 Pair your calculator over Bluetooth using the code shown on its screen, then connect it to Wi-Fi. Manage saved networks and phone-hotspot settings from the app.
