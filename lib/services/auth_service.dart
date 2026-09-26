@@ -40,6 +40,14 @@ class AuthService extends ChangeNotifier {
   // ── Dependencies ─────────────────────────────────────────────────────
   final FlutterSecureStorage _secureStorage;
   final http.Client _httpClient;
+  int _sessionGeneration = 0;
+  bool _disposed = false;
+  Future<void> _storageTail = Future<void>.value();
+
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
 
   // ── Constants ─────────────────────────────────────────────────────────
   static const String _baseUrl = 'https://ai.calcai.cc/ai';
@@ -678,16 +686,24 @@ class AuthService extends ChangeNotifier {
   ///
   /// Requires a valid [token]. Silently returns if not authenticated.
   Future<void> fetchDevices() async {
-    if (_token == null) return;
+    final token = _token;
+    final generation = _sessionGeneration;
+    if (token == null || _disposed) return;
 
     try {
-      final response = await _httpClient.get(
-        Uri.parse('$_baseUrl/user/devices'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $_token',
-        },
-      );
+      final response = await _httpClient
+          .get(
+            Uri.parse('$_baseUrl/user/devices'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (_disposed || generation != _sessionGeneration || token != _token) {
+        return;
+      }
 
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
@@ -723,7 +739,9 @@ class AuthService extends ChangeNotifier {
         }
 
         await _saveToStorage();
-        notifyListeners();
+        if (generation == _sessionGeneration && token == _token) {
+          notifyListeners();
+        }
       } else {
         logDebug('AuthService.fetchDevices failed: ${response.statusCode}');
       }
@@ -870,6 +888,7 @@ class AuthService extends ChangeNotifier {
 
   /// Signs the user out and wipes all persisted auth state.
   Future<void> signOut() async {
+    _sessionGeneration++;
     _isAuthenticated = false;
     _token = null;
     _username = null;
@@ -880,14 +899,35 @@ class AuthService extends ChangeNotifier {
     _setupSkipped = false;
     _unpairedNotice = false;
 
-    await _clearStorage();
+    // Invalidate cloud/BLE consumers immediately, even if Keychain is slow.
     notifyListeners();
+    await _queueStorage(_clearStorage);
   }
 
   // ── Private Helpers ───────────────────────────────────────────────────
 
   /// Persists the current auth state to secure & shared storage.
-  Future<void> _saveToStorage() async {
+  Future<void> _queueStorage(Future<void> Function() operation) {
+    final result = _storageTail.then((_) => operation());
+    // Keep subsequent cleanup possible when an earlier storage operation fails.
+    _storageTail = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return result;
+  }
+
+  Future<void> _saveToStorage() {
+    final generation = _sessionGeneration;
+    return _queueStorage(() async {
+      if (_disposed || generation != _sessionGeneration || _token == null) {
+        return;
+      }
+      await _writeToStorage();
+    });
+  }
+
+  Future<void> _writeToStorage() async {
     // Sensitive — goes into flutter_secure_storage.
     if (_token != null) {
       await _secureStorage.write(key: _keyToken, value: _token);
@@ -918,9 +958,10 @@ class AuthService extends ChangeNotifier {
 
   /// Removes all auth-related entries from both storage backends.
   Future<void> _clearStorage() async {
-    await _secureStorage.delete(key: _keyToken);
-
     final prefs = await SharedPreferences.getInstance();
+    // A Keychain failure must not make the next launch restore this session.
+    await prefs.remove(_keySessionValid);
+    await _secureStorage.delete(key: _keyToken);
     await Future.wait([
       prefs.remove(_keyUsername),
       prefs.remove(_keyEmail),
@@ -953,6 +994,8 @@ class AuthService extends ChangeNotifier {
   /// Cleans up the HTTP client when this service is disposed.
   @override
   void dispose() {
+    _disposed = true;
+    _sessionGeneration++;
     _httpClient.close();
     super.dispose();
   }

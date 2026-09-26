@@ -17,5 +17,9 @@ String? safeImageUrl(String? raw) {
   if (uri == null) return null;
   if (uri.scheme != 'https') return null;
   if (uri.host != kImageHost) return null;
+  if (uri.userInfo.isNotEmpty || (uri.hasPort && uri.port != 443)) return null;
+  if (!uri.path.startsWith('/ai/image/view/') || uri.path == '/ai/image/view/') {
+    return null;
+  }
   return raw;
 }

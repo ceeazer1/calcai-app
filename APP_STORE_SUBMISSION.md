@@ -1,6 +1,6 @@
 # CalcAI Link — submission draft
 
-Prepared September 21, 2026. Core copy below is saved in App Store Connect; this is not a submission or approval. Resolve [RELEASE_READINESS.md](RELEASE_READINESS.md) before sending.
+Updated September 26, 2026. Core copy below is saved in App Store Connect; this is not a submission or approval. Resolve [RELEASE_READINESS.md](RELEASE_READINESS.md) before sending.
 
 | Field | Value |
 | --- | --- |
@@ -58,9 +58,11 @@ Launch business model: free download, United States only. The first verified cal
 
 ## Add after the owner resolves these details
 
+September 26 status: build 1096 is selected and saved; owner reports testing it and account deletion. New session/network/startup fixes require a newer candidate. Reviewer contact is saved privately. Home, Notes and Wi-Fi screenshots are uploaded for both iPhone and iPad, using actual app widget renders with sample data. Mac and Vision Pro distribution are disabled. The 13-category App Privacy draft is fully configured but not published. Review credentials, physical-device video, final age rating/content rights and live policy publication remain pending. Google replied with sales questions; the owner sent a focused follow-up, but no permission has been established. No App Review submission has been made.
+
 - Welcome allowance deployed September 21 as API version `b98d3953-8a3f-45c7-a582-3ff37b0f8327`; expiry/relinking covered by backend tests. Confirm the new Settings date presentation in the next native candidate. Do not describe this as an Apple subscription trial.
-- Dedicated review account/password (App Store Connect only, never Git), contact name/phone/email, hardware-access arrangements and any useful review video.
-- Actual screenshot set and native archive selection, privacy questionnaire, age rating, rights and business declarations.
+- Dedicated review account/password (App Store Connect only, never Git), hardware-access arrangements and physical review video. Contact is already saved.
+- Final new-candidate selection, privacy-label publication, age rating and rights declarations. Screenshots are already uploaded.
 
 ## Privacy worksheet
 
@@ -83,9 +85,18 @@ Build 1096's 18 archived manifests were reviewed in Codemagic logs. All declare
 tracking false and no tracking domains. This is SDK evidence, not verification
 of every provider's contractual use of data. Google Sign-In also declares user
 IDs for functionality/analytics and device IDs for analytics. The App Privacy
-questionnaire has not been completed or published from these declarations alone.
+questionnaire now has saved answers covering all 13 assessed categories, including
+Performance Data and Other Diagnostic Data for app functionality and Other Data
+for stored provider credentials plus the SDK purposes. All categories are linked;
+tracking is declared false. The draft is not yet published; final provider/policy
+reconciliation remains outstanding.
 
 ## Provider eligibility still unresolved
+
+September 26: the owner supplied Google's sales qualification response. It is
+not permission or an applicable under-18 agreement. The owner sent a focused follow-up;
+do not characterize the sales meeting offer as approval. App Store Connect still
+has no reviewer credentials or walkthrough attachment.
 
 The owner confirmed that under-18 students will use CalcAI and wants to retain
 Gemini. Google's Gemini API terms (Age Requirements) and Cloud Service Specific
@@ -93,6 +104,6 @@ Terms 20(d) both restrict services likely to be accessed by under-18 users.
 Switching to Vertex alone is not an established solution. Seek an applicable
 written Google agreement/permission before this audience's public release, or
 decide on a provider change. Do not misstate the app as adults-only or silently
-remove Gemini. Sources checked September 21:
+remove Gemini. Sources rechecked September 26:
 https://ai.google.dev/gemini-api/terms and
 https://cloud.google.com/terms/service-terms

@@ -25,7 +25,13 @@ class SessionHttpClient extends http.BaseClient {
     if (_closed) throw http.ClientException('Client closed', request.url);
     final generation = _generation;
     _requests[request] = generation;
-    final response = await http.Response.fromStream(await _inner.send(request));
+    // Bound the entire response, including a stalled body. Native request
+    // timeouts can reset as bytes arrive, leaving a screen waiting indefinitely.
+    // A timeout never retries a mutation whose server outcome is unknown.
+    final response = await _inner
+        .send(request)
+        .then(http.Response.fromStream)
+        .timeout(const Duration(seconds: 20));
     if (_closed || generation != _generation) {
       throw http.ClientException('Session changed', request.url);
     }

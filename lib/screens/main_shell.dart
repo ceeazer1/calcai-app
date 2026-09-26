@@ -24,6 +24,7 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
+  final Set<int> _visitedTabs = {0};
 
   /// Tab definitions used to build the bottom bar items.
   static const List<_NavTab> _tabs = [
@@ -50,12 +51,21 @@ class _MainShellState extends State<MainShell> {
         extendBody: true,
         body: IndexedStack(
           index: _currentIndex,
-          children: [
-            DashboardScreen(isActive: _currentIndex == 0),
-            const HistoryScreen(),
-            const NotesScreen(),
-            const SettingsScreen(),
-          ],
+          children: List.generate(_tabs.length, (index) {
+            // Defer hidden tabs' initial network requests, then retain edits,
+            // scroll position and filters when users return to a visited tab.
+            return TickerMode(
+              enabled: _currentIndex == index,
+              child: !_visitedTabs.contains(index)
+                  ? const SizedBox.shrink()
+                  : switch (index) {
+                      0 => DashboardScreen(isActive: _currentIndex == 0),
+                      1 => const HistoryScreen(),
+                      2 => const NotesScreen(),
+                      _ => const SettingsScreen(),
+                    },
+            );
+          }),
         ),
         bottomNavigationBar: _buildBottomBar(context),
       ),
@@ -105,7 +115,10 @@ class _MainShellState extends State<MainShell> {
       behavior: HitTestBehavior.opaque,
       onTap: () {
         if (_currentIndex != index) {
-          setState(() => _currentIndex = index);
+          setState(() {
+            _visitedTabs.add(index);
+            _currentIndex = index;
+          });
         }
       },
       child: AnimatedContainer(

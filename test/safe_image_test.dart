@@ -32,4 +32,16 @@ void main() {
     expect(safeImageUrl('not a url'), isNull);
     expect(safeImageUrl('::::'), isNull);
   });
+
+  test('rejects other ports, credentials and non-photo routes', () {
+    expect(safeImageUrl('https://ai.calcai.cc:8443/ai/image/view/a'), isNull);
+    expect(
+      safeImageUrl('https://user:password@ai.calcai.cc/ai/image/view/a'),
+      isNull,
+    );
+    expect(safeImageUrl('https://ai.calcai.cc/ai/user/devices'), isNull);
+    expect(safeImageUrl('https://ai.calcai.cc/ai/image/view/'), isNull);
+    const signed = 'https://ai.calcai.cc:443/ai/image/view/a?access=signed';
+    expect(safeImageUrl(signed), signed);
+  });
 }
