@@ -1,6 +1,6 @@
 # CalcAI Link — submission draft
 
-Updated September 26, 2026. Core copy below is saved in App Store Connect; this is not a submission or approval. Resolve [RELEASE_READINESS.md](RELEASE_READINESS.md) before sending.
+Updated September 27, 2026. Core copy below is saved in App Store Connect; this is not a submission or approval. Resolve [RELEASE_READINESS.md](RELEASE_READINESS.md) before sending.
 
 | Field | Value |
 | --- | --- |
@@ -10,7 +10,7 @@ Updated September 26, 2026. Core copy below is saved in App Store Connect; this 
 | Apple ID / Bundle ID | 6780132992 / com.calcai.calcaiApp |
 | Support | https://calcai.cc/help |
 | Marketing | https://calcai.cc |
-| Privacy | https://calcai.cc/privacy — update live API-key disclosure before release |
+| Privacy | https://calcai.cc/privacy — corrected disclosures published September 27 |
 | Copyright | 2026 CALCAI LLC (matches the public website; confirm rights before declaration) |
 | Keywords | calculator,device,setup,wifi,bluetooth,notes,history |
 | Release | Manual |
@@ -58,7 +58,7 @@ Launch business model: free download, United States only. The first verified cal
 
 ## Add after the owner resolves these details
 
-September 26 status: build 1096 is selected and saved; owner reports testing it and account deletion. New session/network/startup fixes are uploaded as build 1097; iPhone validation remains pending. Reviewer contact is saved privately. Home, Notes and Wi-Fi screenshots are uploaded for both iPhone and iPad, using actual app widget renders with sample data. Mac and Vision Pro distribution are disabled. The 13-category App Privacy draft is fully configured but not published. Review credentials, physical-device video, final age rating/content rights and live policy publication remain pending. Google replied with sales questions; the owner sent a focused follow-up, but no permission has been established. No App Review submission has been made.
+September 27 status: build 1097 is processed, assigned to the internal TestFlight group, and selected and saved in the store draft. Owner reports testing 1096 and account deletion; 1097 iPhone validation remains pending. Reviewer contact is saved privately. Home, Notes and Wi-Fi screenshots are uploaded for both iPhone and iPad, using actual app widget renders with sample data. Mac and Vision Pro distribution are disabled. The 13-category App Privacy draft is fully configured but not published. Review credentials, physical-device video and final age rating/content rights remain pending. The corrected Privacy, Terms, FAQ and Help pages are now live. The owner will send the physical walkthrough later. Google replied with sales questions; the owner sent a focused follow-up, but no permission has been established. No App Review submission has been made.
 
 - Welcome allowance deployed September 21 as API version `b98d3953-8a3f-45c7-a582-3ff37b0f8327`; expiry/relinking covered by backend tests. Confirm the new Settings date presentation in the next native candidate. Do not describe this as an Apple subscription trial.
 - Dedicated review account/password (App Store Connect only, never Git), hardware-access arrangements and physical review video. Contact is already saved.
