@@ -26,6 +26,7 @@ const String kDefaultModel = 'gpt-5.6-luna';
 ///
 /// Used only for model selection labels; daily allowance comes from the API.
 const Set<String> kFreeModels = {
+  'gpt-6-luna',
   'gpt-5.6-luna',
   'gemini-3.5-flash',
   'gemini-3.5-flash-lite',
@@ -907,6 +908,9 @@ class _DashboardScreenState extends State<DashboardScreen>
     // not on that list is rejected by the backend.
     final providers = [
       _ModelProvider('OpenAI', Icons.auto_awesome_rounded, [
+        'gpt-6-astra',
+        'gpt-6.1-sol',
+        'gpt-6-luna',
         'gpt-5.6-sol',
         'gpt-5.6-terra',
         'gpt-5.6-luna',

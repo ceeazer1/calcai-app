@@ -4,6 +4,12 @@ import 'package:calcai_app/theme/app_theme.dart';
 import 'package:calcai_app/widgets/fast_mode_card.dart';
 
 void main() {
+  test('current OpenAI models support opt-in fast mode', () {
+    for (final model in ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-luna']) {
+      expect(fastModeProvider(model), 'openai');
+    }
+    expect(fastModeProvider('gpt-6-made-up'), isNull);
+  });
   testWidgets('supported mode requires a personal key and exposes its cost', (tester) async {
     bool? picked;
     Future<void> show(String model, bool key) => tester.pumpWidget(MaterialApp(
