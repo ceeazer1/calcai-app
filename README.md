@@ -28,3 +28,10 @@ The app has its own Git repository (`ceeazer1/calcai-app`). Its root
 `codemagic.yaml` defines `ios-check` (analysis, tests, source/asset checks, unsigned
 iOS compile) and `ios-testflight` (manual signed TestFlight candidate, never public
 App Review). Run and commit changes from this app directory.
+
+The model picker reads `GET /ai/models/catalog` from the backend and caches the
+validated list for five minutes. It uses server Free/Pro and Fast mode metadata,
+with `lib/models/ai_model.dart` as the offline/older-server fallback. Once this
+native version is installed, compatible model additions can ship through the
+backend catalog without another app update. Provider pricing and request
+compatibility still require backend verification before enabling each model.

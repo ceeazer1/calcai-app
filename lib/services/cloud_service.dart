@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'resilient_http_client.dart';
 import 'session_http_client.dart';
 import '../utils/log.dart';
+import '../models/ai_model.dart';
 
 /// Returns true only for the Worker's explicit ownership-revocation response.
 ///
@@ -413,6 +414,40 @@ class CloudService extends ChangeNotifier {
   }
 
   // ── AI Model ──────────────────────────────────────────────────────
+
+  List<AiModel> _modelCatalog = fallbackAiModels;
+  List<AiModel> get modelCatalog => _modelCatalog;
+  DateTime? _catalogLoadedAt;
+
+  String? modelFastModeProvider(String id) {
+    for (final model in _modelCatalog) {
+      if (model.id == id) return model.fastMode ? model.provider : null;
+    }
+    return null;
+  }
+
+  /// Retain the last usable catalog on timeout/offline/malformed responses.
+  Future<void> loadModelCatalog(String token) async {
+    if (_catalogLoadedAt != null &&
+        DateTime.now().difference(_catalogLoadedAt!) <
+            const Duration(minutes: 5)) {
+      return;
+    }
+    try {
+      final response = await _client.get(
+        Uri.parse('$_baseUrl/ai/models/catalog'),
+        headers: _authHeaders(token),
+      );
+      _assertSuccess(response);
+      final models = AiModel.parseCatalog(jsonDecode(response.body));
+      _client.ensureCurrent(response);
+      _modelCatalog = models;
+      _catalogLoadedAt = DateTime.now();
+      notifyListeners();
+    } catch (_) {
+      /* Catalog refresh must not disable model selection offline. */
+    }
+  }
 
   /// Gets the current AI model configuration for a device.
   ///
@@ -846,6 +881,7 @@ class CloudService extends ChangeNotifier {
         getDeviceInfo(token, mac),
         getHistory(token, mac, limit: 10),
         getContext(token, mac),
+        loadModelCatalog(token),
       ], eagerError: false);
 
       logDebug(
@@ -1103,6 +1139,8 @@ class CloudService extends ChangeNotifier {
     _devices = [];
     _deviceInfo = null;
     _modelInfo = null;
+    _modelCatalog = fallbackAiModels;
+    _catalogLoadedAt = null;
     _customContext = '';
     _notes = null;
     _history = [];

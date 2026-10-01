@@ -330,9 +330,10 @@ class _DashboardScreenState extends State<DashboardScreen>
   Widget _buildFastMode() => Consumer2<AuthService, CloudService>(
     builder: (context, auth, cloud, _) {
       final model = cloud.currentModel ?? kDefaultModel;
-      final provider = fastModeProvider(model);
+      final provider = cloud.modelFastModeProvider(model);
       return FastModeCard(
         model: model,
+        resolveProvider: cloud.modelFastModeProvider,
         enabled: cloud.fastMode,
         hasPersonalKey:
             provider != null &&
@@ -903,30 +904,27 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  void _showModelPicker(CloudService cloud) {
-    // Kept in sync with ALLOWED_MODELS in edge-worker/wrangler.toml; anything
-    // not on that list is rejected by the backend.
+  Future<void> _showModelPicker(CloudService cloud) async {
+    final token = context.read<AuthService>().token;
+    setState(() => _isLoadingModel = true);
+    if (token != null) await cloud.loadModelCatalog(token);
+    if (!mounted) return;
+    setState(() => _isLoadingModel = false);
     final providers = [
-      _ModelProvider('OpenAI', Icons.auto_awesome_rounded, [
-        'gpt-6-astra',
-        'gpt-6.1-sol',
-        'gpt-6-luna',
-        'gpt-5.6-sol',
-        'gpt-5.6-terra',
-        'gpt-5.6-luna',
-      ]),
-      _ModelProvider('Google', Icons.cloud_rounded, [
-        'gemini-3.1-pro-preview',
-        'gemini-3.6-flash',
-        'gemini-3.5-flash',
-        'gemini-3.5-flash-lite',
-      ]),
-      _ModelProvider('Anthropic', Icons.psychology_rounded, [
-        'claude-opus-5',
-        'claude-sonnet-5',
-        'claude-fable-5',
-        'claude-haiku-4-5',
-      ]),
+      for (final entry in [
+        ('openai', 'OpenAI', Icons.auto_awesome_rounded),
+        ('google', 'Google', Icons.cloud_rounded),
+        ('anthropic', 'Anthropic', Icons.psychology_rounded),
+      ])
+        if (cloud.modelCatalog.any((m) => m.provider == entry.$1))
+          _ModelProvider(
+            entry.$2,
+            entry.$3,
+            cloud.modelCatalog
+                .where((m) => m.provider == entry.$1)
+                .map((m) => m.id)
+                .toList(),
+          ),
     ];
 
     showModalBottomSheet(
@@ -936,6 +934,10 @@ class _DashboardScreenState extends State<DashboardScreen>
       builder: (ctx) => _ModelPickerSheet(
         providers: providers,
         currentModel: cloud.currentModel,
+        freeModels: cloud.modelCatalog
+            .where((m) => m.free)
+            .map((m) => m.id)
+            .toSet(),
         onSelected: (model) {
           Navigator.pop(ctx);
           _setModel(model);
@@ -999,11 +1001,13 @@ class _ModelProvider {
 class _ModelPickerSheet extends StatefulWidget {
   final List<_ModelProvider> providers;
   final String? currentModel;
+  final Set<String> freeModels;
   final ValueChanged<String> onSelected;
 
   const _ModelPickerSheet({
     required this.providers,
     required this.currentModel,
+    required this.freeModels,
     required this.onSelected,
   });
 
@@ -1166,7 +1170,7 @@ class _ModelPickerSheetState extends State<_ModelPickerSheet> {
                                 ),
                               ),
                             ),
-                            _TierTag(free: isFreeModel(model)),
+                            _TierTag(free: widget.freeModels.contains(model)),
                             const SizedBox(width: 10),
                             if (isSelected)
                               Container(
