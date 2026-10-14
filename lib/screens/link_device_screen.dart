@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../models/calcai_device.dart';
+import '../models/pairing_v2.dart';
 import '../services/auth_service.dart';
 import '../services/ble_service.dart';
 import '../services/cloud_service.dart';
@@ -71,8 +72,23 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
   /// before it will accept Wi-Fi credentials, so pairing comes first.
   Future<void> _afterConnect() async {
     final ble = context.read<BleService>();
+    final auth = context.read<AuthService>();
+    final token = auth.token;
+    final generation = ble.connectionGeneration;
+    late final int pairingVersion;
+    try {
+      pairingVersion = await ble.negotiatePairing();
+    } on PairingV2Exception catch (error) {
+      if (mounted) {
+        setState(() {
+          _phase = _Phase.idle;
+          _error = error.message;
+        });
+      }
+      return;
+    }
     final paired = await ble.isDevicePaired();
-    if (!mounted) return;
+    if (!mounted || auth.token != token) return;
 
     // No answer. Two very different causes with the same null: firmware that
     // predates pairing, or a link that broke before the command landed. Saying
@@ -95,7 +111,7 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
       final ok = await Navigator.of(
         context,
       ).push<bool>(MaterialPageRoute(builder: (_) => const PairDeviceScreen()));
-      if (!mounted) return;
+      if (!mounted || auth.token != token) return;
       if (ok != true) {
         setState(() => _phase = _Phase.idle);
         return;
@@ -105,30 +121,32 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
       // until later meant a calculator switched off mid-setup ended up claimed
       // on the device but unknown to the account, and the next sign-in dropped
       // the user back into setup with no way to tell why.
-      if (!await _claimWithBackend()) return;
+      if (pairingVersion != 2 && !await _claimWithBackend()) return;
     } else if (paired == true) {
       // Identify this account. The firmware refuses every provisioning command
       // until it matches the owner it stored, so a failure here has to stop the
       // flow — otherwise the user reaches Wi-Fi setup, types their password,
       // and the calculator silently drops it with nothing on screen to explain.
       final isOwner = await _proveOwnership();
-      if (!mounted) return;
+      if (!mounted || auth.token != token) return;
       if (!isOwner) {
         // Not ours — but it may have been released by an admin, in which case
         // the backend will sign an instruction telling it to forget its old
         // owner. Without this the calculator is unusable by anyone forever:
         // unpairing clears the server record and cannot reach the device.
         if (await _tryRelease()) {
-          if (!mounted) return;
+          if (!mounted || auth.token != token) return;
           final ok = await Navigator.of(context).push<bool>(
             MaterialPageRoute(builder: (_) => const PairDeviceScreen()),
           );
-          if (!mounted) return;
+          if (!mounted || auth.token != token) return;
           if (ok != true) {
             setState(() => _phase = _Phase.idle);
             return;
           }
-          if (!await _claimWithBackend()) return;
+          if (pairingVersion != 2 && !await _claimWithBackend()) {
+            return;
+          }
         } else {
           setState(() {
             _phase = _Phase.idle;
@@ -141,16 +159,39 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
         // Already ours on the device but possibly not yet on the account —
         // exactly what an interrupted setup leaves behind, so repair it rather
         // than walking past it.
-        final auth = context.read<AuthService>();
         if (auth.primaryMac == null || auth.primaryMac!.isEmpty) {
-          if (!await _claimWithBackend()) return;
+          if (pairingVersion == 2) {
+            final mac = ble.deviceMac;
+            if (mac == null || !isValidMacHex(mac)) {
+              setState(() {
+                _phase = _Phase.idle;
+                _error =
+                    'Could not read the calculator id. Reconnect and try again.';
+              });
+              return;
+            }
+            await auth.addDevice(mac, announce: false);
+          } else if (!await _claimWithBackend()) {
+            return;
+          }
         }
       }
     }
 
-    if (!mounted) return;
+    if (!mounted || auth.token != token) return;
+    if (generation != ble.connectionGeneration ||
+        !ble.connectionState.isConnected) {
+      setState(() {
+        _phase = _Phase.idle;
+        _error =
+            'The Bluetooth connection changed. Scan again to continue setup.';
+      });
+      return;
+    }
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const WifiSetupScreen()),
+      MaterialPageRoute(
+        builder: (_) => WifiSetupScreen(securePairing: pairingVersion == 2),
+      ),
     );
   }
 
@@ -234,6 +275,7 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
     final auth = context.read<AuthService>();
     final cloud = context.read<CloudService>();
 
+    if (ble.pairingApprovalVersion == 2) return false;
     final challenge =
         ble.verifiedChallenge ?? await ble.requestIdentityChallenge();
     if (!mounted) return false;

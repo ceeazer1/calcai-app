@@ -9,6 +9,7 @@ import 'dart:io' show Platform;
 
 import '../models/calcai_device.dart';
 import '../models/wifi_network.dart';
+import '../models/pairing_v2.dart';
 import '../utils/log.dart';
 
 /// A device's answer to an identity challenge.
@@ -348,6 +349,8 @@ class BleService extends ChangeNotifier {
     Duration timeout = const Duration(seconds: 15),
     int attempts = 3,
   }) async {
+    _connectionGeneration++;
+    _pairingApprovalVersion = null;
     _clearError();
     _setConnectionState(DeviceConnectionState.connecting);
     _connectedDevice = device;
@@ -451,6 +454,8 @@ class BleService extends ChangeNotifier {
 
   /// Disconnects from the current device.
   Future<void> disconnect() async {
+    _connectionGeneration++;
+    _pairingApprovalVersion = null;
     try {
       _statusNotifySub?.cancel();
       _statusNotifySub = null;
@@ -466,6 +471,8 @@ class BleService extends ChangeNotifier {
   }
 
   void _handleDisconnection() {
+    _connectionGeneration++;
+    _pairingApprovalVersion = null;
     _connectedDevice = null;
     _scanChar = null;
     _pairedOwner = null;
@@ -810,23 +817,45 @@ class BleService extends ChangeNotifier {
   String? _lastCommandError;
   String? get lastCommandError => _lastCommandError;
 
-  Future<Map<String, dynamic>?> _command(Map<String, dynamic> cmd) =>
-      _serialize(() => _commandLocked(cmd));
+  Future<Map<String, dynamic>?> _command(Map<String, dynamic> cmd) {
+    final generation = connectionGeneration;
+    return _serialize(() async {
+      if (generation != connectionGeneration) return null;
+      return _commandLocked(cmd);
+    });
+  }
 
   Future<Map<String, dynamic>?> _commandLocked(Map<String, dynamic> cmd) async {
+    final generation = connectionGeneration;
+    final characteristic = _scanChar;
     _lastCommandError = null;
-    if (_scanChar == null) {
+    if (characteristic == null) {
       _lastCommandError = 'no command characteristic';
       return null;
     }
     try {
-      await _scanChar!.write(
-        utf8.encode(jsonEncode(cmd)),
-        withoutResponse: _scanChar!.properties.writeWithoutResponse,
+      final signedPairing =
+          cmd['cmd'] == 'pairapprove' || cmd['cmd'] == 'paircomplete';
+      final bytes = utf8.encode(jsonEncode(cmd));
+      // Signed offers are larger than one ATT packet. Reliable long writes
+      // deliver one complete JSON command, never partial unauthenticated data.
+      if (signedPairing && bytes.length > 512) {
+        throw const PairingV2Exception(
+          'Pairing message is too large.',
+          restartRequired: true,
+        );
+      }
+      await characteristic.write(
+        bytes,
+        withoutResponse:
+            !signedPairing && characteristic.properties.writeWithoutResponse,
+        allowLongWrite: signedPairing,
       );
       for (var attempt = 0; attempt < 4; attempt++) {
         await Future.delayed(const Duration(milliseconds: 250));
-        final raw = await _scanChar!.read();
+        if (generation != connectionGeneration) return null;
+        final raw = await characteristic.read();
+        if (generation != connectionGeneration) return null;
         if (raw.isEmpty) continue;
         try {
           final data = jsonDecode(utf8.decode(raw));
@@ -841,11 +870,124 @@ class BleService extends ChangeNotifier {
           // Could still be a stale scan/list payload — try again.
         }
       }
+    } on PairingV2Exception {
+      rethrow;
     } catch (e) {
       logDebug('CalcAI BLE: command ${cmd['cmd']} failed: $e');
       _lastCommandError = e.toString();
     }
     return null;
+  }
+
+  int _connectionGeneration = 0;
+  int get connectionGeneration => _connectionGeneration;
+  int? _pairingApprovalVersion;
+  int? get pairingApprovalVersion => _pairingApprovalVersion;
+
+  @protected
+  Future<Map<String, dynamic>?> sendPairingCommand(
+    Map<String, dynamic> command,
+  ) => _command(command);
+
+  /// Pin negotiation to this connection. Never interpret a timeout as legacy.
+  Future<int> negotiatePairing() async {
+    if (_pairingApprovalVersion != null) return _pairingApprovalVersion!;
+    final generation = connectionGeneration;
+    final reply = await sendPairingCommand({'cmd': 'capabilities'});
+    if (generation != connectionGeneration || reply == null) {
+      throw const PairingV2Exception(
+        'Could not read pairing support. Reconnect and try again.',
+        restartRequired: true,
+      );
+    }
+    final version = reply['pairingApprovalVersion'];
+    if (version != null &&
+        (version is! int || (version != 1 && version != 2))) {
+      invalidPairingReply();
+    }
+    if (reply['cmd'] != 'capabilities' &&
+        reply['error'] != 'unknown_command' &&
+        reply['error'] != 'unknown_cmd') {
+      invalidPairingReply();
+    }
+    return _pairingApprovalVersion = version == 2 ? 2 : 1;
+  }
+
+  void _requirePairingV2(int generation) {
+    if (pairingApprovalVersion != 2 ||
+        generation != connectionGeneration ||
+        !connectionState.isConnected) {
+      throw const PairingV2Exception(
+        'The pairing connection changed. Leave setup and reconnect.',
+        restartRequired: true,
+      );
+    }
+  }
+
+  Future<PairingApproval> approvePairing(
+    PairingOffer offer,
+    String code,
+  ) async {
+    final generation = connectionGeneration;
+    _requirePairingV2(generation);
+    final reply = await sendPairingCommand({
+      'cmd': 'pairapprove',
+      ...offer.fields,
+      'code': code,
+    });
+    _requirePairingV2(generation);
+    if (reply == null) {
+      throw const PairingV2Exception(
+        'No response. Keep the calculator connected and tap Retry.',
+      );
+    }
+    if (reply['ok'] != true) {
+      final error = reply['error'];
+      if (error == 'bad_code') {
+        throw const PairingV2Exception(
+          'Wrong code. Check the calculator and try again.',
+        );
+      }
+      throw const PairingV2Exception(
+        'The calculator rejected this pairing attempt. Leave setup and reconnect.',
+        restartRequired: true,
+      );
+    }
+    return PairingApproval.fromJson(reply, offer);
+  }
+
+  Future<void> completePairing(
+    PairingOffer offer,
+    PairingApproval approval,
+    PairingCompletion completion,
+    String owner,
+  ) async {
+    final generation = connectionGeneration;
+    _requirePairingV2(generation);
+    final reply = await sendPairingCommand({
+      'cmd': 'paircomplete',
+      'protocol': 2,
+      'mac': offer.mac,
+      'challengeId': offer.challengeId,
+      'approvalNonce': approval.nonce,
+      'completion': completion.fields,
+    });
+    _requirePairingV2(generation);
+    if (reply == null) {
+      throw const PairingV2Exception(
+        'Could not confirm pairing on the calculator. Keep it connected and tap Retry.',
+      );
+    }
+    if (reply['ok'] != true ||
+        reply['cmd'] != 'paircomplete' ||
+        reply['protocol'] != 2 ||
+        reply['mac'] != offer.mac ||
+        reply['challengeId'] != offer.challengeId ||
+        reply['ownershipId'] != completion.fields['ownershipId']) {
+      invalidPairingReply();
+    }
+    _pairedOwner = owner;
+    notifyListeners();
   }
 
   /// Whether this calculator has already been claimed by an account.
@@ -855,6 +997,8 @@ class BleService extends ChangeNotifier {
   Future<bool?> isDevicePaired() async {
     final r = await _command({'cmd': 'pairinfo'});
     final v = r?['paired'];
+    final mac = r?['mac'];
+    if (mac is String && isValidMacHex(mac)) _deviceMac = mac;
     return v is bool ? v : null;
   }
 
@@ -899,6 +1043,9 @@ class BleService extends ChangeNotifier {
   /// Returns null on success, or a short reason to show the user. The firmware
   /// allows five wrong guesses per connection and then burns the code.
   Future<String?> submitPairingCode(String code, String owner) async {
+    if (pairingApprovalVersion == 2) {
+      return 'This calculator requires secure pairing. Leave setup and reconnect.';
+    }
     final r = await _command({'cmd': 'paircode', 'code': code, 'owner': owner});
     if (r == null) return 'No response. Try again.';
     if (r['ok'] == true) {
@@ -1057,10 +1204,9 @@ class BleService extends ChangeNotifier {
   /// Cached per connection: the check runs once, so re-sending credentials or
   /// saving a second network costs nothing extra. Cleared on disconnect.
   ///
-  /// Public only so tests can assert it fails closed; callers inside this class
-  /// are the real users.
-  @visibleForTesting
+  /// Also used by the V2 code screen before requesting a signed offer.
   Future<bool> ensureDeviceVerified() async {
+    final generation = connectionGeneration;
     if (_verifiedChallenge != null) return true;
 
     final verifier = deviceVerifier;
@@ -1095,6 +1241,7 @@ class BleService extends ChangeNotifier {
       return false;
     }
 
+    if (generation != connectionGeneration) return false;
     _verifiedChallenge = challenge;
     if (isValidMacHex(challenge.mac)) _deviceMac = challenge.mac;
     return true;

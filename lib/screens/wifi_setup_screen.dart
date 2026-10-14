@@ -18,7 +18,9 @@ import 'success_screen.dart';
 /// WiFi setup screen — lists networks discovered by the ESP32 and
 /// lets the user pick one, enter a password, and provision.
 class WifiSetupScreen extends StatefulWidget {
-  const WifiSetupScreen({super.key});
+  const WifiSetupScreen({super.key, this.securePairing = false});
+
+  final bool securePairing;
 
   @override
   State<WifiSetupScreen> createState() => _WifiSetupScreenState();
@@ -231,7 +233,8 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
-        pageBuilder: (_, __, ___) => const SuccessScreen(),
+        pageBuilder: (_, __, ___) =>
+            SuccessScreen(securePairing: widget.securePairing),
         transitionDuration: const Duration(milliseconds: 600),
         reverseTransitionDuration: const Duration(milliseconds: 400),
         transitionsBuilder: (context, animation, _, child) {

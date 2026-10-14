@@ -14,7 +14,9 @@ import '../app.dart';
 /// Features an animated link symbol and a large paired heading.
 /// The Home page button opens the main app.
 class SuccessScreen extends StatefulWidget {
-  const SuccessScreen({super.key});
+  const SuccessScreen({super.key, this.securePairing = false});
+
+  final bool securePairing;
 
   @override
   State<SuccessScreen> createState() => _SuccessScreenState();
@@ -97,6 +99,7 @@ class _SuccessScreenState extends State<SuccessScreen>
     // The verified challenge is authoritative: its MAC came from a device that
     // proved itself to the backend. Fall back to the status-reported MAC only
     // if there is no challenge (it is still validated as a real MAC).
+    final isV2 = widget.securePairing || ble.pairingApprovalVersion == 2;
     final challenge = ble.verifiedChallenge;
     final mac = challenge?.mac ?? ble.deviceMac ?? ble.connectedDevice?.id;
     // Persist the network(s) saved during setup under this device's MAC so the
@@ -112,6 +115,14 @@ class _SuccessScreenState extends State<SuccessScreen>
           .replaceAll(RegExp(r'[^0-9a-zA-Z]'), '')
           .toLowerCase();
       if (!auth.deviceMacs.contains(normalised)) {
+        if (isV2) {
+          if (mounted) {
+            _showClaimFailed(
+              'Secure pairing was not completed. Return to device setup and reconnect.',
+            );
+          }
+          return;
+        }
         final claimed = await cloud.claimDevice(
           auth.token!,
           mac,

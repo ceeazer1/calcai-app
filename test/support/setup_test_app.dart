@@ -154,6 +154,8 @@ class SetupTestAppBle extends BleService {
   @override
   Future<bool?> isDevicePaired() async => _paired;
   @override
+  Future<int> negotiatePairing() async => 1;
+  @override
   Future<String?> submitPairingCode(String code, String owner) async {
     if (!await _pause()) return 'Test disposed.';
     if (code != '123456') return 'Incorrect pairing code.';

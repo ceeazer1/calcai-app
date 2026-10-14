@@ -10,6 +10,7 @@ import 'resilient_http_client.dart';
 import 'session_http_client.dart';
 import '../utils/log.dart';
 import '../models/ai_model.dart';
+import '../models/pairing_v2.dart';
 
 /// Returns true only for the Worker's explicit ownership-revocation response.
 ///
@@ -328,6 +329,75 @@ class CloudService extends ChangeNotifier {
       logDebug('verifyDevice error: $e');
       return false;
     }
+  }
+
+  /// These calls never retry or downgrade a V2 failure. The code screen owns
+  /// retries so it can preserve the exact offer, approval and live BLE link.
+  Future<PairingOffer> requestPairingOffer(String token, String mac) async {
+    final data = await _pairingV2Post(token, '/ai/pair/challenge', {
+      'mac': mac,
+    });
+    return PairingOffer.fromJson(data, mac);
+  }
+
+  Future<PairingCompletion> claimApprovedDevice(
+    String token,
+    PairingOffer offer,
+    PairingApproval approval,
+  ) async {
+    final data = await _pairingV2Post(
+      token,
+      '/ai/pair/claim',
+      approval.claimBody(offer),
+    );
+    return PairingCompletion.fromJson(data, offer);
+  }
+
+  Future<Map<String, dynamic>> _pairingV2Post(
+    String token,
+    String path,
+    Map<String, dynamic> body,
+  ) async {
+    final response = await _client.post(
+      Uri.parse('$_baseUrl$path'),
+      headers: _jsonAuthHeaders(token),
+      body: jsonEncode(body),
+    );
+    _client.ensureCurrent(response);
+    Map<String, dynamic>? data;
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) data = decoded;
+    } on FormatException {
+      // A proxy's HTML error is not an approval or a legacy response.
+    }
+    if (response.statusCode != 200) {
+      final code = data?['error'];
+      if (response.statusCode == 401) {
+        throw const PairingV2Exception(
+          'Sign in again before pairing.',
+          restartRequired: true,
+        );
+      }
+      if (code == 'pairing_v2_disabled' ||
+          code == 'pairing_identity_upgrade_required') {
+        throw const PairingV2Exception(
+          'Secure pairing is not available for this calculator yet. Contact CalcAI support.',
+          restartRequired: true,
+        );
+      }
+      if ([400, 403, 404, 409, 410, 413].contains(response.statusCode)) {
+        throw const PairingV2Exception(
+          'This pairing attempt is no longer valid. Leave setup and reconnect.',
+          restartRequired: true,
+        );
+      }
+      throw const PairingV2Exception(
+        'Could not finish pairing. Keep the calculator connected and tap Retry.',
+      );
+    }
+    if (data == null) invalidPairingReply();
+    return data;
   }
 
   /// Claims / pairs a new device to the authenticated user's account.

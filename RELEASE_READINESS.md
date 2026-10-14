@@ -1,6 +1,71 @@
-# CalcAI release readiness — September 27, 2026
+# CalcAI release readiness — October 13, 2026
 
 **Not ready for public submission. No App Review submission or public release has been made.** This current checklist replaces earlier chronological checklists. Automated checks are evidence, not a guarantee of security or App Review acceptance.
+
+## October 13 TestFlight candidate
+
+The owner requested a Codemagic TestFlight upload of the app changes. Before
+pushing, all 152 Flutter tests, analysis with fatal infos, and all 14 release
+source/asset checks passed. The signed candidate workflow repeats those checks
+and allocates the next available Apple build number. No public App Review
+submission, backend activation or firmware publication is included in this request.
+
+## October 12 local pairing update
+
+Local Flutter changes add negotiated V2 approval and authenticated completion using
+`../edge-worker/src/features/devices/PAIRING_V2.md`, including its October 12
+completion update. No native build, upload, deployment or App Review submission
+was performed for this work. September build/store evidence below is historical,
+not verification of these local changes.
+
+- The code screen verifies the device identity, requests one signed offer, relays
+  the actual entered code, submits the device approval with the same Bearer
+  session, and waits for the calculator's completion acknowledgement before
+  recording ownership or opening Wi-Fi setup.
+- Lost responses reuse the saved offer/approval/completion on the same BLE
+  connection. Sign-out, changed connections, invalid proofs and terminal server
+  errors stop the attempt. A negotiated V2 flow never falls back to legacy claims,
+  including after Wi-Fi cleanup disconnects. Older firmware retains legacy setup.
+- Current app wire: flat `pairapprove` command with the offer fields plus `code`;
+  approval reply echoes `cmd`, `protocol`, `mac`, `challengeId`, `approvalNonce`
+  and `approvalResponse`. `paircomplete` sends `protocol`, `mac`, `challengeId`,
+  `approvalNonce` and the opaque nested `completion` object. Its acknowledgement
+  echoes `cmd`, `protocol`, `mac`, `challengeId` and `ownershipId`, with `ok:true`.
+  Signed commands use reliable long writes capped at 512 bytes.
+- Validation: 62 focused Flutter tests passed (pairing, ownership/release,
+  device verification, stale sessions, Wi-Fi, portal and AI consent), Flutter
+  analysis found no issues, and all 14 release source/asset checks passed.
+  Tests use synthetic HTTP/BLE fixtures;
+  they do not establish native ATT long-write support or hardware correctness.
+- Shared-vector follow-up verifies the complete HTTP/BLE
+  relay using the backend's `pairing-v2-contract.json`. Offer, approval and
+  completion message bytes and HMACs match with the 64-character key treated as
+  UTF-8 text, not decoded hex. Both BLE commands fit the 512-byte limit. The
+  standalone app test fixture is byte-identical to the backend fixture (SHA-256
+  `5c7cc8912f3916e2966afb3f6cf046f4ece22d25f2e63c215d95d6a51fa61e84`).
+  This public key is test-only and must never be provisioned or shipped as a
+  device credential. The app relays signatures; it does not authenticate them
+  using a device key.
+- Reconnect follow-up: all 21 V2 tests pass. New regressions cover a committed
+  cloud claim whose response or BLE completion is lost, disconnect/cancel,
+  fresh code/offer/approval after reconnect, and an `already:true` completion
+  that still waits for matching firmware acknowledgement. No proof is reused
+  across connections, no legacy claim is sent, and no account-unpair request
+  is made. The app no longer suggests removing the device to recover.
+- The current firmware JSON parser/handler matches the app's field names,
+  nesting, integer timestamps and reply echoes (`pairing_approval_json.h` and
+  `pairing_approval_ble.h`). Real transport and hardware behavior remain untested.
+- The final backend recovery contract and implementation were compared with the
+  app on October 12; no app correction was needed. A fresh reconfirmation time
+  and stable ownership UUID are relayed unchanged, including for legacy owners.
+- Pending: real iPhone/enrolled-calculator tests and coordinated activation.
+  Backend V2 remains disabled by default. Verify
+  wrong-code limits, expiry, cancellation/reconnection, lost cloud response,
+  lost completion acknowledgement, ownership transfer and Wi-Fi/portal behavior.
+  Backend recovery must preserve the existing owner generation and private data
+  while requiring fresh local approval; app regressions use synthetic responses.
+  Legacy replay risk remains until a separately reviewed
+  per-device enforcement cutover.
 
 ## Launch decisions
 
