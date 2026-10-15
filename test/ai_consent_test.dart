@@ -1,5 +1,6 @@
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'dart:convert';
 import 'package:calcai_app/screens/ai_consent_screen.dart';
 import 'package:calcai_app/services/auth_service.dart';
 import 'package:calcai_app/services/cloud_service.dart';
@@ -16,15 +17,19 @@ class _ConsentCloud extends FakeCloudService {
   bool reviewed = false;
   bool allowed = false;
   bool failSave = false;
+  bool failLoad = false;
   final choices = <bool>[];
 
   @override
-  Future<Map<String, dynamic>> readAiConsent(String token) async => {
-    'ok': true,
-    'version': CloudService.aiConsentVersion,
-    'reviewed': reviewed,
-    'allowed': allowed,
-  };
+  Future<Map<String, dynamic>> readAiConsent(String token) async {
+    if (failLoad) throw Exception('offline');
+    return {
+      'ok': true,
+      'version': CloudService.aiConsentVersion,
+      'reviewed': reviewed,
+      'allowed': allowed,
+    };
+  }
 
   @override
   Future<void> saveAiConsent(String token, bool allowed) async {
@@ -35,7 +40,7 @@ class _ConsentCloud extends FakeCloudService {
   }
 }
 
-Future<void> _mount(WidgetTester tester, _ConsentCloud cloud) async {
+Future<void> _mount(WidgetTester tester, CloudService cloud) async {
   final auth = FakeAuthService();
   await auth.init();
   await tester.pumpWidget(
@@ -54,6 +59,149 @@ Future<void> _mount(WidgetTester tester, _ConsentCloud cloud) async {
 }
 
 void main() {
+  testWidgets(
+    'a consent server error stays blocked and identifies the server failure',
+    (tester) async {
+      final cloud = CloudService(
+        client: MockClient(
+          (_) async => http.Response('{"error":"server"}', 500),
+        ),
+      );
+      addTearDown(cloud.dispose);
+      await _mount(tester, cloud);
+      expect(find.textContaining('server error 500'), findsOneWidget);
+      expect(
+        tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+        isNull,
+      );
+      expect(find.byKey(const ValueKey('ai-consent-popup')), findsOneWidget);
+    },
+  );
+
+  test('an unreviewed save response never confirms permission', () async {
+    final cloud = CloudService(
+      client: MockClient(
+        (_) async => http.Response(
+          jsonEncode({
+            'ok': true,
+            'version': CloudService.aiConsentVersion,
+            'reviewed': false,
+            'allowed': true,
+          }),
+          200,
+        ),
+      ),
+    );
+    addTearDown(cloud.dispose);
+    await expectLater(
+      cloud.saveAiConsent('a', true),
+      throwsA(isA<AiConsentException>()),
+    );
+  });
+
+  testWidgets('failed consent load disables choices until a valid retry', (
+    tester,
+  ) async {
+    final cloud = _ConsentCloud()..failLoad = true;
+    await _mount(tester, cloud);
+    expect(
+      find.text('Could not load your choice. Please try again.'),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      isNull,
+    );
+    expect(
+      tester.widget<OutlinedButton>(find.byType(OutlinedButton)).onPressed,
+      isNull,
+    );
+    expect(cloud.choices, isEmpty);
+    cloud.failLoad = false;
+    await tester.ensureVisible(find.text('Retry'));
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      isNotNull,
+    );
+    expect(cloud.choices, isEmpty);
+  });
+
+  testWidgets('new account loads its real consent contract without an error', (
+    tester,
+  ) async {
+    final requests = <http.Request>[];
+    final cloud = CloudService(
+      client: MockClient((request) async {
+        requests.add(request);
+        return http.Response(
+          jsonEncode({
+            'ok': true,
+            'version': CloudService.aiConsentVersion,
+            'reviewed': request.method == 'PUT',
+            'allowed': request.method == 'PUT',
+          }),
+          200,
+        );
+      }),
+    );
+    addTearDown(cloud.dispose);
+    await _mount(tester, cloud);
+    expect(find.textContaining('Could not load'), findsNothing);
+    expect(requests.single.method, 'GET');
+    expect(requests.single.url.path, '/ai/user/ai-consent');
+    expect(requests.single.headers['Authorization'], 'Bearer test-token');
+    await tester.ensureVisible(find.text('Allow AI sharing'));
+    await tester.tap(find.text('Allow AI sharing'));
+    await tester.pumpAndSettle();
+    expect(requests.last.method, 'PUT');
+    expect(jsonDecode(requests.last.body), {
+      'version': CloudService.aiConsentVersion,
+      'allowed': true,
+    });
+    expect(find.byKey(const ValueKey('ai-consent-popup')), findsNothing);
+  });
+
+  test(
+    'incomplete or unconfirmed consent cannot count as a loaded choice',
+    () async {
+      for (final body in [
+        {
+          'version': CloudService.aiConsentVersion,
+          'reviewed': true,
+          'allowed': true,
+        },
+        {
+          'ok': false,
+          'version': CloudService.aiConsentVersion,
+          'reviewed': true,
+          'allowed': true,
+        },
+        {
+          'ok': true,
+          'version': CloudService.aiConsentVersion,
+          'reviewed': true,
+        },
+        {
+          'ok': true,
+          'version': 'future-version',
+          'reviewed': true,
+          'allowed': true,
+        },
+      ]) {
+        final cloud = CloudService(
+          client: MockClient((_) async => http.Response(jsonEncode(body), 200)),
+        );
+        await expectLater(
+          cloud.readAiConsent('a'),
+          throwsA(isA<AiConsentException>()),
+        );
+        cloud.dispose();
+      }
+    },
+  );
+
   test(
     'missing consent endpoint reports the server mismatch, not a false save',
     () async {

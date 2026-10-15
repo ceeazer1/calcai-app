@@ -310,6 +310,18 @@ class UsageCardContent extends StatelessWidget {
                   ),
                 ),
               if (failure != null)
+                if (tracker.failureDetail != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Text(
+                      tracker.failureDetail!,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+              if (failure != null)
                 TextButton(
                   onPressed: tracker.loading ? null : onRefresh,
                   child: const Text('Retry'),

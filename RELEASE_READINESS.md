@@ -1,6 +1,62 @@
-# CalcAI release readiness — October 13, 2026
+# CalcAI release readiness — October 14, 2026
 
 **Not ready for public submission. No App Review submission or public release has been made.** This current checklist replaces earlier chronological checklists. Automated checks are evidence, not a guarantee of security or App Review acceptance.
+
+## October 14 consent, usage and portal TestFlight candidate
+
+These changes are **not included in build 1098**. The owner has now requested a
+Codemagic TestFlight upload for native verification. The signed candidate repeats
+the release checks and allocates the next Apple build number. Upload completion
+must be verified separately. This change does not modify the backend or firmware
+and does not submit the app for public App Review.
+
+- Reproduced a native transport/server incompatibility: live diagnostic GETs to
+  consent and usage return HTTP 400 `invalid body` with `Content-Length: 0`;
+  bodyless requests reach authentication and return the expected 401 for the
+  deliberately invalid diagnostic Bearer. The installed `cupertino_http` 3.1.0
+  sets that header and an empty NSData body for ordinary `http.Request` GETs.
+  The native client now adapts empty GET/HEAD requests into bodyless streams with
+  no length header. Foundation networking, TLS validation, authorization,
+  cancellation, redirects and session guards are preserved. Mutations, explicit
+  bodies and streaming requests pass through unchanged and are never replayed.
+- Confirmed consent UI defect: the load failure cleared `_loading` but choices
+  depended only on `_saving`, so a failed/unknown read still left both buttons
+  enabled. Choices now require a successful read. Settings no longer labels an
+  unknown choice as off. A valid Retry recovers without submitting consent.
+- Consent reads now validate `ok`, the supported version and both boolean
+  fields. Saves additionally require `reviewed:true` and the requested choice.
+  Unsupported/malformed responses cannot unlock Home. Stale async errors from a
+  different login are discarded. Failures distinguish session expiry, access,
+  rate limiting, server status, response format and network/timeouts; no raw
+  response body or credentials are displayed.
+- Usage failures retain safe HTTP status or network diagnostics. Unexpected
+  data is reported as a response failure, not an offline connection. Valid
+  cached usage stays visibly stale; a missing balance stays unknown. Tests cover
+  a real CloudService 503 followed by a successful Retry, without mutations or a
+  fabricated balance. Existing null/syncing, finite Pro, reset, account switching
+  and refresh rules remain covered.
+- The connected iOS portal pill has a translucent pale gradient and a subtle
+  six-second shimmer. It remains fixed above Home scrolling and keeps its close
+  confirmation/acknowledgement behavior. Decorative animation stops for Reduce
+  Motion, accessible navigation, hidden tabs and backgrounding; it is disposed
+  when the BLE link disconnects. The small surface has its own repaint boundary.
+- Validation: **166 Flutter tests passed**, analysis with fatal infos found no
+  issues, all **14 release source/asset checks passed**, and a rendered Home
+  preview was visually inspected. The preview uses synthetic account data and
+  in-memory BLE, not a native or physical-device test.
+
+**Native verification still required:** the transport defect above is reproduced
+against the live service and corrected locally, but the original phone's failing
+request was not captured and the corrected Foundation transport cannot execute
+on this Windows host. The bounded read-only log capture at approximately
+9:04–9:09 PM EDT contained only the synthetic diagnostic requests. No real
+session credentials, request headers or response bodies were recorded. Earlier
+scoped admin checks found account usage ready with 98.94% remaining; this does
+not establish the phone's Bearer session or network path. Before marking the
+reported issue resolved, install a new native build and verify that consent
+loads and saves, Home displays real usage, and account switching stays isolated.
+Build 1098 does not contain these changes. Hardware remains owned by TI-84 &
+ESP32 Bench Testing.
 
 ## October 13 TestFlight candidate
 

@@ -60,9 +60,11 @@ class AiConsentScreen extends StatefulWidget {
 class _AiConsentScreenState extends State<AiConsentScreen> {
   bool _loading = true;
   bool _saving = false;
+  bool _loaded = false;
   bool _allowed = false;
   String? _error;
   bool? _pendingChoice;
+  int _loadGeneration = 0;
 
   @override
   void initState() {
@@ -71,36 +73,53 @@ class _AiConsentScreenState extends State<AiConsentScreen> {
   }
 
   Future<void> _load() async {
+    if (!mounted || _saving) return;
+    final generation = ++_loadGeneration;
     final token = context.read<AuthService>().token;
     setState(() {
       _loading = true;
+      _loaded = false;
       _error = null;
+      _pendingChoice = null;
     });
     try {
       if (token == null) throw StateError('No session');
       final data = await context.read<CloudService>().readAiConsent(token);
-      if (!mounted || context.read<AuthService>().token != token) return;
+      if (!mounted ||
+          generation != _loadGeneration ||
+          context.read<AuthService>().token != token) {
+        return;
+      }
       if (data['version'] != CloudService.aiConsentVersion) {
-        throw const FormatException('App update required');
+        throw const AiConsentException(
+          'Update CalcAI to review the latest AI sharing information.',
+        );
       }
       _allowed = data['allowed'] == true;
+      _loaded = true;
       if (data['reviewed'] == true && widget.onComplete != null) {
         widget.onComplete!();
         return;
       }
     } catch (error) {
-      if (mounted) {
+      if (mounted &&
+          generation == _loadGeneration &&
+          context.read<AuthService>().token == token) {
         _error = error is AiConsentException
             ? error.message
             : 'Could not load your choice. Please try again.';
       }
     }
-    if (mounted) setState(() => _loading = false);
+    if (mounted &&
+        generation == _loadGeneration &&
+        context.read<AuthService>().token == token) {
+      setState(() => _loading = false);
+    }
   }
 
   Future<void> _save(bool allowed) async {
     final token = context.read<AuthService>().token;
-    if (token == null || _saving) return;
+    if (token == null || _saving || _loading || !_loaded) return;
     setState(() {
       _saving = true;
       _pendingChoice = allowed;
@@ -115,7 +134,7 @@ class _AiConsentScreenState extends State<AiConsentScreen> {
         Navigator.of(context).pop();
       }
     } catch (error) {
-      if (mounted) {
+      if (mounted && context.read<AuthService>().token == token) {
         setState(
           () => _error = error is AiConsentException
               ? error.message
@@ -128,6 +147,7 @@ class _AiConsentScreenState extends State<AiConsentScreen> {
   }
 
   Future<void> _confirmAiOff() async {
+    if (_saving || _loading || !_loaded) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -250,7 +270,7 @@ class _AiConsentScreenState extends State<AiConsentScreen> {
                     ),
                   ],
                 ),
-                if (widget.onComplete == null)
+                if (widget.onComplete == null && _loaded)
                   Text(
                     'Current choice: ${_allowed ? 'AI sharing on' : 'AI sharing off'}',
                   ),
@@ -276,12 +296,12 @@ class _AiConsentScreenState extends State<AiConsentScreen> {
                 ],
                 const SizedBox(height: 20),
                 FilledButton(
-                  onPressed: _saving ? null : () => _save(true),
+                  onPressed: _saving || !_loaded ? null : () => _save(true),
                   child: const Text('Allow AI sharing'),
                 ),
                 const SizedBox(height: 10),
                 OutlinedButton(
-                  onPressed: _saving ? null : _confirmAiOff,
+                  onPressed: _saving || !_loaded ? null : _confirmAiOff,
                   child: Text(
                     widget.onComplete == null
                         ? 'Turn off AI sharing'

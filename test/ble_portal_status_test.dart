@@ -34,6 +34,64 @@ class PortalBle extends SetupTestAppBle {
 }
 
 void main() {
+  testWidgets(
+    'portal shimmer pauses for Reduce Motion, hidden tabs and background',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final ble = PortalBle();
+      addTearDown(ble.dispose);
+      Widget app({bool reduceMotion = false, bool active = true}) =>
+          ChangeNotifierProvider<BleService>.value(
+            value: ble,
+            child: MaterialApp(
+              home: MediaQuery(
+                data: MediaQueryData(disableAnimations: reduceMotion),
+                child: Scaffold(
+                  body: TickerMode(
+                    enabled: active,
+                    child: const BlePortalStatus(),
+                  ),
+                ),
+              ),
+            ),
+          );
+      final shimmer = find.byKey(const ValueKey('ble-portal-shimmer'));
+      Gradient? gradient() =>
+          (tester.widget<DecoratedBox>(shimmer).decoration as BoxDecoration)
+              .gradient;
+      await tester.pumpWidget(app());
+      final first = gradient();
+      await tester.pump(const Duration(seconds: 2));
+      expect(gradient(), isNot(first));
+      await tester.pumpWidget(app(active: false));
+      final hidden = gradient();
+      await tester.pump(const Duration(seconds: 2));
+      expect(gradient(), hidden);
+      await tester.pumpWidget(app());
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+      final paused = gradient();
+      await tester.pump(const Duration(seconds: 2));
+      expect(gradient(), paused);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(gradient(), isNot(paused));
+      await tester.pumpWidget(app(reduceMotion: true));
+      await tester.pumpAndSettle();
+      expect(shimmer, findsNothing);
+      expect(find.text('Bluetooth portal active'), findsOneWidget);
+      await tester.tap(find.text('Bluetooth portal active'));
+      await tester.pumpAndSettle();
+      expect(find.text('Close Bluetooth portal?'), findsOneWidget);
+      await tester.tap(find.text('Keep open'));
+      await tester.pumpAndSettle();
+      expect(ble.disconnected, isFalse);
+      await tester.pumpWidget(const SizedBox());
+      debugDefaultTargetPlatformOverride = null;
+    },
+  );
   test(
     'mode cleanup retries transient failures and retains a healthy link',
     () async {
@@ -97,6 +155,12 @@ void main() {
     (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       try {
+        // Continuous decorative motion is checked separately above.
+        tester.platformDispatcher.accessibilityFeaturesTestValue =
+            const FakeAccessibilityFeatures(disableAnimations: true);
+        addTearDown(
+          tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+        );
         tester.view.physicalSize = const Size(393, 700);
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.resetPhysicalSize);

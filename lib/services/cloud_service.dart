@@ -89,37 +89,76 @@ class CloudService extends ChangeNotifier {
   static const aiConsentVersion = '2026-09-13';
 
   Future<Map<String, dynamic>> readAiConsent(String token) async {
-    final response = await _client
-        .get(
-          Uri.parse('$_baseUrl/ai/user/ai-consent'),
-          headers: {'Authorization': 'Bearer $token'},
-        )
-        .timeout(const Duration(seconds: 20));
-    _checkConsentResponse(response);
-    return jsonDecode(response.body) as Map<String, dynamic>;
-  }
-
-  Future<void> saveAiConsent(String token, bool allowed) async {
-    final response = await _client
-        .put(
-          Uri.parse('$_baseUrl/ai/user/ai-consent'),
-          headers: {
-            'Authorization': 'Bearer $token',
-            'Content-Type': 'application/json',
-          },
-          body: jsonEncode({'version': aiConsentVersion, 'allowed': allowed}),
-        )
-        .timeout(const Duration(seconds: 20));
-    _checkConsentResponse(response);
-    final data = jsonDecode(response.body) as Map<String, dynamic>;
-    if (data['ok'] != true ||
-        data['allowed'] != allowed ||
-        data['version'] != aiConsentVersion) {
-      throw const FormatException('Consent was not confirmed.');
+    try {
+      final response = await _client
+          .get(
+            Uri.parse('$_baseUrl/ai/user/ai-consent'),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(const Duration(seconds: 20));
+      return _decodeConsentResponse(response);
+    } on TimeoutException {
+      throw const AiConsentException(
+        'Loading AI sharing timed out. Please try again.',
+      );
+    } on http.ClientException catch (error) {
+      throw AiConsentException(connectionFailureMessage(error));
     }
   }
 
+  Future<void> saveAiConsent(String token, bool allowed) async {
+    try {
+      final response = await _client
+          .put(
+            Uri.parse('$_baseUrl/ai/user/ai-consent'),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({'version': aiConsentVersion, 'allowed': allowed}),
+          )
+          .timeout(const Duration(seconds: 20));
+      final data = _decodeConsentResponse(response);
+      if (data['reviewed'] != true || data['allowed'] != allowed) {
+        throw const AiConsentException(
+          'Your choice was not confirmed. Please try again.',
+        );
+      }
+    } on TimeoutException {
+      throw const AiConsentException(
+        'Saving AI sharing timed out. Please try again.',
+      );
+    } on http.ClientException catch (error) {
+      throw AiConsentException(connectionFailureMessage(error));
+    }
+  }
+
+  Map<String, dynamic> _decodeConsentResponse(http.Response response) {
+    _checkConsentResponse(response);
+    dynamic data;
+    try {
+      data = jsonDecode(response.body);
+    } on FormatException {
+      // Never surface raw response bodies, URLs or session credentials.
+    }
+    if (data is! Map<String, dynamic> ||
+        data['ok'] != true ||
+        data['reviewed'] is! bool ||
+        data['allowed'] is! bool) {
+      throw const AiConsentException(
+        'CalcAI returned an unexpected AI sharing response. Please try again.',
+      );
+    }
+    if (data['version'] != aiConsentVersion) {
+      throw const AiConsentException(
+        'Update CalcAI to review the latest AI sharing information.',
+      );
+    }
+    return data;
+  }
+
   void _checkConsentResponse(http.Response response) {
+    _client.ensureCurrent(response);
     if (response.statusCode == 404 || response.statusCode == 405) {
       throw const AiConsentException(
         'AI sharing is not available on the server yet. Your choice has not been saved.',
@@ -128,6 +167,21 @@ class CloudService extends ChangeNotifier {
     if (response.statusCode == 401) {
       throw const AiConsentException(
         'Your session expired. Please sign out and sign in again.',
+      );
+    }
+    if (response.statusCode == 403) {
+      throw const AiConsentException(
+        'CalcAI could not authorize AI sharing. Please sign out and sign in again.',
+      );
+    }
+    if (response.statusCode == 429) {
+      throw const AiConsentException(
+        'Too many requests. Wait a minute, then try again.',
+      );
+    }
+    if (response.statusCode >= 500) {
+      throw AiConsentException(
+        'AI sharing is temporarily unavailable (server error ${response.statusCode}). Please try again.',
       );
     }
     _assertSuccess(response);

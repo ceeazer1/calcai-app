@@ -40,6 +40,81 @@ Map<String, dynamic> usage({
 void main() {
   GoogleFonts.config.allowRuntimeFetching = false;
 
+  testWidgets(
+    'server failures show their status without inventing a balance and Retry recovers',
+    (tester) async {
+      var healthy = false;
+      final requests = <http.Request>[];
+      final cloud = CloudService(
+        client: MockClient((request) async {
+          requests.add(request);
+          if (!request.url.path.endsWith('/usage/status')) {
+            return http.Response('{"keys":{}}', 200);
+          }
+          return healthy
+              ? http.Response(
+                  jsonEncode(usage(percent: 98.94, plan: 'pro')),
+                  200,
+                )
+              : http.Response('{"ok":false,"error":"usage_unavailable"}', 503);
+        }),
+      );
+      addTearDown(cloud.dispose);
+      final auth = FakeAuthService();
+      await auth.init();
+      addTearDown(auth.dispose);
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<AuthService>.value(value: auth),
+            ChangeNotifierProvider<CloudService>.value(value: cloud),
+          ],
+          child: const MaterialApp(home: Scaffold(body: DailyUsageCard())),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Usage temporarily unavailable'), findsOneWidget);
+      expect(
+        find.text('CalcAI server error (503). Please try again.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('% left'), findsNothing);
+      healthy = true;
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+      expect(find.text('98.9% left'), findsOneWidget);
+      expect(find.textContaining('server error'), findsNothing);
+      expect(requests.every((r) => r.method == 'GET'), isTrue);
+      final status = requests.where(
+        (r) => r.url.path.endsWith('/usage/status'),
+      );
+      expect(status.length, 2);
+      expect(
+        status.every(
+          (r) =>
+              r.url.query.isEmpty &&
+              r.headers['Authorization'] == 'Bearer test-token',
+        ),
+        isTrue,
+      );
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  test(
+    'malformed usage data is a response error, not an offline or zero balance',
+    () async {
+      final tracker = UsageTracker(
+        fetch: (_) async => {...usage(), 'period': 'invalid-period'},
+      )..bind('a');
+      addTearDown(tracker.dispose);
+      await tracker.refresh();
+      expect(tracker.failure, UsageFailure.unavailable);
+      expect(tracker.data, isNull);
+      expect(tracker.failureDetail, contains('unexpected usage response'));
+    },
+  );
+
   testWidgets('welcome expiry refreshes before the daily reset', (
     tester,
   ) async {

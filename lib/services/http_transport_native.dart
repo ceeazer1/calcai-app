@@ -5,6 +5,8 @@ import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:objective_c/objective_c.dart';
 
+import 'bodyless_read_client.dart';
+
 /// Include only the numeric native code, never request URLs or credentials.
 String connectionFailureMessage(http.ClientException error) {
   final detail = error is NSErrorClientException
@@ -34,7 +36,9 @@ http.Client createResilientClient() {
           // Surface offline errors promptly. Service-level deadlines remain
           // responsible for the total time a user action can take.
           ..waitsForConnectivity = false;
-    return CupertinoClient.fromSessionConfiguration(configuration);
+    return BodylessReadClient(
+      CupertinoClient.fromSessionConfiguration(configuration),
+    );
   }
 
   return IOClient(

@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+import 'resilient_http_client.dart' show connectionFailureMessage;
 
 /// Parsed v2 account allowance. A missing percentage is never a balance.
 class AccountUsage {
@@ -53,6 +55,9 @@ class UsageTracker extends ChangeNotifier {
   final Future<Map<String, dynamic>> Function(String) fetch;
   AccountUsage? data;
   UsageFailure? failure;
+
+  /// Safe diagnostics only: no raw response bodies or account identifiers.
+  String? failureDetail;
   bool loading = false;
   bool forcedSyncing = false;
   Duration? _retryDeadline;
@@ -99,6 +104,7 @@ class UsageTracker extends ChangeNotifier {
     _token = null;
     data = null;
     failure = null;
+    failureDetail = null;
     loading = false;
     forcedSyncing = false;
     _limitReached = false;
@@ -150,6 +156,7 @@ class UsageTracker extends ChangeNotifier {
         _serverAnchor = parsed.serverTime;
         _anchorElapsed = _now;
         failure = null;
+        failureDetail = null;
         forcedSyncing = false;
         _limitReached = false;
         limitReset = null;
@@ -160,9 +167,21 @@ class UsageTracker extends ChangeNotifier {
       } on FormatException {
         if (_disposed || generation != _generation) return;
         failure = UsageFailure.unavailable;
-      } catch (_) {
+        failureDetail =
+            'CalcAI returned an unexpected usage response. Please try again.';
+      } on TimeoutException {
         if (_disposed || generation != _generation) return;
         failure = UsageFailure.offline;
+        failureDetail = 'Loading usage timed out. Please try again.';
+      } on http.ClientException catch (error) {
+        if (_disposed || generation != _generation) return;
+        failure = UsageFailure.offline;
+        failureDetail = connectionFailureMessage(error);
+      } catch (_) {
+        if (_disposed || generation != _generation) return;
+        failure = UsageFailure.unavailable;
+        failureDetail =
+            'CalcAI returned an unexpected usage response. Please try again.';
       } finally {
         if (!_disposed && generation == _generation) {
           loading = false;
@@ -177,6 +196,7 @@ class UsageTracker extends ChangeNotifier {
   }
 
   void handleError(UsageRequestException e, {bool notify = true}) {
+    failureDetail = null;
     if (e.status == 401 || e.status == 403) {
       data = null;
       forcedSyncing = false;
@@ -184,6 +204,9 @@ class UsageTracker extends ChangeNotifier {
       limitReset = null;
       _retryDeadline = null;
       failure = e.status == 401 ? UsageFailure.session : UsageFailure.forbidden;
+      failureDetail = e.status == 401
+          ? 'Your session expired. Sign out and sign in again.'
+          : 'CalcAI could not authorize this usage request (403).';
     } else if (e.status == 429 && e.code == 'usage_limit_reached') {
       _limitReached = true;
       limitReset = e.resetsAt;
@@ -197,6 +220,11 @@ class UsageTracker extends ChangeNotifier {
       _retryDeadline = _now + (e.retryAfter ?? const Duration(seconds: 15));
     } else {
       failure = UsageFailure.unavailable;
+      failureDetail = e.status == 429
+          ? 'Too many requests. Wait a minute, then try again.'
+          : e.status >= 500
+          ? 'CalcAI server error (${e.status}). Please try again.'
+          : 'CalcAI could not load usage (HTTP ${e.status}). Please try again.';
     }
     _schedule();
     if (notify) _notify();
