@@ -1,6 +1,19 @@
-# CalcAI release readiness — October 14, 2026
+# CalcAI release readiness — October 15, 2026
 
 **Not ready for public submission. No App Review submission or public release has been made.** This current checklist replaces earlier chronological checklists. Automated checks are evidence, not a guarantee of security or App Review acceptance.
+
+## October 15 Fast mode visibility candidate
+
+- Fast mode and its cost label are hidden when the selected model has no
+  supported Fast mode provider. Supported models retain the existing personal
+  API key requirement. Visibility follows the backend model catalog.
+- Validation: all **166 Flutter tests passed**, analysis found no issues, and
+  all **14 release source/asset checks passed**. The owner requested a new
+  Codemagic TestFlight upload; its Apple upload must be verified separately.
+- The preceding consent, usage and portal changes were uploaded successfully
+  as **1.0.0 (1099)** from commit `faf54162df8f63ae35af2600b98bdbf2e6931808`.
+  Codemagic build `6ad02b78546ce6236ceeb495` finished and Apple confirmed upload
+  at `2026-10-15T01:31:19.279Z`. Native verification below remains pending.
 
 ## October 14 consent, usage and portal TestFlight candidate
 

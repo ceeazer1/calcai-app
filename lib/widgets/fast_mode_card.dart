@@ -31,7 +31,8 @@ class FastModeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = resolveProvider(model);
-    final available = provider != null && hasPersonalKey;
+    if (provider == null) return const SizedBox.shrink();
+    final available = hasPersonalKey;
     final active = available && enabled;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
