@@ -11,6 +11,7 @@ import '../services/cloud_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/calcai_mark.dart';
+import '../widgets/provider_funding_label.dart';
 
 /// Settings screen — account, device info, and sign out.
 class SettingsScreen extends StatefulWidget {
@@ -186,8 +187,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Material(
                     color: Colors.transparent,
                     child: InkWell(
-                      onTap: () =>
-                          setState(() => _apiKeysExpanded = !_apiKeysExpanded),
+                      onTap: () {
+                        setState(() => _apiKeysExpanded = !_apiKeysExpanded);
+                        if (_apiKeysExpanded) _refreshKeyFunding();
+                      },
                       borderRadius: BorderRadius.circular(20),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
@@ -548,6 +551,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
               icon: icon,
               onTap: () => _showApiKeyDialog(context, provider),
             ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(56, 0, 16, 12),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: ProviderFundingLabel(
+                  cloud: cloud,
+                  provider: provider,
+                  onRetry: _refreshKeyFunding,
+                ),
+              ),
+            ),
             if (hasKey) ...[
               Divider(color: AppColors.glassBorder, height: 1, indent: 56),
               _useKeyToggle(context, cloud, provider, enabled),
@@ -560,6 +574,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
       },
     );
+  }
+
+  Future<void> _refreshKeyFunding() async {
+    final auth = context.read<AuthService>();
+    final cloud = context.read<CloudService>();
+    if (auth.token == null) return;
+    if (auth.primaryMac != null) {
+      await cloud.refreshAiSettings(auth.token!, auth.primaryMac!);
+    } else {
+      await cloud.listApiKeys(auth.token!);
+    }
   }
 
   Widget _useKeyToggle(
@@ -590,11 +615,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           Switch(
             value: enabled,
-            onChanged: (v) {
-              if (auth.token != null) {
-                cloud.toggleApiKey(auth.token!, provider, v);
-              }
-            },
+            onChanged: cloud.apiKeysLoading || cloud.modelSettingsLoading
+                ? null
+                : (v) async {
+                    if (auth.token != null) {
+                      final ok = await cloud.toggleApiKey(
+                        auth.token!,
+                        provider,
+                        v,
+                      );
+                      if (!ok && context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Could not confirm the key change. Please try again.',
+                            ),
+                          ),
+                        );
+                      }
+                    }
+                  },
             activeColor: AppColors.electricBlue,
             inactiveThumbColor: AppColors.textTertiary,
             inactiveTrackColor: AppColors.surfaceHighlight,
@@ -875,7 +915,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onPressed: () async {
                 Navigator.pop(ctx);
                 if (auth.token != null) {
-                  await cloud.deleteApiKey(auth.token!, provider);
+                  final ok = await cloud.deleteApiKey(auth.token!, provider);
+                  if (!ok && context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Could not confirm key removal. Please try again.',
+                        ),
+                      ),
+                    );
+                  }
                 }
               },
               child: Text(
@@ -901,7 +950,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(
-                        'Invalid API key. Please check and try again.',
+                        'Could not save your API key. Check the key and connection, then try again.',
                       ),
                       backgroundColor: AppColors.error,
                     ),
@@ -1106,7 +1155,7 @@ class _ApiKeyRow extends StatelessWidget {
         return Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap: onTap,
+            onTap: cloud.apiKeysSaving ? null : onTap,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               child: Row(
@@ -1124,21 +1173,25 @@ class _ApiKeyRow extends StatelessWidget {
                   ),
                   if (hasSaved) ...[
                     Icon(
-                      Icons.check_circle_rounded,
-                      color: AppColors.success,
+                      Icons.key_rounded,
+                      color: AppColors.textSecondary,
                       size: 14,
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      '•••${last4 ?? ''}',
+                      last4 == null ? 'Saved' : '••••$last4',
                       style: GoogleFonts.inter(
                         fontSize: 13,
-                        color: AppColors.success,
+                        color: AppColors.textSecondary,
                       ),
                     ),
                   ] else
                     Text(
-                      'Not set',
+                      cloud.apiKeysLoading
+                          ? 'Checking…'
+                          : cloud.apiKeysError != null
+                          ? 'Unavailable'
+                          : 'Not set',
                       style: GoogleFonts.inter(
                         fontSize: 13,
                         color: AppColors.textTertiary,

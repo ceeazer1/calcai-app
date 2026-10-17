@@ -111,6 +111,8 @@ class BleService extends ChangeNotifier {
   /// the UI can show a "loading networks…" state instead of a premature empty.
   bool _savedNetworksLoading = false;
   bool get savedNetworksLoading => _savedNetworksLoading;
+  String? _savedNetworksError;
+  String? get savedNetworksError => _savedNetworksError;
 
   /// Stable key used to persist saved networks (the user's primary device MAC),
   /// so they survive restarts and match what the home page loads. Set via
@@ -169,6 +171,9 @@ class BleService extends ChangeNotifier {
   BluetoothCharacteristic? _scanChar;
   BluetoothCharacteristic? _configChar;
   BluetoothCharacteristic? _statusChar;
+
+  @protected
+  BluetoothCharacteristic? get commandCharacteristic => _scanChar;
 
   StreamSubscription<List<ScanResult>>? _scanSub;
   StreamSubscription<BluetoothConnectionState>? _connectionSub;
@@ -454,7 +459,8 @@ class BleService extends ChangeNotifier {
 
   /// Disconnects from the current device.
   Future<void> disconnect() async {
-    _connectionGeneration++;
+    final generation = ++_connectionGeneration;
+    final device = _connectedDevice;
     _pairingApprovalVersion = null;
     try {
       _statusNotifySub?.cancel();
@@ -462,16 +468,21 @@ class BleService extends ChangeNotifier {
       _connectionSub?.cancel();
       _connectionSub = null;
 
-      await _connectedDevice?.device.disconnect();
+      await device?.device.disconnect();
     } catch (_) {
       // Best-effort disconnect
     } finally {
-      _handleDisconnection();
+      if (generation == connectionGeneration &&
+          identical(device, _connectedDevice)) {
+        _handleDisconnection();
+      }
     }
   }
 
   void _handleDisconnection() {
     _connectionGeneration++;
+    _wifiScanGeneration++;
+    _savedNetworksLoading = false;
     _pairingApprovalVersion = null;
     _connectedDevice = null;
     _scanChar = null;
@@ -558,9 +569,29 @@ class BleService extends ChangeNotifier {
   /// Requests a WiFi scan from the connected ESP32.
   ///
   /// Results are populated in [wifiNetworks] once the ESP32 responds.
-  Future<void> requestWifiScan() async {
-    if (_scanChar == null) {
+  int _wifiScanGeneration = 0;
+
+  Future<void> requestWifiScan() {
+    final generation = connectionGeneration;
+    final scanGeneration = ++_wifiScanGeneration;
+    return _serialize(() async {
+      if (generation != connectionGeneration ||
+          scanGeneration != _wifiScanGeneration) {
+        return;
+      }
+      await _requestWifiScanLocked(generation, scanGeneration);
+    });
+  }
+
+  Future<void> _requestWifiScanLocked(
+    int generation,
+    int scanGeneration,
+  ) async {
+    final characteristic = commandCharacteristic;
+    if (characteristic == null) {
       _setError('WiFi scan characteristic not available.');
+      _provisioningState = ProvisioningState.failed;
+      notifyListeners();
       return;
     }
 
@@ -571,89 +602,138 @@ class BleService extends ChangeNotifier {
 
     try {
       // Write a scan trigger command
-      await _scanChar!.write(
+      await characteristic.write(
         utf8.encode(jsonEncode({'cmd': 'scan'})),
-        withoutResponse: _scanChar!.properties.writeWithoutResponse,
+        withoutResponse: characteristic.properties.writeWithoutResponse,
       );
 
-      // ESP32 WiFi scan takes ~10 seconds for 40+ networks.
-      // Wait 12s before first read, then retry a few times.
-      await Future.delayed(const Duration(seconds: 12));
-
-      List<int> response = [];
-      for (int i = 0; i < 5; i++) {
-        response = await _scanChar!.read();
-        logDebug(
-          'CalcAI BLE: scan read attempt ${i + 1}, got ${response.length} bytes',
-        );
-        if (response.length > 10) break;
-        await Future.delayed(const Duration(seconds: 2));
+      // Both queued work and a completed empty scan are encoded as [] by
+      // legacy firmware. Time passing cannot make that an authoritative reply.
+      // Poll for scan-shaped rows; never consume saved-list rows as a scan.
+      for (var attempt = 0; attempt < 88; attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        if (generation != connectionGeneration ||
+            scanGeneration != _wifiScanGeneration) {
+          return;
+        }
+        final response = await characteristic.read();
+        if (generation != connectionGeneration ||
+            scanGeneration != _wifiScanGeneration) {
+          return;
+        }
+        final failure = _wifiCommandError(response, 'scan');
+        if (failure != null) {
+          _setError(failure);
+          _provisioningState = ProvisioningState.failed;
+          return;
+        }
+        if (_parseWifiScanResults(response)) {
+          _provisioningState = ProvisioningState.idle;
+          return;
+        }
       }
-
-      if (response.isNotEmpty && response.length > 4) {
-        _parseWifiScanResults(response);
-        logDebug('CalcAI BLE: parsed ${_wifiNetworks.length} networks');
-      } else {
-        logDebug(
-          'CalcAI BLE: no scan results received (${response.length} bytes)',
-        );
-      }
-
-      _provisioningState = ProvisioningState.idle;
+      _setError('Could not confirm Wi-Fi scan results. Try scanning again.');
+      _provisioningState = ProvisioningState.failed;
     } catch (e) {
+      if (generation != connectionGeneration ||
+          scanGeneration != _wifiScanGeneration) {
+        return;
+      }
       _setError('WiFi scan failed: ${_friendlyError(e)}');
       _provisioningState = ProvisioningState.failed;
+    } finally {
+      if (generation == connectionGeneration) {
+        if (scanGeneration != _wifiScanGeneration &&
+            _provisioningState == ProvisioningState.scanning) {
+          _provisioningState = ProvisioningState.idle;
+        }
+        notifyListeners();
+      }
     }
-
-    notifyListeners();
   }
 
-  void _parseWifiScanResults(List<int> data) {
+  bool _parseWifiScanResults(List<int> data) {
     try {
       final json = utf8.decode(data);
       final parsed = jsonDecode(json);
 
-      if (parsed is List) {
-        _wifiNetworks.clear();
-        for (final item in parsed) {
-          if (item is Map<String, dynamic>) {
-            final network = WifiNetwork.fromJson(item);
-            if (network.ssid.isNotEmpty) {
-              _wifiNetworks.add(network);
-            }
-          }
-        }
-        _normalizeWifiNetworks();
+      if (parsed is! List ||
+          parsed.isEmpty ||
+          !parsed.every(
+            (item) =>
+                item is Map<String, dynamic> &&
+                item['ssid'] is String &&
+                item['rssi'] is int &&
+                item['secured'] is bool,
+          )) {
+        return false;
       }
-    } catch (e) {
-      logDebug('CalcAI BLE: Error parsing WiFi scan results: $e');
-      // Try a simpler line-based format as fallback
-      _parseFallbackScanResults(data);
+      final networks = parsed
+          .map((item) => WifiNetwork.fromJson(item as Map<String, dynamic>))
+          .toList();
+      _wifiNetworks
+        ..clear()
+        ..addAll(networks);
+      _normalizeWifiNetworks();
+      return true;
+    } catch (_) {
+      // Keep compatibility with complete legacy CSV replies, not partial JSON.
+      return _parseFallbackScanResults(data);
     }
   }
 
-  void _parseFallbackScanResults(List<int> data) {
+  bool _parseFallbackScanResults(List<int> data) {
     try {
       final text = utf8.decode(data);
       final lines = text.split('\n').where((l) => l.trim().isNotEmpty);
-
-      _wifiNetworks.clear();
+      final networks = <WifiNetwork>[];
       for (final line in lines) {
         // Expected: "SSID,RSSI,SECURED"
         final parts = line.split(',');
-        if (parts.length >= 2) {
-          _wifiNetworks.add(
-            WifiNetwork(
-              ssid: parts[0].trim(),
-              rssi: int.tryParse(parts[1].trim()) ?? -70,
-              isSecured: parts.length > 2 ? parts[2].trim() == '1' : true,
-            ),
-          );
+        if ((parts.length != 2 && parts.length != 3) ||
+            parts[0].trim().isEmpty ||
+            int.tryParse(parts[1].trim()) == null ||
+            (parts.length == 3 && !['0', '1'].contains(parts[2].trim()))) {
+          return false;
         }
+        networks.add(
+          WifiNetwork(
+            ssid: parts[0].trim(),
+            rssi: int.parse(parts[1].trim()),
+            isSecured: parts.length == 2 || parts[2].trim() == '1',
+          ),
+        );
       }
+      if (networks.isEmpty) return false;
+      _wifiNetworks
+        ..clear()
+        ..addAll(networks);
       _normalizeWifiNetworks();
+      return true;
     } catch (_) {
-      // Silently fail; user will see empty list
+      return false;
+    }
+  }
+
+  String? _wifiCommandError(List<int> raw, String command) {
+    try {
+      final data = jsonDecode(utf8.decode(raw));
+      if (data is! Map ||
+          (data['cmd'] != null && data['cmd'] != command) ||
+          (data['error'] == null && data['ok'] != false)) {
+        return null;
+      }
+      return switch (data['error']) {
+        'unauthorized' => 'Reconnect to your calculator and try again.',
+        'busy' => 'Your calculator is busy. Try again in a moment.',
+        'storage_failed' =>
+          'The calculator could not read its saved networks. Try again.',
+        'network_list_too_large' =>
+          'The calculator could not send its saved networks. Try again.',
+        _ => 'The calculator could not complete the Wi-Fi request. Try again.',
+      };
+    } catch (_) {
+      return null;
     }
   }
 
@@ -668,59 +748,96 @@ class BleService extends ChangeNotifier {
 
   /// Requests saved/configured networks from the ESP32 via BLE.
   /// Sends `{"cmd":"list"}` to the scan characteristic and reads the response.
-  Future<void> requestSavedNetworks() =>
-      _serialize(() => _requestSavedNetworksLocked());
+  Future<void> requestSavedNetworks() {
+    final generation = connectionGeneration;
+    return _serialize(() async {
+      if (generation != connectionGeneration) return;
+      await _requestSavedNetworksLocked();
+    });
+  }
 
-  Future<void> _requestSavedNetworksLocked() async {
-    if (_scanChar == null) return;
+  Future<bool> _requestSavedNetworksLocked() async {
+    final generation = connectionGeneration;
+    final characteristic = commandCharacteristic;
+    if (characteristic == null) {
+      _savedNetworksError =
+          'Reconnect to your calculator to refresh saved networks.';
+      notifyListeners();
+      return false;
+    }
 
+    _savedNetworksError = null;
     _savedNetworksLoading = true;
     notifyListeners();
     try {
-      await _scanChar!.write(
+      await characteristic.write(
         utf8.encode(jsonEncode({'cmd': 'list'})),
-        withoutResponse: _scanChar!.properties.writeWithoutResponse,
+        withoutResponse: characteristic.properties.writeWithoutResponse,
       );
 
       // Listing NVS networks runs in the firmware loop rather than inline in
       // the BLE write callback. Poll for the actual list instead of assuming it
-      // always finishes within 500 ms; pairing/ownership replies are maps and
-      // are deliberately ignored here.
+      // always finishes within 500 ms. Legacy [] is also the queued-work
+      // sentinel, so it can never confirm deletion or an empty saved list.
       for (var attempt = 0; attempt < 8; attempt++) {
         await Future.delayed(const Duration(milliseconds: 250));
-        final response = await _scanChar!.read();
+        if (generation != connectionGeneration) return false;
+        final response = await characteristic.read();
+        if (generation != connectionGeneration) return false;
         if (response.isEmpty) continue;
+        final failure = _wifiCommandError(response, 'list');
+        if (failure != null) {
+          _savedNetworksError = failure;
+          return false;
+        }
         try {
           final parsed = jsonDecode(utf8.decode(response));
-          if (parsed is List) {
-            // Replace the list (handles going down to zero saved networks).
-            _savedNetworks.clear();
-            _iphoneHotspotNetworks.clear();
-            for (final item in parsed) {
-              if (item is Map<String, dynamic>) {
-                final ssid = item['ssid'] as String? ?? '';
-                if (ssid.isNotEmpty) {
-                  _savedNetworks.add(ssid);
-                  if (item['iphoneHotspot'] == true) {
-                    _iphoneHotspotNetworks.add(ssid);
-                  }
-                }
-              }
-            }
+          if (parsed is List &&
+              parsed.isNotEmpty &&
+              parsed.every(
+                (item) =>
+                    item is Map<String, dynamic> &&
+                    item['ssid'] is String &&
+                    (item['ssid'] as String).isNotEmpty &&
+                    item['slot'] is int &&
+                    item['slot'] >= 1 &&
+                    item['slot'] <= 3 &&
+                    (item['iphoneHotspot'] == null ||
+                        item['iphoneHotspot'] is bool),
+              )) {
+            // Validate the whole response before replacing either cache.
+            _savedNetworks
+              ..clear()
+              ..addAll(parsed.map((item) => item['ssid'] as String).toSet());
+            _iphoneHotspotNetworks
+              ..clear()
+              ..addAll(
+                parsed
+                    .where((item) => item['iphoneHotspot'] == true)
+                    .map((item) => item['ssid'] as String),
+              );
             logDebug('CalcAI BLE: got ${_savedNetworks.length} saved networks');
             await _persistSavedNetworks();
-            break;
+            return true;
           }
         } catch (_) {
           // Non-JSON / partial read — keep the existing list.
         }
       }
+      _savedNetworksError =
+          'Could not confirm saved networks. Try refreshing again.';
     } catch (e) {
+      if (generation != connectionGeneration) return false;
+      _savedNetworksError =
+          'Could not refresh saved networks. Reconnect and try again.';
       logDebug('CalcAI BLE: Error fetching saved networks: $e');
     } finally {
-      _savedNetworksLoading = false;
-      notifyListeners();
+      if (generation == connectionGeneration) {
+        _savedNetworksLoading = false;
+        notifyListeners();
+      }
     }
+    return false;
   }
 
   /// Loads previously saved networks from local storage.
@@ -827,7 +944,7 @@ class BleService extends ChangeNotifier {
 
   Future<Map<String, dynamic>?> _commandLocked(Map<String, dynamic> cmd) async {
     final generation = connectionGeneration;
-    final characteristic = _scanChar;
+    final characteristic = commandCharacteristic;
     _lastCommandError = null;
     if (characteristic == null) {
       _lastCommandError = 'no command characteristic';
@@ -1022,17 +1139,25 @@ class BleService extends ChangeNotifier {
   /// A transient missed acknowledgement gets a retry. If both fail, closing
   /// the link clears the volatile firmware flag without changing saved data.
   Future<void> endWifiUiMode() async {
+    final generation = connectionGeneration;
+    // Release a pending scan's queue slot when leaving setup. A late scan
+    // reply must not update a closed page or delay the normal-mode command.
+    _wifiScanGeneration++;
     for (var attempt = 0; attempt < 2; attempt++) {
-      if (!connectionState.isConnected) return;
+      if (generation != connectionGeneration || !connectionState.isConnected) {
+        return;
+      }
       if (await setWifiUiMode(false)) return;
     }
-    await disconnect();
+    if (generation == connectionGeneration) await disconnect();
   }
 
   /// Ask the authenticated calculator to stop advertising as well as drop
   /// this link. Older firmware echoes normal mode, so cannot fake success.
   Future<bool> closeBlePortal() async {
+    final generation = connectionGeneration;
     final reply = await _command({'cmd': 'uimode', 'mode': 'closed'});
+    if (generation != connectionGeneration) return false;
     if (reply?['ok'] != true || reply?['mode'] != 'closed') return false;
     await disconnect();
     return true;
@@ -1094,11 +1219,13 @@ class BleService extends ChangeNotifier {
     String response,
     String owner,
   ) async {
+    final generation = connectionGeneration;
     final r = await _command({
       'cmd': 'hello',
       'nonce': nonce,
       'response': response,
     });
+    if (generation != connectionGeneration) return false;
     final ok = r?['ok'] == true;
     if (ok) {
       _pairedOwner = owner;
@@ -1106,6 +1233,7 @@ class BleService extends ChangeNotifier {
       // The firmware processes `list` asynchronously on the same characteristic
       // used by pairing, so fetching earlier can overwrite a pairing reply.
       await requestSavedNetworks();
+      if (generation != connectionGeneration) return false;
     }
     return ok;
   }
@@ -1451,9 +1579,12 @@ class BleService extends ChangeNotifier {
         'iphoneHotspot': enabled,
       });
       await _configChar!.write(utf8.encode(payload), withoutResponse: false);
-      await _requestSavedNetworksLocked();
+      final refreshed = await _requestSavedNetworksLocked();
 
-      final updated = isIphoneHotspotNetwork(ssid) == enabled;
+      final updated =
+          refreshed &&
+          _savedNetworks.contains(ssid) &&
+          isIphoneHotspotNetwork(ssid) == enabled;
       if (!updated) {
         _setError(
           'The calculator could not update this setting. Make sure its '
@@ -1532,6 +1663,7 @@ class BleService extends ChangeNotifier {
     _savedNetworks.clear();
     _iphoneHotspotNetworks.clear();
     _savedNetworksLoading = false;
+    _savedNetworksError = null;
     _connectedSsid = null;
     _deviceMac = null;
     _persistMac = null;

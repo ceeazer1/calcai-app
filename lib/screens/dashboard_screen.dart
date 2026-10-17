@@ -1,5 +1,7 @@
 import '../widgets/daily_usage_card.dart';
 import '../widgets/fast_mode_card.dart';
+import '../widgets/provider_funding_label.dart';
+import '../models/ai_funding.dart';
 import '../widgets/ble_portal_status.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -60,6 +62,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   bool _isLoadingModel = false;
   bool _savingFastMode = false;
   Future<void>? _historyRefreshing;
+  Future<void>? _aiSettingsRefreshing;
 
   /// Whether the response-style inline dropdown is open.
   bool _styleExpanded = false;
@@ -96,13 +99,29 @@ class _DashboardScreenState extends State<DashboardScreen>
   void didUpdateWidget(DashboardScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.isActive && !oldWidget.isActive) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _refreshHistory());
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _refreshHistory();
+        _refreshAiSettings();
+      });
     }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _refreshHistory();
+    if (state == AppLifecycleState.resumed) {
+      _refreshHistory();
+      _refreshAiSettings();
+    }
+  }
+
+  Future<void> _refreshAiSettings() async {
+    if (!mounted || !widget.isActive) return;
+    final auth = context.read<AuthService>();
+    if (auth.token == null || auth.primaryMac == null) return;
+    await (_aiSettingsRefreshing ??= context
+        .read<CloudService>()
+        .refreshAiSettings(auth.token!, auth.primaryMac!)
+        .whenComplete(() => _aiSettingsRefreshing = null));
   }
 
   Future<void> _refreshHistory() {
@@ -256,28 +275,10 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  /// Returns the display provider name (e.g. "OpenAI") if the current model's
-  /// provider has a saved API key — i.e. the user's own key is in use.
-  String? _byokProvider(CloudService cloud) {
-    final model = cloud.currentModel ?? '';
-    String? key, label;
-    if (model.startsWith('claude')) {
-      key = 'anthropic';
-      label = 'Anthropic';
-    } else if (model.startsWith('gemini')) {
-      key = 'google';
-      label = 'Google';
-    } else if (model.startsWith('gpt') || model.startsWith('o')) {
-      key = 'openai';
-      label = 'OpenAI';
-    }
-    if (key != null && cloud.hasApiKey(key)) return label;
-    return null;
-  }
-
   Widget _buildModelSelector() {
     return Consumer<CloudService>(
       builder: (context, cloud, _) {
+        final provider = cloud.modelProvider(cloud.currentModel ?? '');
         return GlassCard(
           padding: const EdgeInsets.all(16),
           onTap: () => _showModelPicker(cloud),
@@ -317,25 +318,13 @@ class _DashboardScreenState extends State<DashboardScreen>
                         color: AppColors.textPrimary,
                       ),
                     ),
-                    if (_byokProvider(cloud) != null) ...[
+                    if (provider != null) ...[
                       const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.vpn_key_rounded,
-                            size: 11,
-                            color: AppColors.electricBlue,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Using your ${_byokProvider(cloud)} key',
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                              color: AppColors.electricBlue,
-                            ),
-                          ),
-                        ],
+                      ProviderFundingLabel(
+                        cloud: cloud,
+                        provider: provider,
+                        currentModel: true,
+                        onRetry: _refreshAiSettings,
                       ),
                     ],
                   ],
@@ -365,36 +354,69 @@ class _DashboardScreenState extends State<DashboardScreen>
   Widget _buildFastMode() => Consumer2<AuthService, CloudService>(
     builder: (context, auth, cloud, _) {
       final model = cloud.currentModel ?? kDefaultModel;
-      final provider = cloud.modelFastModeProvider(model);
-      return FastModeCard(
-        model: model,
-        resolveProvider: cloud.modelFastModeProvider,
-        enabled: cloud.fastMode,
-        hasPersonalKey:
-            provider != null &&
-            cloud.hasApiKey(provider) &&
-            cloud.apiKeyEnabled(provider),
-        saving: _savingFastMode,
-        onChanged:
-            _isLoadingModel || auth.token == null || auth.primaryMac == null
-            ? null
-            : (value) async {
-                setState(() => _savingFastMode = true);
-                await cloud.setModel(
-                  auth.token!,
-                  auth.primaryMac!,
-                  model,
-                  cloud.responseStyle,
-                  fastMode: value,
-                );
-                if (!mounted || !context.mounted) return;
-                setState(() => _savingFastMode = false);
-                if (cloud.error != null) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text(cloud.error!)));
-                }
-              },
+      final capability = cloud.fastModeCapability;
+      if (capability?.supported == false ||
+          cloud.modelFastModeProvider(model) == null) {
+        return const SizedBox.shrink();
+      }
+      final costLabel = cloud.modelSettingsLoading
+          ? 'Checking availability…'
+          : capability == null
+          ? 'Could not confirm Fast mode availability'
+          : capability.available
+          ? capability.funding == AiFunding.allowance
+                ? 'Uses more CalcAI allowance'
+                : 'High API cost · billed to your provider'
+          : switch (capability.reason) {
+              'platform_fast_unavailable' =>
+                'Unavailable with CalcAI allowance',
+              'provider_key_unavailable' =>
+                'Check your personal API key in Settings',
+              _ => 'Fast mode is temporarily unavailable',
+            };
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          FastModeCard(
+            model: model,
+            resolveProvider: cloud.modelFastModeProvider,
+            enabled: cloud.fastMode,
+            available: capability?.available == true,
+            costLabel: costLabel,
+            saving: _savingFastMode || cloud.modelSettingsLoading,
+            onChanged:
+                _isLoadingModel || auth.token == null || auth.primaryMac == null
+                ? null
+                : (value) async {
+                    setState(() => _savingFastMode = true);
+                    await cloud.setModel(
+                      auth.token!,
+                      auth.primaryMac!,
+                      model,
+                      cloud.responseStyle,
+                      fastMode: value,
+                      fastModeFunding: value
+                          ? capability?.funding?.apiValue
+                          : null,
+                    );
+                    if (!mounted || !context.mounted) return;
+                    setState(() => _savingFastMode = false);
+                    if (cloud.error != null) {
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text(cloud.error!)));
+                    }
+                  },
+          ),
+          if (capability == null && !cloud.modelSettingsLoading)
+            Padding(
+              padding: const EdgeInsets.only(left: 49),
+              child: TextButton(
+                onPressed: _refreshAiSettings,
+                child: const Text('Retry'),
+              ),
+            ),
+        ],
       );
     },
   );

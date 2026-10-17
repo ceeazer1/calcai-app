@@ -18,13 +18,15 @@ class FastModeCard extends StatelessWidget {
     super.key,
     required this.model,
     required this.enabled,
-    required this.hasPersonalKey,
+    required this.available,
+    required this.costLabel,
     required this.onChanged,
     this.saving = false,
     this.resolveProvider = fastModeProvider,
   });
   final String model;
-  final bool enabled, hasPersonalKey, saving;
+  final bool enabled, available, saving;
+  final String costLabel;
   final ValueChanged<bool>? onChanged;
   final String? Function(String) resolveProvider;
 
@@ -32,8 +34,7 @@ class FastModeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = resolveProvider(model);
     if (provider == null) return const SizedBox.shrink();
-    final available = hasPersonalKey;
-    final active = available && enabled;
+    final active = enabled;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
@@ -68,14 +69,14 @@ class FastModeCard extends StatelessWidget {
                   value: active,
                   activeThumbColor: AppColors.textPrimary,
                   activeTrackColor: const Color(0xFF6D7180),
-                  onChanged: available ? onChanged : null,
+                  onChanged: available || enabled ? onChanged : null,
                 ),
             ],
           ),
           Padding(
             padding: const EdgeInsets.only(left: 33),
             child: Text(
-              'High API Cost',
+              costLabel,
               style: GoogleFonts.inter(
                 fontSize: 11,
                 color: AppColors.textSecondary,

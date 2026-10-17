@@ -2,6 +2,119 @@
 
 **Not ready for public submission. No App Review submission or public release has been made.** This current checklist replaces earlier chronological checklists. Automated checks are evidence, not a guarantee of security or App Review acceptance.
 
+## October 17 Windows-to-Mac source transfer
+
+The owner requested the latest app source on the Mac. Branch
+`codex/ios-source-sync-20261017` packages the post-1101 Fast funding and BLE
+fixes below, their regression tests, and these handoff documents. Earlier
+"local" / "uncommitted" notes describe the implementation checkpoints before
+this source snapshot. Git transfer does not build, install, upload, or release
+the app. Physical verification of these changes remains pending. The unrelated
+`tool/website_screenshots.dart` working file is excluded from this snapshot.
+
+## October 17 Wi-Fi authentication race fix (local, after 1101)
+
+The exact 1100 code and current local code released the authentication guard
+before the Wi-Fi-mode command completed and did not bind the cloud proof to the
+connection that requested it. These are confirmed source risks, not proof of the
+cause of the physical disconnect reported by the testing coordinator.
+
+The local Wi-Fi editor now keeps a single attempt guard through nonce, cloud
+proof, ownership hello, saved-list refresh, Wi-Fi-mode acknowledgement and
+completion. It checks attempt identity, connection generation, peripheral ID,
+account session, and screen lifetime after each await. Old replies cannot send
+hello to a replacement link, clear a newer guard, or disconnect a newer link.
+Skip/retry on the same connection starts a fresh attempt. Hiding the screen
+cancels its authentication attempt. The BLE service also fences ownership
+completion, Wi-Fi teardown, portal-close completion and delayed native
+disconnect cleanup against generation changes. Existing ownership requirements
+and the 4-second reconnect, 10-second scan, 12-second screen fallback and
+20-second cloud deadlines were not changed.
+
+**227 Flutter tests passed**, including 13 new authentication/teardown race
+cases. Fatal-info analysis, all 14 release preflight checks and diff whitespace
+checks pass. Tests use delayed fixture responses and fake Bluetooth handles;
+this has not been tested on physical hardware. The initial new test fixture had
+a `BluetoothDevice.id` type mismatch; it was corrected before the passing runs.
+No failed test was omitted. Source changes remain uncommitted/local, with no
+upload, installation, firmware edit or account/device mutation. Detailed scope
+and remaining legacy reply limitations are in [BLE_WIFI_REPLY_HANDOFF.md](BLE_WIFI_REPLY_HANDOFF.md).
+
+## October 17 allowance-funded Fast mode (local, after 1101)
+
+The owner authorized allowance-funded Fast and optional personal keys in Backend
+& AI, then requested cross-chat coordination here. The app now uses the private
+model response's `fastModeCapability` and sends explicit `fastModeFunding` when
+the user enables Fast. Public catalog support alone never grants allowance
+access. Missing/malformed capability, a failed refresh, or a funding mismatch
+cannot silently approve a more expensive payer. A successful response must
+confirm the requested mode and scope; legacy personal-key Fast remains supported.
+
+Home displays effective Fast state and the authenticated current payer. Settings
+labels each provider from a successful complete key listing, respects disabled
+keys, displays only validated last-four metadata, and shows unknown/retry states
+instead of inventing an allowance payer. Key changes refresh metadata and model
+capability. Returning to Home or resuming the app refreshes the AI settings.
+Fast stays unboxed and unsupported models keep it hidden.
+
+**214 Flutter tests passed**, fatal-info analysis found no issues, all **14
+preflight checks passed**, and diff whitespace checks passed. New coverage
+includes explicit allowance opt-in, malformed/missing/legacy capability,
+unavailable routes, stale model reads, payer changes, 409 conflicts, key metadata
+failure, logout fencing, and narrow-screen/large-text funding labels.
+
+These app changes are **local only**, not in build 1101. Backend & AI owns the
+server implementation/deployment and Cloudflare payment/route verification.
+The confirmed contract distinguishes effective `fastMode` from stored
+`fastModeRequested`/`fastModeFunding`; payer changes require fresh opt-in. The
+backend owner also fixed swallowed provider-metadata read failures so a
+503 cannot masquerade as an absent key. Backend & AI reports version
+`05d67991-84c7-4276-bf7a-8bf40a7559ef` deployed at 1:06:52 PM EDT on October 17.
+The deployed candidate source matches the client contract. Platform Fast
+allowlists remain off (`platform_fast_unavailable`), and the Cloudflare funding
+switch remains off after a failed payment; ordinary platform requests retain
+the existing provider funding.
+
+**Live owner-authenticated GET verification remains unverified.** The backend
+bundle checks used a synthetic fixture session, and the admin model endpoint
+does not expose the capability. Main confirmed that no existing owner bearer
+fixture or capture is available; its access is limited to the signed-in phone UI
+and admin reads. Do not intercept/export the phone's Keychain or create an owner
+fixture to fill this evidence gap. The backend owner verified live unauthenticated
+401 boundaries and post-deploy admin reads, which do not verify the owner's
+private capability response. `tool/fast_mode_live_smoke_test.dart` is an opt-in
+check accepting an existing private task-scoped session file; it permits only
+GET `/ai/model/get` and `/ai/apikey/list`, checks private/no-store responses, and
+exercises the actual Dart client. It creates no session, makes no account/model
+changes, and performs no inference. Do not run it with invented credentials or
+describe it as passed until a live authorized session is available.
+
+Supported paid routes and a subsequent native build/device check remain pending.
+No new Fast-mode release is implied by another chat's readiness message. No hardware,
+backend source, or unrelated screenshot-tool changes were included in this work.
+
+## October 17 post-1101 local Wi-Fi reply fixes
+
+Build **1.0.0 (1101)** from `ce3d21b12ab02f7497fd78fef7dadbab2863885f`
+finished Codemagic in 5m 12s and Apple confirmed upload success at the log
+timestamp `2026-10-17 16:24:34.834`, delivery
+`af70c3ef-d03f-43d3-9482-a243167d3bee`. Apple processing completion is not
+verified; App Store Connect's browser session was signed out. No physical
+phone installation or public App Review submission was performed.
+
+**1101 still has the legacy Wi-Fi scan/list race.** A subsequent local patch
+serializes scans with other commands, preserves cached networks on ambiguous
+or failed replies, rejects mismatched result shapes, and adds visible refresh
+errors/retry. Connection generations prevent late/queued work from crossing a
+disconnect. All **67 targeted tests**, fatal-info analysis, all **14 preflight
+checks** and diff whitespace checks pass. No extra push/build/installation or
+firmware changes were performed for this patch.
+
+Legacy firmware cannot distinguish a completed empty list from queued `[]`;
+the client conservatively reports an unconfirmed result. Protocol limits,
+source-only envelope proposal, test scope and the unchanged permission/timeouts
+for builds 1100/1101 are in [BLE_WIFI_REPLY_HANDOFF.md](BLE_WIFI_REPLY_HANDOFF.md).
+
 ## October 17 TestFlight candidate
 
 The owner requested a new signed Codemagic/TestFlight build with the fixes below.

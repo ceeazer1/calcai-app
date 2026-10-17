@@ -6,8 +6,33 @@ import 'package:provider/provider.dart';
 import 'support/setup_test_app.dart';
 import 'package:calcai_app/services/ble_service.dart';
 import 'package:calcai_app/screens/wifi_screen.dart';
+import 'package:calcai_app/models/calcai_device.dart';
 
 void main() {
+  testWidgets(
+    'unconfirmed saved networks show retry instead of a false empty list',
+    (tester) async {
+      final ble = _UnconfirmedNetworks();
+      await tester.pumpWidget(
+        ChangeNotifierProvider<BleService>.value(
+          value: ble,
+          child: const MaterialApp(home: WifiScreen(isActive: false)),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('Could not confirm saved networks.'), findsOneWidget);
+      expect(find.text('No networks saved yet'), findsNothing);
+      expect(find.text('Retry'), findsOneWidget);
+      await tester.tap(find.text('Retry'));
+      await tester.pump();
+      expect(ble.refreshed, isTrue);
+      expect(find.text('Home Wi-Fi'), findsOneWidget);
+      expect(find.text('Could not confirm saved networks.'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      ble.dispose();
+    },
+  );
   testWidgets('Wi-Fi failure exposes an actionable Back button', (
     tester,
   ) async {
@@ -152,6 +177,28 @@ void main() {
     expect(ble.portalClosed, isTrue);
     expect(ble.savedNetworks, isNotEmpty);
   });
+}
+
+class _UnconfirmedNetworks extends SetupTestAppBle {
+  _UnconfirmedNetworks() : super(paired: true, delay: Duration.zero);
+  bool refreshed = false;
+  @override
+  DeviceConnectionState get connectionState => DeviceConnectionState.ready;
+  @override
+  String get pairedOwner => 'test-owner';
+  @override
+  String? get savedNetworksError =>
+      refreshed ? null : 'Could not confirm saved networks.';
+  @override
+  List<String> get savedNetworks => refreshed ? ['Home Wi-Fi'] : [];
+  @override
+  Future<void> requestSavedNetworks() async {
+    refreshed = true;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> endWifiUiMode() async {}
 }
 
 class _UnavailableBluetooth extends SetupTestAppBle {

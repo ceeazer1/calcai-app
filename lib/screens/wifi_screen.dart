@@ -46,7 +46,11 @@ class _WifiScreenState extends State<WifiScreen> {
   bool _connectStarted = false;
 
   /// True while this account proves ownership to a claimed calculator.
-  bool _authenticating = false;
+  Object? _authAttempt;
+  int? _authConnectionGeneration;
+  String? _authDeviceId;
+  String? _authToken;
+  bool get _authenticating => _authAttempt != null;
 
   /// True when the last attempt failed because Bluetooth is off/unavailable
   /// (vs. the device simply not being found nearby).
@@ -85,6 +89,7 @@ class _WifiScreenState extends State<WifiScreen> {
     if (!oldWidget.isActive && widget.isActive) {
       _attemptAutoConnect();
     } else if (oldWidget.isActive && !widget.isActive) {
+      _stopAutoConnecting();
       unawaited(_setNormalCalculatorStatus());
     }
   }
@@ -190,6 +195,12 @@ class _WifiScreenState extends State<WifiScreen> {
   void _stopAutoConnecting() {
     _connectTimeout?.cancel();
     _connectStarted = false;
+    // Skip/timeout/hidden-tab cancellation also invalidates a pending proof.
+    // A retry on the same BLE generation must start a fresh handshake.
+    _authAttempt = null;
+    _authConnectionGeneration = null;
+    _authDeviceId = null;
+    _authToken = null;
     if (mounted) {
       setState(() {
         _autoConnecting = false;
@@ -204,7 +215,7 @@ class _WifiScreenState extends State<WifiScreen> {
   /// Side-effect listener: connect to the first CalcAI found during an
   /// auto-connect scan, and clear the flag once resolved.
   void _onBle() {
-    if (!mounted || !_autoConnecting) return;
+    if (!mounted || !_autoConnecting || _closing || !widget.isActive) return;
     final ble = context.read<BleService>();
 
     // A raw BLE link is not enough on a claimed calculator. Once service
@@ -281,46 +292,86 @@ class _WifiScreenState extends State<WifiScreen> {
   }
 
   Future<void> _authenticateConnectedDevice() async {
-    if (_authenticating || !_autoConnecting || !mounted) return;
-    _authenticating = true;
-    setState(() {});
-
+    if (!_autoConnecting || !mounted || _closing || !widget.isActive) return;
     final ble = context.read<BleService>();
     final auth = context.read<AuthService>();
     final cloud = context.read<CloudService>();
-    var proved = false;
+    if (ble.connectionState != DeviceConnectionState.ready) return;
+    final generation = ble.connectionGeneration;
+    final deviceId = ble.connectedDevice?.id;
+    final token = auth.token;
+    final owner = auth.email;
+    if (_authenticating &&
+        _authConnectionGeneration == generation &&
+        _authDeviceId == deviceId &&
+        _authToken == token) {
+      return;
+    }
+    // A new connection may start its own handshake while an old cloud request
+    // finishes. Only this attempt can clear its guard or change its connection.
+    final attempt = Object();
+    _authAttempt = attempt;
+    _authConnectionGeneration = generation;
+    _authDeviceId = deviceId;
+    _authToken = token;
+    setState(() {});
+
+    bool isCurrent() =>
+        mounted &&
+        !_closing &&
+        widget.isActive &&
+        _autoConnecting &&
+        identical(_authAttempt, attempt) &&
+        ble.connectionGeneration == generation &&
+        ble.connectedDevice?.id == deviceId &&
+        ble.connectionState == DeviceConnectionState.ready &&
+        auth.token == token &&
+        auth.email == owner;
 
     try {
-      final token = auth.token;
-      final owner = auth.email;
+      var proved = false;
       if (token != null && owner != null && owner.isNotEmpty) {
         final ask = await ble.requestAuthNonce();
+        if (!isCurrent()) return;
         if (ask != null) {
           final signature = await cloud.requestOwnershipProof(
             token,
             ask.mac,
             ask.nonce,
           );
+          if (!isCurrent()) return;
           if (signature != null) {
             proved = await ble.proveOwnership(ask.nonce, signature, owner);
+            if (!isCurrent()) return;
           }
         }
       }
+      if (!isCurrent()) return;
+      if (proved) {
+        // Keep the guard through both the saved-list refresh inside hello and
+        // this command: each may notify listeners and re-enter _onBle.
+        await ble.setWifiUiMode(true);
+        if (!isCurrent()) return;
+        _stopAutoConnecting();
+      } else {
+        // Stop listening for this attempt before disconnect notifies. A later
+        // connection is never disconnected by an older rejected proof.
+        _stopAutoConnecting();
+        await ble.disconnect();
+      }
+    } catch (_) {
+      if (isCurrent()) {
+        _stopAutoConnecting();
+        await ble.disconnect();
+      }
     } finally {
-      _authenticating = false;
-    }
-
-    if (!mounted || _closing || !widget.isActive) return;
-    if (proved) {
-      // Presentation only: the TI-84 BLE page shows "WIFI MODE" while this
-      // authenticated management screen owns the connection. Disconnecting on
-      // dispose clears it in firmware even if this request is interrupted.
-      await ble.setWifiUiMode(true);
-      if (!mounted) return;
-      _stopAutoConnecting();
-    } else {
-      await ble.disconnect();
-      _stopAutoConnecting();
+      if (identical(_authAttempt, attempt)) {
+        _authAttempt = null;
+        _authConnectionGeneration = null;
+        _authDeviceId = null;
+        _authToken = null;
+        if (mounted) setState(() {});
+      }
     }
   }
 
@@ -353,7 +404,9 @@ class _WifiScreenState extends State<WifiScreen> {
                         children: [
                           IconButton(
                             onPressed: _closing ? null : _leaveScreen,
-                            tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                            tooltip: MaterialLocalizations.of(
+                              context,
+                            ).backButtonTooltip,
                             icon: const Icon(
                               Icons.arrow_back_rounded,
                               color: AppColors.textPrimary,
@@ -616,6 +669,18 @@ class _WifiScreenState extends State<WifiScreen> {
                     ],
                   ),
                   const SizedBox(height: 12),
+                  if (ble.provisioningState == ProvisioningState.failed &&
+                      ble.error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Text(
+                        ble.error!,
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
                   WifiNetworkPicker(
                     networks: ble.wifiNetworks,
                     onConnect: (network, password, hotspot) {
@@ -812,7 +877,36 @@ class _WifiScreenState extends State<WifiScreen> {
   /// Saved-network tiles. When [readOnly] (Bluetooth disconnected) the remove
   /// button is hidden so the list is view-only.
   List<Widget> _savedNetworkTiles(BleService ble, {required bool readOnly}) {
+    final notice = <Widget>[
+      if (ble.savedNetworksError != null)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  ble.savedNetworks.isEmpty
+                      ? ble.savedNetworksError!
+                      : '${ble.savedNetworksError} Showing previously saved networks.',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+              if (!readOnly)
+                TextButton(
+                  onPressed: ble.savedNetworksLoading || _isAddingNetwork
+                      ? null
+                      : ble.requestSavedNetworks,
+                  child: const Text('Retry'),
+                ),
+            ],
+          ),
+        ),
+    ];
     if (ble.savedNetworks.isEmpty) {
+      if (notice.isNotEmpty) return notice;
       return [
         GlassCard(
           padding: const EdgeInsets.all(20),
@@ -828,99 +922,102 @@ class _WifiScreenState extends State<WifiScreen> {
         ),
       ];
     }
-    return ble.savedNetworks.map((ssid) {
-      final isCurrentlyConnected = ssid == ble.connectedSsid;
-      final isIphoneHotspot = ble.isIphoneHotspotNetwork(ssid);
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: GlassCard(
-          borderColor: !readOnly && _expandedSavedSsid == ssid
-              ? const Color(0xFFB9BEC9)
-              : null,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              InkWell(
-                onTap: readOnly
-                    ? null
-                    : () => setState(() {
-                        _expandedSavedSsid = _expandedSavedSsid == ssid
-                            ? null
-                            : ssid;
-                      }),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.wifi_rounded,
-                      color: isCurrentlyConnected
-                          ? AppColors.success
-                          : AppColors.textSecondary,
-                      size: 22,
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            ssid,
-                            style: GoogleFonts.inter(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                          Text(
-                            '${isCurrentlyConnected ? 'Connected' : 'Saved'}'
-                            '${isIphoneHotspot ? ' • Phone hotspot' : ''}',
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              color: isCurrentlyConnected
-                                  ? AppColors.success
-                                  : AppColors.textTertiary,
-                            ),
-                          ),
-                        ],
+    return [
+      ...notice,
+      ...ble.savedNetworks.map((ssid) {
+        final isCurrentlyConnected = ssid == ble.connectedSsid;
+        final isIphoneHotspot = ble.isIphoneHotspotNetwork(ssid);
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: GlassCard(
+            borderColor: !readOnly && _expandedSavedSsid == ssid
+                ? const Color(0xFFB9BEC9)
+                : null,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                InkWell(
+                  onTap: readOnly
+                      ? null
+                      : () => setState(() {
+                          _expandedSavedSsid = _expandedSavedSsid == ssid
+                              ? null
+                              : ssid;
+                        }),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.wifi_rounded,
+                        color: isCurrentlyConnected
+                            ? AppColors.success
+                            : AppColors.textSecondary,
+                        size: 22,
                       ),
-                    ),
-                    if (!readOnly)
-                      IconButton(
-                        onPressed: () => _removeNetwork(ssid),
-                        icon: const Icon(
-                          Icons.close_rounded,
-                          color: AppColors.textTertiary,
-                          size: 20,
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              ssid,
+                              style: GoogleFonts.inter(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            Text(
+                              '${isCurrentlyConnected ? 'Connected' : 'Saved'}'
+                              '${isIphoneHotspot ? ' • Phone hotspot' : ''}',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: isCurrentlyConnected
+                                    ? AppColors.success
+                                    : AppColors.textTertiary,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                  ],
+                      if (!readOnly)
+                        IconButton(
+                          onPressed: () => _removeNetwork(ssid),
+                          icon: const Icon(
+                            Icons.close_rounded,
+                            color: AppColors.textTertiary,
+                            size: 20,
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-              ),
-              AnimatedSize(
-                duration: const Duration(milliseconds: 250),
-                alignment: Alignment.topCenter,
-                curve: Curves.easeInOutCubic,
-                child: !readOnly && _expandedSavedSsid == ssid
-                    ? SavedNetworkDetails(
-                        key: ValueKey(ssid),
-                        ble: ble,
-                        ssid: ssid,
-                        onConnect: (password, hotspot) {
-                          setState(() => _expandedSavedSsid = null);
-                          _attemptConnect(
-                            ssid,
-                            password,
-                            iphoneHotspot: hotspot,
-                          );
-                        },
-                      )
-                    : const SizedBox(width: double.infinity),
-              ),
-            ],
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 250),
+                  alignment: Alignment.topCenter,
+                  curve: Curves.easeInOutCubic,
+                  child: !readOnly && _expandedSavedSsid == ssid
+                      ? SavedNetworkDetails(
+                          key: ValueKey(ssid),
+                          ble: ble,
+                          ssid: ssid,
+                          onConnect: (password, hotspot) {
+                            setState(() => _expandedSavedSsid = null);
+                            _attemptConnect(
+                              ssid,
+                              password,
+                              iphoneHotspot: hotspot,
+                            );
+                          },
+                        )
+                      : const SizedBox(width: double.infinity),
+                ),
+              ],
+            ),
           ),
-        ),
-      );
-    }).toList();
+        );
+      }),
+    ];
   }
 
   Future<void> _addNetwork(BleService ble) async {

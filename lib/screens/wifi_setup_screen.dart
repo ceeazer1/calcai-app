@@ -344,7 +344,9 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
                                     onPressed: isSending || _leaving
                                         ? null
                                         : _goBack,
-                                    tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                                    tooltip: MaterialLocalizations.of(
+                                      context,
+                                    ).backButtonTooltip,
                                     icon: const Icon(
                                       Icons.arrow_back_ios_rounded,
                                       size: 20,
@@ -399,6 +401,11 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
                                   : ble.wifiNetworks.isEmpty
                                   ? _EmptyNetworkState(
                                       onRetry: () => ble.requestWifiScan(),
+                                      error:
+                                          ble.provisioningState ==
+                                              ProvisioningState.failed
+                                          ? ble.error
+                                          : null,
                                     )
                                   : _NetworkList(
                                       networks: ble.wifiNetworks,
@@ -520,9 +527,10 @@ class _ScanningState extends StatelessWidget {
 }
 
 class _EmptyNetworkState extends StatelessWidget {
-  const _EmptyNetworkState({required this.onRetry});
+  const _EmptyNetworkState({required this.onRetry, this.error});
 
   final VoidCallback onRetry;
+  final String? error;
 
   @override
   Widget build(BuildContext context) {
@@ -533,7 +541,7 @@ class _EmptyNetworkState extends StatelessWidget {
           Icon(Icons.wifi_off_rounded, color: AppColors.textTertiary, size: 48),
           const SizedBox(height: 16),
           Text(
-            'No networks found',
+            error == null ? 'No networks found' : 'Could not load networks',
             style: GoogleFonts.outfit(
               fontSize: 18,
               fontWeight: FontWeight.w600,
@@ -542,7 +550,7 @@ class _EmptyNetworkState extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Make sure your WiFi router is\npowered on and nearby',
+            error ?? 'Make sure your WiFi router is\npowered on and nearby',
             textAlign: TextAlign.center,
             style: GoogleFonts.inter(
               fontSize: 13,

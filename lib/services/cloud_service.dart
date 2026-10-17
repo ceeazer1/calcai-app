@@ -10,6 +10,7 @@ import 'resilient_http_client.dart';
 import 'session_http_client.dart';
 import '../utils/log.dart';
 import '../models/ai_model.dart';
+import '../models/ai_funding.dart';
 import '../models/pairing_v2.dart';
 
 /// Returns true only for the Worker's explicit ownership-revocation response.
@@ -188,6 +189,7 @@ class CloudService extends ChangeNotifier {
   }
 
   int _keyGeneration = 0;
+  int _sessionGeneration = 0;
   bool _disposed = false;
 
   @override
@@ -212,6 +214,14 @@ class CloudService extends ChangeNotifier {
   /// AI model configuration for the current device ({model, style}).
   Map<String, dynamic>? _modelInfo;
   Map<String, dynamic>? get modelInfo => _modelInfo;
+  int _modelGeneration = 0;
+  String? _modelMac;
+  bool _modelReady = false;
+  bool _modelLoading = false;
+  bool _modelSaving = false;
+  bool get modelSettingsLoading => _modelLoading || apiKeysLoading;
+  String? _modelError;
+  String? get modelError => _modelError;
 
   /// User notes for the current device.
   String? _notes;
@@ -260,7 +270,54 @@ class CloudService extends ChangeNotifier {
 
   /// How hard the model may think before answering ("fast", "balanced" or
   /// "thorough"). The worker translates it per provider.
-  bool get fastMode => _modelInfo?['fastMode'] == true;
+  bool get fastMode => modelInfo?['fastMode'] == true;
+
+  AiFunding? get fastModeFunding =>
+      AiFunding.parse(modelInfo?['fastModeFunding']);
+
+  AiFunding? get currentModelFunding {
+    if (!_modelReady || modelSettingsLoading) return null;
+    final info = modelInfo;
+    if (info?.containsKey('fastModeCapability') == true) {
+      return FastModeCapability.parse(info!['fastModeCapability'])?.funding;
+    }
+    final provider = modelProvider(currentModel ?? '');
+    return provider == null ? null : providerFunding(provider);
+  }
+
+  FastModeCapability? get fastModeCapability {
+    if (!_modelReady || modelSettingsLoading) return null;
+    final info = modelInfo;
+    if (info == null) return null;
+    if (info.containsKey('fastModeCapability')) {
+      return FastModeCapability.parse(info['fastModeCapability']);
+    }
+    // Older servers only support personal-key Fast. Never infer allowance
+    // access from the public model catalog or from an absent API key.
+    final provider = modelFastModeProvider(currentModel ?? '');
+    if (provider == null ||
+        providerFunding(provider) != AiFunding.personalKey) {
+      return null;
+    }
+    return const FastModeCapability(
+      supported: true,
+      available: true,
+      funding: AiFunding.personalKey,
+    );
+  }
+
+  String? modelProvider(String model) {
+    for (final entry in modelCatalog) {
+      if (entry.id == model) return entry.provider;
+    }
+    // Custom BYOK model IDs are allowed, but this does not grant Fast support.
+    if (model.startsWith('gpt-') || RegExp(r'^o\d').hasMatch(model)) {
+      return 'openai';
+    }
+    if (model.startsWith('gemini-')) return 'google';
+    if (model.startsWith('claude-')) return 'anthropic';
+    return null;
+  }
 
   String get thinkingEffort => _modelInfo?['effort']?.toString() ?? 'fast';
 
@@ -582,6 +639,12 @@ class CloudService extends ChangeNotifier {
   ///
   /// GET /ai/model/get?mac=  → {model, style}
   Future<Map<String, dynamic>> getModel(String token, String mac) async {
+    if (_modelSaving || _keysSaving) return {};
+    final generation = ++_modelGeneration;
+    _modelMac = mac;
+    _modelReady = false;
+    _modelLoading = true;
+    _modelError = null;
     try {
       _setLoading(true);
       _clearError();
@@ -592,15 +655,28 @@ class CloudService extends ChangeNotifier {
       );
 
       _assertSuccess(response);
-
-      _modelInfo = jsonDecode(response.body) as Map<String, dynamic>;
+      if (generation != _modelGeneration) return {};
+      final data = jsonDecode(response.body);
+      if (data is! Map<String, dynamic> ||
+          data['model'] is! String ||
+          (data['model'] as String).isEmpty) {
+        throw const FormatException('Invalid model configuration');
+      }
+      _modelInfo = data;
+      _modelReady = true;
       notifyListeners();
       return _modelInfo!;
     } catch (e) {
-      _setError('Failed to load model: ${_friendlyError(e)}');
+      if (generation == _modelGeneration) {
+        _modelError = 'Failed to load model: ${_friendlyError(e)}';
+        _setError(_modelError!);
+      }
       return {};
     } finally {
-      _setLoading(false);
+      if (generation == _modelGeneration) {
+        _modelLoading = false;
+        _setLoading(false);
+      }
     }
   }
 
@@ -750,7 +826,27 @@ class CloudService extends ChangeNotifier {
     String style, {
     String? effort,
     bool? fastMode,
+    String? fastModeFunding,
   }) async {
+    if (_modelSaving || _keysSaving) return;
+    // Only an explicit, freshly available payer can authorize higher costs.
+    if (fastMode == true) {
+      final funding = AiFunding.parse(fastModeFunding);
+      final capability = fastModeCapability;
+      if (funding == null ||
+          capability?.available != true ||
+          capability?.funding != funding ||
+          model != currentModel) {
+        _setError('Refresh Fast mode availability, then try again.');
+        return;
+      }
+    }
+    final generation = ++_modelGeneration;
+    _modelMac = mac;
+    _modelSaving = true;
+    _modelLoading = true;
+    _modelReady = false;
+    _modelError = null;
     try {
       _setLoading(true);
       _clearError();
@@ -766,28 +862,59 @@ class CloudService extends ChangeNotifier {
           // the field is absent, so a partial update can't reset it.
           if (effort != null) 'effort': effort,
           if (fastMode != null) 'fastMode': fastMode,
+          if (fastMode == true) 'fastModeFunding': fastModeFunding,
         }),
       );
 
       _assertSuccess(response);
+      if (generation != _modelGeneration) return;
 
       // Use the server's accepted values, including model-switch resets.
       final accepted = jsonDecode(response.body) as Map<String, dynamic>;
-      if (fastMode != null && accepted['fastMode'] is! bool) {
+      if (fastMode != null && accepted['fastMode'] != fastMode) {
         throw StateError('Fast mode needs the updated CalcAI server.');
       }
+      if (fastMode == true) {
+        final capability = FastModeCapability.parse(
+          accepted['fastModeCapability'],
+        );
+        final legacyPersonalKey =
+            fastModeFunding == 'personal_key' &&
+            !accepted.containsKey('fastModeFunding') &&
+            !accepted.containsKey('fastModeCapability');
+        if (!legacyPersonalKey &&
+            (accepted['fastModeFunding'] != fastModeFunding ||
+                capability?.available != true ||
+                capability?.funding?.apiValue != fastModeFunding)) {
+          throw StateError(
+            'CalcAI could not confirm who pays for Fast mode. Refresh and try again.',
+          );
+        }
+      }
       _modelInfo = {
-        ...?_modelInfo,
         'model': accepted['model'] ?? model,
         'style': accepted['style'] ?? style,
         'effort': accepted['effort'] ?? effort ?? thinkingEffort,
         'fastMode': accepted['fastMode'] == true,
+        'fastModeRequested': accepted['fastModeRequested'] == true,
+        if (accepted.containsKey('fastModeFunding'))
+          'fastModeFunding': accepted['fastModeFunding'],
+        if (accepted.containsKey('fastModeCapability'))
+          'fastModeCapability': accepted['fastModeCapability'],
       };
+      _modelReady = true;
       notifyListeners();
     } catch (e) {
-      _setError('Failed to update model: ${_friendlyError(e)}');
+      if (generation == _modelGeneration) {
+        _modelError = 'Failed to update model: ${_friendlyError(e)}';
+        _setError(_modelError!);
+      }
     } finally {
-      _setLoading(false);
+      if (generation == _modelGeneration) {
+        _modelSaving = false;
+        _modelLoading = false;
+        _setLoading(false);
+      }
     }
   }
 
@@ -1127,138 +1254,199 @@ class CloudService extends ChangeNotifier {
   /// Saved API key info per provider: { 'openai': { active: true, last4: 'xxxx' }, ... }
   Map<String, dynamic> _apiKeys = {};
   Map<String, dynamic> get apiKeys => Map.unmodifiable(_apiKeys);
+  bool _keysVerified = false;
+  bool _keysLoading = false;
+  bool _keysSaving = false;
+  String? _apiKeysError;
+  bool get apiKeysLoading => _keysLoading || _keysSaving;
+  bool get apiKeysSaving => _keysSaving;
+  String? get apiKeysError => _apiKeysError;
+
+  AiFunding? providerFunding(String provider) {
+    if (!_keysVerified || apiKeysLoading) return null;
+    return hasApiKey(provider) && apiKeyEnabled(provider)
+        ? AiFunding.personalKey
+        : AiFunding.allowance;
+  }
+
+  String providerFundingLabel(String provider, {bool currentModel = false}) {
+    final funding = currentModel
+        ? currentModelFunding
+        : providerFunding(provider);
+    if (funding == null) {
+      return apiKeysError != null || (currentModel && !modelSettingsLoading)
+          ? 'Could not confirm billing'
+          : 'Checking billing…';
+    }
+    if (funding == AiFunding.allowance) return 'Using CalcAI allowance';
+    final last4 =
+        _keysVerified && providerFunding(provider) == AiFunding.personalKey
+        ? apiKeyLast4(provider)
+        : null;
+    return 'Using your ${aiProviderLabel(provider)} key${last4 == null ? '' : ' ••••$last4'}';
+  }
+
+  String? providerFundingDetail(String provider, {bool currentModel = false}) =>
+      (currentModel ? currentModelFunding : providerFunding(provider)) ==
+          AiFunding.personalKey
+      ? 'Billed to your ${aiProviderLabel(provider)} account; does not use your CalcAI allowance.'
+      : null;
+
+  Future<void> refreshAiSettings(String token, String mac) async {
+    final session = _sessionGeneration;
+    await listApiKeys(token);
+    // Do not start a request with a previous account's token after sign-out.
+    if (_disposed || session != _sessionGeneration) return;
+    await getModel(token, mac);
+  }
 
   /// Whether a specific provider has a saved key.
   bool hasApiKey(String provider) {
     final info = _apiKeys[provider.toLowerCase()];
-    return info != null && info['active'] == true;
+    return info is Map && info['active'] == true;
   }
 
   /// Get the last 4 chars of a saved key for display.
   String? apiKeyLast4(String provider) {
     final info = _apiKeys[provider.toLowerCase()];
-    return info?['last4']?.toString();
+    final last4 = info is Map ? info['last4'] : null;
+    return last4 is String && RegExp(r'^[a-zA-Z0-9_-]{4}$').hasMatch(last4)
+        ? last4
+        : null;
   }
 
   /// Whether the saved key for [provider] is currently enabled (in use).
   /// Defaults to true when a key exists but no flag is present.
   bool apiKeyEnabled(String provider) {
     final info = _apiKeys[provider.toLowerCase()];
-    if (info == null) return false;
+    if (info is! Map || info['active'] != true) return false;
     return info['enabled'] != false;
   }
 
   /// Turns usage of a saved key on/off without deleting it.
   Future<bool> toggleApiKey(String token, String provider, bool enabled) async {
-    final generation = _keyGeneration;
-    final p = provider.toLowerCase();
-    // Optimistic update.
-    if (_apiKeys[p] is Map) {
-      (_apiKeys[p] as Map)['enabled'] = enabled;
-      notifyListeners();
-    }
-    try {
-      final resp = await _client.post(
-        Uri.parse('$_baseUrl/ai/apikey/toggle'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({'provider': p, 'enabled': enabled}),
-      );
-      if (generation != _keyGeneration) return false;
-      if (resp.statusCode == 200) return true;
-    } catch (e) {
-      logDebug('toggleApiKey error: $e');
-    }
-    // Revert on failure.
-    if (generation == _keyGeneration && _apiKeys[p] is Map) {
-      (_apiKeys[p] as Map)['enabled'] = !enabled;
-      notifyListeners();
-    }
-    return false;
+    return _changeApiKey(token, 'toggle', {
+      'provider': provider.toLowerCase(),
+      'enabled': enabled,
+    });
   }
 
   /// List all saved API keys. Returns provider → { active, last4 }.
   Future<Map<String, dynamic>> listApiKeys(String token) async {
-    final generation = _keyGeneration;
+    if (_keysSaving) return apiKeys;
+    final generation = ++_keyGeneration;
+    _keysLoading = true;
+    _keysVerified = false;
+    _apiKeysError = null;
+    notifyListeners();
     try {
       final resp = await _client.get(
         Uri.parse('$_baseUrl/ai/apikey/list'),
         headers: {'Authorization': 'Bearer $token'},
       );
       if (generation != _keyGeneration) return {};
-      if (resp.statusCode == 200) {
-        final data = jsonDecode(resp.body);
-        // Worker returns { ok, keys: { openai: {...}, ... } }.
-        final keysMap = (data is Map) ? data['keys'] : null;
-        if (keysMap is Map) {
-          _apiKeys = Map<String, dynamic>.from(keysMap);
-          notifyListeners();
+      _assertSuccess(resp);
+      final data = jsonDecode(resp.body);
+      final keysMap = (data is Map && data['ok'] == true) ? data['keys'] : null;
+      if (keysMap is! Map) throw const FormatException('Invalid key metadata');
+      final clean = <String, dynamic>{};
+      for (final entry in keysMap.entries) {
+        if (!['openai', 'google', 'anthropic'].contains(entry.key)) continue;
+        final value = entry.value;
+        if (value is! Map ||
+            value['active'] is! bool ||
+            (value['enabled'] != null && value['enabled'] is! bool)) {
+          throw const FormatException('Invalid key metadata');
         }
+        clean[entry.key] = {
+          'active': value['active'],
+          'enabled': value['enabled'] != false,
+          'last4':
+              value['last4'] is String &&
+                  RegExp(r'^[a-zA-Z0-9_-]{4}$').hasMatch(value['last4'])
+              ? value['last4']
+              : null,
+        };
       }
-      return _apiKeys;
-    } catch (e) {
-      logDebug('listApiKeys error: $e');
-      return _apiKeys;
+      _apiKeys = clean;
+      _keysVerified = true;
+      return apiKeys;
+    } catch (_) {
+      if (generation == _keyGeneration) {
+        _apiKeysError = 'Could not confirm billing. Please try again.';
+      }
+      return apiKeys;
+    } finally {
+      if (generation == _keyGeneration) {
+        _keysLoading = false;
+        notifyListeners();
+      }
     }
   }
 
   /// Save an API key for a provider. Backend validates the key first.
   Future<bool> saveApiKey(String token, String provider, String key) async {
-    final generation = _keyGeneration;
-    try {
-      final resp = await _client.post(
-        Uri.parse('$_baseUrl/ai/apikey/save'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({'provider': provider.toLowerCase(), 'key': key}),
-      );
-      if (generation != _keyGeneration) return false;
-      if (resp.statusCode == 200) {
-        final data = jsonDecode(resp.body);
-        if (data['ok'] == true) {
-          _apiKeys[provider.toLowerCase()] = {
-            'active': true,
-            'last4': data['last4'],
-            'enabled': true,
-          };
-          notifyListeners();
-          return true;
-        }
-      }
-      return false;
-    } catch (e) {
-      logDebug('saveApiKey error: $e');
-      return false;
-    }
+    return _changeApiKey(token, 'save', {
+      'provider': provider.toLowerCase(),
+      'key': key,
+    });
   }
 
   /// Delete a saved API key for a provider.
   Future<bool> deleteApiKey(String token, String provider) async {
-    final generation = _keyGeneration;
+    return _changeApiKey(token, 'delete', {'provider': provider.toLowerCase()});
+  }
+
+  Future<bool> _changeApiKey(
+    String token,
+    String action,
+    Map<String, dynamic> body,
+  ) async {
+    if (_keysSaving || _modelSaving) return false;
+    final generation = ++_keyGeneration;
+    final session = _sessionGeneration;
+    _keysSaving = true;
+    _keysLoading = false;
+    _keysVerified = false;
+    _apiKeysError = null;
+    // Invalidate any capability read that began with the previous payer.
+    _modelGeneration++;
+    _modelReady = false;
+    _modelLoading = false;
+    notifyListeners();
+    var succeeded = false;
     try {
       final resp = await _client.post(
-        Uri.parse('$_baseUrl/ai/apikey/delete'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({'provider': provider.toLowerCase()}),
+        Uri.parse('$_baseUrl/ai/apikey/$action'),
+        headers: _jsonAuthHeaders(token),
+        body: jsonEncode(body),
       );
       if (generation != _keyGeneration) return false;
-      if (resp.statusCode == 200) {
-        _apiKeys.remove(provider.toLowerCase());
-        notifyListeners();
-        return true;
+      _assertSuccess(resp);
+      final data = jsonDecode(resp.body);
+      if (data is! Map || data['ok'] != true) {
+        throw const FormatException('Key change not confirmed');
       }
-      return false;
-    } catch (e) {
-      logDebug('deleteApiKey error: $e');
-      return false;
+      succeeded = true;
+    } catch (_) {
+      if (generation == _keyGeneration) {
+        _apiKeysError = 'Could not confirm the key change. Please try again.';
+      }
+    } finally {
+      if (generation == _keyGeneration) {
+        _keysSaving = false;
+        notifyListeners();
+      }
     }
+    if (session != _sessionGeneration || _disposed) return false;
+    if (succeeded) {
+      await listApiKeys(token);
+      final mac = _modelMac ?? currentMac;
+      if (session == _sessionGeneration && !_disposed && mac != null) {
+        await getModel(token, mac);
+      }
+    }
+    return succeeded;
   }
 
   void _setLoading(bool value) {
@@ -1278,7 +1466,17 @@ class CloudService extends ChangeNotifier {
 
   /// Converts exceptions to concise, user-friendly messages.
   String _friendlyError(dynamic e) {
-    if (e is CloudException) return e.message;
+    if (e is CloudException) {
+      return switch (e.message) {
+        'fast_mode_funding_changed' =>
+          'Billing changed. Refresh and turn Fast mode on again.',
+        'fast_mode_requires_supported_personal_key' =>
+          'Fast mode is not available with CalcAI allowance yet.',
+        'provider_key_unavailable' =>
+          'Could not verify your provider key. Please try again.',
+        _ => e.message,
+      };
+    }
     final msg = e.toString();
     if (msg.contains('SocketException') || msg.contains('HandshakeException')) {
       return 'Network error — check your internet connection.';
@@ -1295,8 +1493,19 @@ class CloudService extends ChangeNotifier {
   /// Resets all cached state. Useful when switching users or signing out.
   void reset() {
     _client.invalidate();
+    _sessionGeneration++;
     _keyGeneration++;
     _apiKeys = {};
+    _keysVerified = false;
+    _keysLoading = false;
+    _keysSaving = false;
+    _apiKeysError = null;
+    _modelGeneration++;
+    _modelMac = null;
+    _modelReady = false;
+    _modelLoading = false;
+    _modelSaving = false;
+    _modelError = null;
     _currentMac = null;
     _devices = [];
     _deviceInfo = null;
