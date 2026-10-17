@@ -205,6 +205,7 @@ class _Ti84PagerState extends State<Ti84Pager> {
             IconButton(
               onPressed:
                   page > 0 ? () => setState(() => _page = page - 1) : null,
+              tooltip: MaterialLocalizations.of(context).previousPageTooltip,
               visualDensity: VisualDensity.compact,
               icon: const Icon(Icons.chevron_left_rounded, size: 20),
               color: const Color(0xFFF4F4F5),
@@ -221,6 +222,7 @@ class _Ti84PagerState extends State<Ti84Pager> {
               onPressed: page < pages.length - 1
                   ? () => setState(() => _page = page + 1)
                   : null,
+              tooltip: MaterialLocalizations.of(context).nextPageTooltip,
               visualDensity: VisualDensity.compact,
               icon: const Icon(Icons.chevron_right_rounded, size: 20),
               color: const Color(0xFFF4F4F5),

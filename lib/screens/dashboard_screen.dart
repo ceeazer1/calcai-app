@@ -54,11 +54,12 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _enterController;
   late final Animation<double> _fadeIn;
   bool _isLoadingModel = false;
   bool _savingFastMode = false;
+  Future<void>? _historyRefreshing;
 
   /// Whether the response-style inline dropdown is open.
   bool _styleExpanded = false;
@@ -67,6 +68,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _enterController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
@@ -79,6 +81,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Future<void> _loadData() async {
+    if (!mounted) return;
     final auth = context.read<AuthService>();
     final cloud = context.read<CloudService>();
     if (auth.token == null) return;
@@ -90,7 +93,39 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   @override
+  void didUpdateWidget(DashboardScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive && !oldWidget.isActive) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _refreshHistory());
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshHistory();
+  }
+
+  Future<void> _refreshHistory() {
+    if (!mounted || !widget.isActive) return Future.value();
+    return _historyRefreshing ??= _fetchHistory().whenComplete(
+      () => _historyRefreshing = null,
+    );
+  }
+
+  Future<void> _fetchHistory() async {
+    final auth = context.read<AuthService>();
+    if (auth.token != null && auth.primaryMac != null) {
+      await context.read<CloudService>().getHistory(
+        auth.token!,
+        auth.primaryMac!,
+        limit: 10,
+      );
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _enterController.dispose();
     super.dispose();
   }
@@ -814,6 +849,12 @@ class _DashboardScreenState extends State<DashboardScreen>
   Widget _buildLastPromptCard() {
     return Consumer<CloudService>(
       builder: (context, cloud, _) {
+        if (cloud.history.isEmpty && cloud.isHistoryLoading) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (cloud.history.isEmpty && cloud.historyError != null) {
+          return _historyRefreshNotice(cloud.historyError!);
+        }
         if (cloud.history.isEmpty) {
           return Padding(
             padding: const EdgeInsets.all(20),
@@ -850,59 +891,85 @@ class _DashboardScreenState extends State<DashboardScreen>
         final response = latexToReadable((last['response'] ?? '').toString());
         final imageUrl = safeImageUrl(last['imageUrl']?.toString());
 
-        return GlassCard(
-          padding: EdgeInsets.zero,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Photo thumbnail if it's an image entry. Tapping opens it full
-              // screen; a failed load offers a retry instead of vanishing.
-              if (isImage && imageUrl != null)
-                CalcPhoto(
-                  imageUrl: imageUrl,
-                  height: 140,
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(16),
-                  ),
-                ),
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (question.isNotEmpty)
-                      QaLine(
-                        letter: 'Q',
-                        text: question,
-                        maxLines: 2,
-                        textStyle: GoogleFonts.inter(
-                          fontSize: 14,
-                          height: 1.35,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                    if (response.isNotEmpty) ...[
-                      if (question.isNotEmpty) const SizedBox(height: 8),
-                      QaLine(
-                        letter: 'A',
-                        text: response,
-                        maxLines: 3,
-                        textStyle: GoogleFonts.inter(
-                          fontSize: 13,
-                          height: 1.35,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
+        return Column(
+          children: [
+            if (cloud.isHistoryLoading) const LinearProgressIndicator(),
+            if (cloud.historyError != null)
+              _historyRefreshNotice(
+                '${cloud.historyError} Showing saved activity.',
               ),
-            ],
-          ),
+            GlassCard(
+              padding: EdgeInsets.zero,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Photo thumbnail if it's an image entry. Tapping opens it full
+                  // screen; a failed load offers a retry instead of vanishing.
+                  if (isImage && imageUrl != null)
+                    CalcPhoto(
+                      imageUrl: imageUrl,
+                      height: 140,
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(16),
+                      ),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (question.isNotEmpty)
+                          QaLine(
+                            letter: 'Q',
+                            text: question,
+                            maxLines: 2,
+                            textStyle: GoogleFonts.inter(
+                              fontSize: 14,
+                              height: 1.35,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        if (response.isNotEmpty) ...[
+                          if (question.isNotEmpty) const SizedBox(height: 8),
+                          QaLine(
+                            letter: 'A',
+                            text: response,
+                            maxLines: 3,
+                            textStyle: GoogleFonts.inter(
+                              fontSize: 13,
+                              height: 1.35,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         );
       },
     );
   }
+
+  Widget _historyRefreshNotice(String message) => Row(
+    children: [
+      const Icon(Icons.cloud_off_rounded, color: AppColors.textTertiary),
+      const SizedBox(width: 8),
+      Expanded(
+        child: Text(
+          message,
+          style: GoogleFonts.inter(
+            fontSize: 13,
+            color: AppColors.textSecondary,
+          ),
+        ),
+      ),
+      TextButton(onPressed: _refreshHistory, child: const Text('Retry')),
+    ],
+  );
 
   Future<void> _showModelPicker(CloudService cloud) async {
     final token = context.read<AuthService>().token;

@@ -220,6 +220,11 @@ class CloudService extends ChangeNotifier {
   /// Recent conversation history entries.
   List<Map<String, dynamic>> _history = [];
   List<Map<String, dynamic>> get history => List.unmodifiable(_history);
+  bool _historyLoading = false;
+  bool get isHistoryLoading => _historyLoading;
+  int _historyGeneration = 0;
+  String? _historyMac;
+  int _historyLimit = 0;
 
   /// Authoritative account usage; independent of calculator pairing.
   Map<String, dynamic>? get usage => usageTracker.data?.json;
@@ -870,39 +875,69 @@ class CloudService extends ChangeNotifier {
     int limit = 50,
   }) async {
     if (_usageSession != token) bindUsageSession(token);
+    if (_historyMac != mac) {
+      _historyMac = mac;
+      _history = [];
+      _historyLimit = 0;
+      _historyError = null;
+    }
+    // Home must not shrink the expanded History cache on the next refresh.
+    final requestedLimit = limit.clamp(1, 200);
+    if (requestedLimit > _historyLimit) _historyLimit = requestedLimit;
+    final generation = ++_historyGeneration;
+    _historyLoading = true;
+    notifyListeners();
     try {
-      _setLoading(true);
-      _clearError();
-
       final response = await _client.get(
-        Uri.parse('$_baseUrl/ai/logs/recent?mac=$mac&limit=$limit'),
+        Uri.parse('$_baseUrl/ai/logs/recent?mac=$mac&limit=$_historyLimit'),
         headers: _authHeaders(token),
       );
-
+      if (generation != _historyGeneration || _disposed) return [];
       _assertSuccess(response);
-      _historyError = null;
 
       final data = jsonDecode(response.body);
-      // Worker returns { ok, items: [...] }
-      final List<dynamic> raw = data is List
+      // A missing/malformed list is a failed read, not an empty history.
+      final raw = data is List
           ? data
-          : (data['items'] ?? data['logs'] ?? []);
-      final updated = raw.cast<Map<String, dynamic>>();
+          : data is Map && data['ok'] != false
+          ? (data['items'] ?? data['logs'])
+          : null;
+      if (raw is! List || raw.any((entry) => entry is! Map<String, dynamic>)) {
+        throw const FormatException('Invalid history response');
+      }
+      final updated = raw.cast<Map<String, dynamic>>().toList();
       final hasNewSolve =
           updated.isNotEmpty &&
           (_history.isEmpty ||
               jsonEncode(updated.first) != jsonEncode(_history.first));
       _history = updated;
+      _historyError = null;
       if (hasNewSolve) unawaited(refreshUsageAfterSolve(token));
 
       notifyListeners();
       return _history;
     } catch (e) {
-      _historyError = 'Failed to load history: ${_friendlyError(e)}';
+      if (generation != _historyGeneration || _disposed) return [];
+      _historyError = switch (e) {
+        CloudException(statusCode: 401) =>
+          'Your session expired. Sign in again to load history.',
+        CloudException(statusCode: 403) =>
+          'CalcAI could not authorize this history request. Try again.',
+        CloudException(statusCode: 429) =>
+          'Too many requests. Wait a moment, then try again.',
+        CloudException(:final statusCode) =>
+          'History is unavailable (server error $statusCode). Try again.',
+        FormatException() =>
+          'CalcAI returned an unexpected history response. Try again.',
+        _ => 'Could not load history. Check your connection and try again.',
+      };
       _setError(_historyError!);
       return [];
     } finally {
-      _setLoading(false);
+      if (generation == _historyGeneration && !_disposed) {
+        _historyLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -921,6 +956,9 @@ class CloudService extends ChangeNotifier {
 
       _assertSuccess(response);
 
+      _historyGeneration++;
+      _historyLoading = false;
+      _historyError = null;
       _history = [];
       notifyListeners();
       return true;
@@ -1267,6 +1305,10 @@ class CloudService extends ChangeNotifier {
     _catalogLoadedAt = null;
     _customContext = '';
     _notes = null;
+    _historyGeneration++;
+    _historyLoading = false;
+    _historyMac = null;
+    _historyLimit = 0;
     _history = [];
     usageTracker.clear();
     _usageSession = null;

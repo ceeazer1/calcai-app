@@ -192,7 +192,7 @@ class _NotesScreenState extends State<NotesScreen> {
       }
     });
     final ok = await _save();
-    if (mounted) _toast(ok ? 'Synced to your CalcAI' : 'Could not save');
+    if (mounted) _toast(ok ? 'Saved to your account' : 'Could not save');
   }
 
   /// Confirms before deleting.
@@ -325,7 +325,7 @@ class _NotesScreenState extends State<NotesScreen> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Synced to your calculator over WiFi.',
+                  'Open Notes on your calculator while connected to Wi-Fi.',
                   style: GoogleFonts.inter(
                     fontSize: 13,
                     color: AppColors.textSecondary,
@@ -435,6 +435,8 @@ class _NotesScreenState extends State<NotesScreen> {
                   ),
                   IconButton(
                     onPressed: () => _confirmDelete(note),
+                    tooltip:
+                        '${MaterialLocalizations.of(context).deleteButtonTooltip}: ${note.displayTitle}',
                     icon: const Icon(Icons.delete_outline_rounded,
                         color: AppColors.textTertiary, size: 20),
                   ),

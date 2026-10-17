@@ -353,6 +353,7 @@ class _WifiScreenState extends State<WifiScreen> {
                         children: [
                           IconButton(
                             onPressed: _closing ? null : _leaveScreen,
+                            tooltip: MaterialLocalizations.of(context).backButtonTooltip,
                             icon: const Icon(
                               Icons.arrow_back_rounded,
                               color: AppColors.textPrimary,

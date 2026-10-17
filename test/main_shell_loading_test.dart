@@ -58,6 +58,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(cloud.historyLoads, 1);
+    await tester.enterText(find.byType(TextField), 'retained filter');
     expect(cloud.notesLoads, 0);
     await tester.tap(find.text('Notes').last);
     await tester.pump();
@@ -67,7 +68,28 @@ void main() {
     await tester.pump();
     await tester.tap(find.text('History').last);
     await tester.pump();
-    expect(cloud.historyLoads, 1);
+    expect(cloud.historyLoads, 3);
+    expect(find.text('retained filter'), findsOneWidget);
+    // Only the active page reloads on resume; retained hidden tabs do not.
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(cloud.historyLoads, 4);
+    await tester.tap(find.text('Home').last);
+    await tester.pump();
+    expect(cloud.historyLoads, 5);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(cloud.historyLoads, 6);
     expect(tester.takeException(), isNull);
 
     await tester.pumpWidget(const SizedBox());

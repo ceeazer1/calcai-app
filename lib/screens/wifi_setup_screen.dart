@@ -344,6 +344,7 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
                                     onPressed: isSending || _leaving
                                         ? null
                                         : _goBack,
+                                    tooltip: MaterialLocalizations.of(context).backButtonTooltip,
                                     icon: const Icon(
                                       Icons.arrow_back_ios_rounded,
                                       size: 20,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
@@ -49,6 +50,7 @@ class _CustomInstructionsScreenState extends State<CustomInstructionsScreen> {
   }
 
   bool get _dirty => _ctrl.text.trim() != _original.trim();
+  bool get _overLimit => _ctrl.text.length > CustomInstructionsScreen.maxLength;
 
   Future<void> _handleBack() async {
     if (!_dirty) {
@@ -59,20 +61,28 @@ class _CustomInstructionsScreenState extends State<CustomInstructionsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('Discard changes?',
-            style: GoogleFonts.outfit(color: AppColors.textPrimary)),
-        content: Text('Your edits have not been saved.',
-            style: GoogleFonts.inter(color: AppColors.textSecondary)),
+        title: Text(
+          'Discard changes?',
+          style: GoogleFonts.outfit(color: AppColors.textPrimary),
+        ),
+        content: Text(
+          'Your edits have not been saved.',
+          style: GoogleFonts.inter(color: AppColors.textSecondary),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Keep editing',
-                style: GoogleFonts.inter(color: AppColors.textSecondary)),
+            child: Text(
+              'Keep editing',
+              style: GoogleFonts.inter(color: AppColors.textSecondary),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Discard',
-                style: GoogleFonts.inter(color: AppColors.error)),
+            child: Text(
+              'Discard',
+              style: GoogleFonts.inter(color: AppColors.error),
+            ),
           ),
         ],
       ),
@@ -81,6 +91,7 @@ class _CustomInstructionsScreenState extends State<CustomInstructionsScreen> {
   }
 
   Future<void> _save() async {
+    if (_saving || _overLimit) return;
     final auth = context.read<AuthService>();
     final cloud = context.read<CloudService>();
     final mac = auth.primaryMac;
@@ -97,8 +108,10 @@ class _CustomInstructionsScreenState extends State<CustomInstructionsScreen> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(cloud.error ?? 'Could not save',
-              style: GoogleFonts.inter()),
+          content: Text(
+            cloud.error ?? 'Could not save',
+            style: GoogleFonts.inter(),
+          ),
           backgroundColor: AppColors.surface,
         ),
       );
@@ -108,6 +121,16 @@ class _CustomInstructionsScreenState extends State<CustomInstructionsScreen> {
   void _append(String example) {
     final current = _ctrl.text.trimRight();
     final next = current.isEmpty ? example : '$current\n$example';
+    if (next.length > CustomInstructionsScreen.maxLength) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Not enough space for this example. Limit: 2,000 characters.',
+          ),
+        ),
+      );
+      return;
+    }
     _ctrl.value = TextEditingValue(
       text: next,
       selection: TextSelection.collapsed(offset: next.length),
@@ -128,8 +151,10 @@ class _CustomInstructionsScreenState extends State<CustomInstructionsScreen> {
           backgroundColor: AppColors.background,
           elevation: 0,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_rounded,
-                color: AppColors.textPrimary),
+            icon: const Icon(
+              Icons.arrow_back_rounded,
+              color: AppColors.textPrimary,
+            ),
             tooltip: 'Back',
             onPressed: _handleBack,
           ),
@@ -150,20 +175,19 @@ class _CustomInstructionsScreenState extends State<CustomInstructionsScreen> {
                   height: 18,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    valueColor:
-                        AlwaysStoppedAnimation(AppColors.textSecondary),
+                    valueColor: AlwaysStoppedAnimation(AppColors.textSecondary),
                   ),
                 ),
               )
             else
               TextButton(
-                onPressed: _dirty ? _save : null,
+                onPressed: _dirty && !_overLimit ? _save : null,
                 child: Text(
                   'Save',
                   style: GoogleFonts.inter(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: _dirty
+                    color: _dirty && !_overLimit
                         ? AppColors.electricBlue
                         : AppColors.textTertiary,
                   ),
@@ -199,6 +223,10 @@ class _CustomInstructionsScreenState extends State<CustomInstructionsScreen> {
                   maxLines: 10,
                   minLines: 8,
                   maxLength: CustomInstructionsScreen.maxLength,
+                  // The API caps JavaScript string length (UTF-16 units).
+                  // Enforce that same bound without splitting a visible character.
+                  maxLengthEnforcement: MaxLengthEnforcement.none,
+                  inputFormatters: const [_InstructionLengthFormatter()],
                   autofocus: true,
                   textCapitalization: TextCapitalization.sentences,
                   style: GoogleFonts.inter(
@@ -207,10 +235,14 @@ class _CustomInstructionsScreenState extends State<CustomInstructionsScreen> {
                   ),
                   onChanged: (_) => setState(() {}),
                   decoration: InputDecoration(
-                    hintText: 'e.g. Always show the formula before the numbers.',
+                    counterText:
+                        '${_ctrl.text.length}/${CustomInstructionsScreen.maxLength}',
+                    hintText:
+                        'e.g. Always show the formula before the numbers.',
                     hintStyle: GoogleFonts.inter(color: AppColors.textTertiary),
-                    counterStyle:
-                        GoogleFonts.inter(color: AppColors.textTertiary),
+                    counterStyle: GoogleFonts.inter(
+                      color: AppColors.textTertiary,
+                    ),
                     filled: true,
                     fillColor: AppColors.surface,
                     border: OutlineInputBorder(
@@ -233,19 +265,23 @@ class _CustomInstructionsScreenState extends State<CustomInstructionsScreen> {
                   spacing: 8,
                   runSpacing: 8,
                   children: _examples
-                      .map((e) => ActionChip(
-                            label: Text(
-                              e,
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                color: AppColors.textSecondary,
-                              ),
+                      .map(
+                        (e) => ActionChip(
+                          label: Text(
+                            e,
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
                             ),
-                            backgroundColor: AppColors.surface,
-                            side: const BorderSide(
-                                color: AppColors.glassBorder, width: 0.5),
-                            onPressed: () => _append(e),
-                          ))
+                          ),
+                          backgroundColor: AppColors.surface,
+                          side: const BorderSide(
+                            color: AppColors.glassBorder,
+                            width: 0.5,
+                          ),
+                          onPressed: () => _append(e),
+                        ),
+                      )
                       .toList(),
                 ),
               ],
@@ -253,6 +289,38 @@ class _CustomInstructionsScreenState extends State<CustomInstructionsScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _InstructionLengthFormatter extends TextInputFormatter {
+  const _InstructionLengthFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    // Let the keyboard finish composing before changing its text. Save stays
+    // disabled if a composition temporarily exceeds the server's limit.
+    if (newValue.text.length <= CustomInstructionsScreen.maxLength ||
+        !newValue.composing.isCollapsed) {
+      return newValue;
+    }
+    final text = StringBuffer();
+    for (final character in newValue.text.characters) {
+      if (text.length + character.length > CustomInstructionsScreen.maxLength) {
+        break;
+      }
+      text.write(character);
+    }
+    return newValue.copyWith(
+      text: text.toString(),
+      selection: TextSelection(
+        baseOffset: newValue.selection.baseOffset.clamp(0, text.length),
+        extentOffset: newValue.selection.extentOffset.clamp(0, text.length),
+      ),
+      composing: TextRange.empty,
     );
   }
 }

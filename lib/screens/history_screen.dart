@@ -14,16 +14,19 @@ import '../widgets/qa_line.dart';
 /// History screen — shows all AI interactions from the calculator,
 /// including camera photos and text prompts.
 class HistoryScreen extends StatefulWidget {
-  const HistoryScreen({super.key});
+  const HistoryScreen({super.key, this.isActive = true});
+  final bool isActive;
 
   @override
   State<HistoryScreen> createState() => _HistoryScreenState();
 }
 
-class _HistoryScreenState extends State<HistoryScreen> {
+class _HistoryScreenState extends State<HistoryScreen>
+    with WidgetsBindingObserver {
   String _selectedRange = '24h';
   String _searchQuery = '';
   final _searchController = TextEditingController();
+  Future<void>? _refreshing;
 
   final _ranges = ['24h', '72h', '1w', '2w', '1mo', '6mo', 'all'];
 
@@ -51,10 +54,31 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadHistory());
   }
 
-  Future<void> _loadHistory() async {
+  @override
+  void didUpdateWidget(HistoryScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive && !oldWidget.isActive) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadHistory());
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _loadHistory();
+  }
+
+  Future<void> _loadHistory() {
+    if (!mounted || !widget.isActive) return Future.value();
+    return _refreshing ??= _fetchHistory().whenComplete(
+      () => _refreshing = null,
+    );
+  }
+
+  Future<void> _fetchHistory() async {
     final auth = context.read<AuthService>();
     final cloud = context.read<CloudService>();
     if (auth.token != null && auth.primaryMac != null) {
@@ -64,6 +88,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _searchController.dispose();
     super.dispose();
   }
@@ -129,9 +154,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         content: Text(cleared ? 'History cleared' : 'Could not clear history'),
         backgroundColor: AppColors.surfaceLight,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }
@@ -140,14 +163,22 @@ class _HistoryScreenState extends State<HistoryScreen> {
   DateTime? _cutoff() {
     final now = DateTime.now();
     switch (_selectedRange) {
-      case '24h': return now.subtract(const Duration(hours: 24));
-      case '72h': return now.subtract(const Duration(hours: 72));
-      case '1w':  return now.subtract(const Duration(days: 7));
-      case '2w':  return now.subtract(const Duration(days: 14));
-      case '1mo': return now.subtract(const Duration(days: 30));
-      case '6mo': return now.subtract(const Duration(days: 180));
-      case 'all': return null; // no time limit
-      default:    return null;
+      case '24h':
+        return now.subtract(const Duration(hours: 24));
+      case '72h':
+        return now.subtract(const Duration(hours: 72));
+      case '1w':
+        return now.subtract(const Duration(days: 7));
+      case '2w':
+        return now.subtract(const Duration(days: 14));
+      case '1mo':
+        return now.subtract(const Duration(days: 30));
+      case '6mo':
+        return now.subtract(const Duration(days: 180));
+      case 'all':
+        return null; // no time limit
+      default:
+        return null;
     }
   }
 
@@ -182,6 +213,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   ),
                   IconButton(
                     onPressed: _loadHistory,
+                    tooltip: 'Refresh history',
                     icon: const Icon(
                       Icons.refresh_rounded,
                       color: AppColors.textSecondary,
@@ -241,7 +273,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 8),
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
                           color: isSelected
@@ -277,11 +311,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
             Expanded(
               child: Consumer<CloudService>(
                 builder: (context, cloud, _) {
-                  if (cloud.isLoading && cloud.history.isEmpty) {
+                  if (cloud.isHistoryLoading && cloud.history.isEmpty) {
                     return const Center(
                       child: CircularProgressIndicator(
-                        valueColor:
-                            AlwaysStoppedAnimation(AppColors.textSecondary),
+                        valueColor: AlwaysStoppedAnimation(
+                          AppColors.textSecondary,
+                        ),
                       ),
                     );
                   }
@@ -298,9 +333,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     // Search filter
                     if (q.isEmpty) return true;
                     final text = _questionOf(entry).toLowerCase();
-                    final resp =
-                        latexToReadable((entry['response'] ?? '').toString())
-                            .toLowerCase();
+                    final resp = latexToReadable(
+                      (entry['response'] ?? '').toString(),
+                    ).toLowerCase();
                     return text.contains(q) || resp.contains(q);
                   }).toList();
 
@@ -310,74 +345,109 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     // Only a *history* failure means history failed. The shared
                     // `error` field also carries notes/model/usage errors.
                     final err = cloud.historyError;
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 32),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              err != null
-                                  ? Icons.cloud_off_rounded
-                                  : Icons.history_rounded,
-                              color: AppColors.textTertiary,
-                              size: 48,
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              err != null
-                                  ? "Couldn't load history"
-                                  : cloud.history.isEmpty
-                                      ? 'No prompts yet'
-                                      : 'Nothing in this time range',
-                              style: GoogleFonts.inter(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
+                    return _refreshableEmpty(
+                      Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 32),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                err != null
+                                    ? Icons.cloud_off_rounded
+                                    : Icons.history_rounded,
                                 color: AppColors.textTertiary,
+                                size: 48,
                               ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              err ??
-                                  (mac == null || mac.isEmpty
-                                      ? 'No device paired yet'
-                                      : 'Use CalcAI on your calculator to see history'),
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.inter(
-                                fontSize: 13,
-                                color: AppColors.textTertiary.withOpacity(0.6),
-                              ),
-                            ),
-                            if (mac != null && mac.isNotEmpty) ...[
-                              const SizedBox(height: 10),
+                              const SizedBox(height: 12),
                               Text(
-                                'device: $mac',
-                                style: GoogleFonts.robotoMono(
-                                  fontSize: 11,
-                                  color: AppColors.textTertiary.withOpacity(0.5),
+                                err != null
+                                    ? "Couldn't load history"
+                                    : cloud.history.isEmpty
+                                    ? 'No prompts yet'
+                                    : q.isNotEmpty
+                                    ? 'No matching prompts'
+                                    : 'Nothing in this time range',
+                                style: GoogleFonts.inter(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                  color: AppColors.textTertiary,
                                 ),
                               ),
+                              const SizedBox(height: 4),
+                              Text(
+                                err ??
+                                    (mac == null || mac.isEmpty
+                                        ? 'No device paired yet'
+                                        : 'Use CalcAI on your calculator to see history'),
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  color: AppColors.textTertiary.withOpacity(
+                                    0.6,
+                                  ),
+                                ),
+                              ),
+                              if (err != null) ...[
+                                const SizedBox(height: 10),
+                                TextButton.icon(
+                                  onPressed: _loadHistory,
+                                  icon: const Icon(Icons.refresh_rounded),
+                                  label: const Text('Retry'),
+                                ),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
                       ),
                     );
                   }
 
-                  return RefreshIndicator(
-                    onRefresh: _loadHistory,
-                    color: AppColors.electricBlue,
-                    backgroundColor: AppColors.surface,
-                    child: ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 100),
-                      itemCount: filtered.length,
-                      itemBuilder: (context, index) {
-                        return _HistoryCard(
-                          entry: filtered[index],
-                          onTap: () => _showDetail(context, filtered[index]),
-                        );
-                      },
-                    ),
+                  return Column(
+                    children: [
+                      if (cloud.isHistoryLoading)
+                        const LinearProgressIndicator(),
+                      if (cloud.historyError != null)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '${cloud.historyError} Showing saved activity.',
+                                  style: GoogleFonts.inter(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: _loadHistory,
+                                child: const Text('Retry'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      Expanded(
+                        child: RefreshIndicator(
+                          onRefresh: _loadHistory,
+                          color: AppColors.electricBlue,
+                          backgroundColor: AppColors.surface,
+                          child: ListView.builder(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.fromLTRB(20, 4, 20, 100),
+                            itemCount: filtered.length,
+                            itemBuilder: (context, index) {
+                              return _HistoryCard(
+                                entry: filtered[index],
+                                onTap: () =>
+                                    _showDetail(context, filtered[index]),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
                   );
                 },
               ),
@@ -387,6 +457,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
       ),
     );
   }
+
+  Widget _refreshableEmpty(Widget child) => RefreshIndicator(
+    onRefresh: _loadHistory,
+    color: AppColors.electricBlue,
+    backgroundColor: AppColors.surface,
+    child: CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [SliverFillRemaining(hasScrollBody: false, child: child)],
+    ),
+  );
 
   void _showDetail(BuildContext context, Map<String, dynamic> entry) {
     final isImage = _isImageEntry(entry);
@@ -415,7 +495,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
             children: [
               const SizedBox(height: 12),
               Container(
-                width: 40, height: 4,
+                width: 40,
+                height: 4,
                 decoration: BoxDecoration(
                   color: AppColors.textTertiary,
                   borderRadius: BorderRadius.circular(2),
@@ -434,40 +515,48 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
                     // Question
                     if (question.isNotEmpty) ...[
-                      Text('Q',
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textTertiary,
-                            letterSpacing: 0.8,
-                          )),
+                      Text(
+                        'Q',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textTertiary,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
                       const SizedBox(height: 6),
-                      Text(question,
-                          style: GoogleFonts.inter(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w500,
-                            color: AppColors.textPrimary,
-                            height: 1.5,
-                          )),
+                      Text(
+                        question,
+                        style: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textPrimary,
+                          height: 1.5,
+                        ),
+                      ),
                       const SizedBox(height: 20),
                     ],
 
                     // Response
                     if (response.isNotEmpty) ...[
-                      Text('A',
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textTertiary,
-                            letterSpacing: 0.8,
-                          )),
+                      Text(
+                        'A',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textTertiary,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
                       const SizedBox(height: 6),
-                      Text(response,
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            color: AppColors.textSecondary,
-                            height: 1.6,
-                          )),
+                      Text(
+                        response,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          color: AppColors.textSecondary,
+                          height: 1.6,
+                        ),
+                      ),
                     ],
                   ],
                 ),
@@ -545,8 +634,9 @@ class _HistoryCard extends StatelessWidget {
               CalcPhoto(
                 imageUrl: imageUrl,
                 height: 180,
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(16)),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(16),
+                ),
               ),
 
             // ── Text content ─────────────────────────────
@@ -579,7 +669,9 @@ class _HistoryCard extends StatelessWidget {
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.surfaceHighlight,
                             borderRadius: BorderRadius.circular(6),

@@ -1,6 +1,116 @@
-# CalcAI release readiness — October 15, 2026
+# CalcAI release readiness — October 17, 2026
 
 **Not ready for public submission. No App Review submission or public release has been made.** This current checklist replaces earlier chronological checklists. Automated checks are evidence, not a guarantee of security or App Review acceptance.
+
+## October 17 TestFlight candidate
+
+The owner requested a new signed Codemagic/TestFlight build with the fixes below.
+Before pushing, all **184 Flutter tests passed**, analysis with fatal infos found
+no issues, all **14 release source/asset checks passed**, and `git diff --check`
+passed. The manual TestFlight workflow repeats these checks and assigns the next
+available Apple build number. Native archive and Apple upload results are still
+pending at this source snapshot. No public App Review submission or installation
+over the physical coordinator's existing build 1100 is included.
+
+## October 17 History refresh diagnosis
+
+The physical test coordinator reported a successful calculator `render` solve
+with settled usage, while build 1100 still displayed empty History and Home
+activity. In a subsequent physical retest, the coordinator visually located and
+tapped the top-right refresh icon in installed build 1100. History immediately
+displayed the current account's `SOLVE2X+3=11` answer `x=4` with the model label.
+This confirms successful manual retrieval in that retest and supports stale
+client state as the cause of the earlier empty view. The actual HTTP status/body
+was not captured; the visible result must not be reported as an observed HTTP 200.
+
+Compared source against build 1100 commit `a313ff8052cecf6c4747c59bf2942a57277e7028`:
+
+- The top-right circular-arrow button beside Clear history already exists in
+  build 1100 and directly calls the History loader. It lacks a tooltip/label,
+  explaining why the accessibility tree cannot find a named Refresh button.
+  This is the supported manual refresh path; a cold launch is not required.
+- The empty History view bypasses its pull-to-refresh control. Changing a time
+  filter, returning to the retained tab, or resuming that tab does not reload
+  History in build 1100. Home's usage refresh is independent of activity.
+- Home displays an empty activity message even when the history read failed.
+
+Local fixes now refresh activity when returning to Home or History and when
+resuming the active page. Empty and filtered History views support pull-to-refresh,
+and the header action is named "Refresh history". Home and History display
+retryable errors; failed refreshes preserve previously loaded activity. History
+loading is independent of other cloud calls. Malformed success responses cannot
+be interpreted as empty history. Older concurrent responses, resets and completed
+history deletion cannot restore stale history or errors. Home refreshes retain
+the larger History fetch limit after the full tab has been opened.
+
+Validation: **36 targeted tests passed**, covering History/Home recovery, empty
+pull-to-refresh, render answers, tab/filter preservation, active-only resume,
+malformed data, stale-response/deletion races, account isolation and usage refresh.
+Analysis with fatal infos found no issues and all **14 source/asset checks passed**.
+All HTTP responses in these tests are local fixtures. No live history was cleared,
+no device/account/pairing/backend state was changed, and no build was uploaded or
+installed during that test pass. These fixes are included in the new candidate.
+
+Manual-refresh retrieval is now verified by the physical test coordinator. Search,
+range filters and controlled deletion checks are still in progress, not passed.
+Verify automatic refresh, empty pull-to-refresh and new error/retry behavior in a
+future coordinated test build without overwriting the ongoing installed-build
+test session. Build 1100 does not contain these local fixes.
+
+## October 17 focused iOS source fixes
+
+The installed production/TestFlight app remains **1.0.0 (1100)**. The following
+changes are included in the new candidate. No native app was built, installed or
+uploaded during the source-fix pass, and no physical phone, calculator, pairing
+or account was changed.
+
+- Note deletion, calculator-preview Previous/Next and Wi-Fi setup/management
+  Back buttons now use Material-localized tooltips/accessibility text. Delete
+  identifies the note. Flutter semantics checks verify button roles, tap actions
+  and paging boundaries; native VoiceOver/XCTest labels still need verification
+  in a future approved build.
+- Notes say "Saved to your account" after cloud success, and explain opening
+  Notes on the calculator over Wi-Fi. The app no longer claims confirmed device
+  delivery. The reported calculator `SERVER ERROR` belongs to Backend & AI and
+  the physical test owner; these wording changes do not resolve that error.
+- Custom instructions now enforce the server's actual 2,000 UTF-16-unit bound
+  for typing/pasting and example insertion, without splitting a grapheme. The
+  counter agrees with the server. An over-limit keyboard composition cannot be
+  saved until it is committed and bounded. Existing content is retained if an
+  example will not fit.
+- Validation: **19 focused tests passed** (notes, paging, Wi-Fi recovery/setup,
+  and instruction boundaries) plus **40 model/Fast mode/consent/usage tests**.
+  Analysis with fatal infos found no issues; all **14 source/asset checks**
+  passed. These use local fixtures, not real BLE, device delivery or AI solves.
+- A read-only public catalog request at `2026-10-17T05:32:07Z` returned schema 1
+  and 19 entries across OpenAI, Google and Anthropic. This verifies advertised
+  metadata, not successful provider inference or billing.
+
+Remaining physical evidence for MACBOOK/IOS and TI84/PCB TESTING:
+
+1. In a future test build, use VoiceOver/XCTest to identify and activate Delete,
+   Previous page, Next page and Back, including disabled first/last paging and
+   the Wi-Fi disconnected/error screen. Preserve build 1100 until coordinated.
+2. Verify custom instructions at 1,999/2,000/2,001 ASCII characters, pasted emoji
+   and combining characters, example insertion near the cap, native composing
+   keyboards, save/reopen persistence, failed-save retry and discard behavior.
+3. Test Bluetooth permission denied separately from radio off, then restore and
+   retry without re-pairing. Current Wi-Fi UI combines both into "Bluetooth
+   disconnected"; native permission-state behavior is not established here.
+4. Verify live provider/model selection with the account's plan and own-key
+   settings, failed/malformed catalog fallback, and unsupported Fast mode hidden.
+   A successful picker selection is not an inference-availability test.
+5. Verify saved AI-sharing refusal blocks an actual calculator AI request,
+   withdrawal/re-enable and network-failed consent retry. Local gate tests pass;
+   actual provider-call suppression requires backend/device evidence.
+6. After an authorized real text/photo solve, verify nonempty Home activity and
+   history, photo/detail access, settled per-account usage, resume/return-to-Home
+   refresh, syncing/offline/exhausted states and own-key separation. The app
+   refreshes usage after newly fetched history, on resume and on returning Home;
+   this is not proof of a live push notification for a solve while Home stays open.
+7. Recheck calculator Notes retrieval after the backend error is fixed, plus
+   note update/delete/reopen and offline read/save recovery. Cloud save success
+   must not be used as evidence that the calculator received the note.
 
 ## October 15 Fast mode visibility candidate
 

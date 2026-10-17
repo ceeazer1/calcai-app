@@ -1,3 +1,5 @@
+import 'dart:ui' show SemanticsAction;
+
 import 'support/fake_cloud_service.dart';
 import 'support/fake_auth_service.dart';
 import 'package:flutter/material.dart';
@@ -48,6 +50,8 @@ void main() {
     // The note should now be listed.
     expect(find.text('No notes yet'), findsNothing);
     expect(find.text('QUADRATIC FORMULA'), findsWidgets);
+    expect(find.text('Saved to your account'), findsOneWidget);
+    expect(find.textContaining('Synced to'), findsNothing);
   });
 
   testWidgets('the editor opens full screen with a back arrow', (tester) async {
@@ -104,8 +108,12 @@ void main() {
     expect(find.text('DELETE ME'), findsWidgets);
 
     // Trash icon, not an X.
-    final trash = find.byIcon(Icons.delete_outline_rounded);
+    final trash = find.byTooltip('Delete: DELETE ME');
     expect(trash, findsOneWidget);
+    final data = tester.getSemantics(trash).getSemanticsData();
+    expect(data.tooltip, 'Delete: DELETE ME');
+    expect(data.flagsCollection.isButton, isTrue);
+    expect(data.hasAction(SemanticsAction.tap), isTrue);
     await tester.tap(trash);
     await tester.pumpAndSettle();
 

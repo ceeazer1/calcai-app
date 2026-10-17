@@ -1,3 +1,5 @@
+import 'dart:ui' show SemanticsAction;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -6,6 +8,41 @@ import 'package:calcai_app/services/ble_service.dart';
 import 'package:calcai_app/screens/wifi_screen.dart';
 
 void main() {
+  testWidgets('Wi-Fi failure exposes an actionable Back button', (
+    tester,
+  ) async {
+    final ble = _UnavailableBluetooth();
+    addTearDown(ble.dispose);
+    await tester.pumpWidget(
+      ChangeNotifierProvider<BleService>.value(
+        value: ble,
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const WifiScreen()),
+                ),
+                child: const Text('Open Wi-Fi'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open Wi-Fi'));
+    await tester.pumpAndSettle();
+    expect(find.text('Bluetooth disconnected'), findsOneWidget);
+    final back = find.byTooltip('Back');
+    final data = tester.getSemantics(back).getSemanticsData();
+    expect(data.tooltip, 'Back');
+    expect(data.flagsCollection.isButton, isTrue);
+    expect(data.hasAction(SemanticsAction.tap), isTrue);
+    await tester.tap(back);
+    await tester.pumpAndSettle();
+    expect(find.byType(WifiScreen), findsNothing);
+    expect(find.text('Open Wi-Fi'), findsOneWidget);
+  });
   testWidgets('Home Wi-Fi edits, adds and removes saved networks', (
     tester,
   ) async {
@@ -115,4 +152,10 @@ void main() {
     expect(ble.portalClosed, isTrue);
     expect(ble.savedNetworks, isNotEmpty);
   });
+}
+
+class _UnavailableBluetooth extends SetupTestAppBle {
+  _UnavailableBluetooth() : super(delay: Duration.zero);
+  @override
+  Future<bool> requestPermissions() async => false;
 }

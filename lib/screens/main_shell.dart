@@ -60,7 +60,7 @@ class _MainShellState extends State<MainShell> {
                   ? const SizedBox.shrink()
                   : switch (index) {
                       0 => DashboardScreen(isActive: _currentIndex == 0),
-                      1 => const HistoryScreen(),
+                      1 => HistoryScreen(isActive: _currentIndex == 1),
                       2 => const NotesScreen(),
                       _ => const SettingsScreen(),
                     },
