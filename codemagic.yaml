@@ -69,9 +69,9 @@ workflows:
           set -euo pipefail
           : "${CERTIFICATE_PRIVATE_KEY:?Set the existing signing key in app_store_credentials}"
           keychain initialize
-          # Reuse the certificate matching the saved private key and fetch its profile.
+          # Reuse the saved key's existing certificate and profile; fail if missing.
           app-store-connect fetch-signing-files "com.calcai.calcaiApp" \
-            --type IOS_APP_STORE --create
+            --type IOS_APP_STORE
           keychain add-certificates
           xcode-project use-profiles --project ios/Runner.xcodeproj
       - &build-ipa
