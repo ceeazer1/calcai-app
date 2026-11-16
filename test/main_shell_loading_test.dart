@@ -26,9 +26,9 @@ class _CountingCloud extends FakeCloudService {
   }
 
   @override
-  Future<String> getNotes(String token, String mac) async {
+  Future<EditSnapshot> readNotesSnapshot(String token, String mac) async {
     notesLoads++;
-    return '';
+    return (text: '', revision: 0, etag: '"fixture-notes-0"');
   }
 }
 

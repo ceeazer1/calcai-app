@@ -714,6 +714,92 @@ void main() {
     cloud.dispose();
   });
 
+  testWidgets('expired V2 code requires a fresh connection and a new offer', (
+    tester,
+  ) async {
+    final ble = PairBle();
+    final auth = PairAuth();
+    final paths = <String>[];
+    var offers = 0;
+    final cloud = CloudService(
+      client: MockClient((request) async {
+        paths.add(request.url.path);
+        if (request.url.path == '/ai/pair/challenge') {
+          return http.Response(
+            jsonEncode({
+              ...offerData(),
+              'challengeId': (++offers == 1 ? 'a' : '2') * 32,
+            }),
+            200,
+          );
+        }
+        expectSync(request.url.path, '/ai/pair/claim');
+        expectSync((jsonDecode(request.body) as Map)['challengeId'], '2' * 32);
+        return http.Response(jsonEncode(completionData()), 200);
+      }),
+    );
+    addTearDown(ble.dispose);
+    addTearDown(auth.dispose);
+    addTearDown(cloud.dispose);
+    ble.intercept = (command) async {
+      switch (command['cmd']) {
+        case 'capabilities':
+          return ble.capabilities;
+        case 'pairapprove':
+          if (command['challengeId'] == 'a' * 32) {
+            return {'cmd': 'pairapprove', 'ok': false, 'error': 'code_expired'};
+          }
+          return {...approvalData(), 'challengeId': '2' * 32};
+        case 'paircomplete':
+          return {
+            'ok': true,
+            'cmd': 'paircomplete',
+            'protocol': 2,
+            'mac': mac,
+            'challengeId': '2' * 32,
+            'ownershipId': ownership,
+          };
+      }
+      throw StateError('Unexpected pairing command');
+    };
+
+    await openPair(tester, ble, auth, cloud);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Leave setup and reconnect.'), findsOneWidget);
+    expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
+    expect(
+      tester.widget<ElevatedButton>(find.byType(ElevatedButton)).onPressed,
+      isNull,
+    );
+    expect(paths, ['/ai/pair/challenge']);
+    expect(auth.adds, 0);
+
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Leave setup'));
+    await tester.pumpAndSettle();
+    expect(ble.connected, isFalse);
+
+    ble.connected = true;
+    await tester.tap(find.text('Start'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '654321');
+    await tester.pumpAndSettle();
+    expect(paths, [
+      '/ai/pair/challenge',
+      '/ai/pair/challenge',
+      '/ai/pair/claim',
+    ]);
+    expect(
+      ble.commands
+          .where((command) => command['cmd'] == 'pairapprove')
+          .map((command) => command['challengeId']),
+      ['a' * 32, '2' * 32],
+    );
+    expect(auth.adds, 1);
+    expect(find.byType(PairDeviceScreen), findsNothing);
+  });
+
   testWidgets('invalid completion stops without ownership or legacy fallback', (
     tester,
   ) async {

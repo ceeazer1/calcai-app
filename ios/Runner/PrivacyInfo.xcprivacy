@@ -88,6 +88,20 @@
             <key>NSPrivacyCollectedDataTypePurposes</key>
             <array><string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string></array>
         </dict>
+		<dict>
+			<!-- Optional personal provider credentials saved for the user's
+			     account, as classified in the App Store privacy worksheet. -->
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeOtherDataTypes</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
 	</array>
 
 	<!-- Required-reason APIs used by the app target itself. The app reads and

@@ -1,3 +1,5 @@
+import 'initial_release_ai.dart';
+
 /// Public model metadata served by CalcAI, never provider credentials/prices.
 class AiModel {
   const AiModel(
@@ -33,6 +35,9 @@ class AiModel {
           !seen.add(id)) {
         throw const FormatException('Invalid model metadata');
       }
+      // An older catalog can still advertise Gemini. Validate its shape, then
+      // exclude it rather than allowing a remote catalog to expand this release.
+      if (!InitialReleaseAi.allowsProvider(provider)) continue;
       result.add(
         AiModel(
           id,
@@ -57,12 +62,6 @@ const fallbackAiModels = <AiModel>[
   AiModel('gpt-5.6-sol', 'openai', fastMode: true),
   AiModel('gpt-5.6-terra', 'openai', fastMode: true),
   AiModel('gpt-5.6-luna', 'openai', free: true, fastMode: true),
-  AiModel('gemini-3.8-flash', 'google'),
-  AiModel('gemini-3.7-flash', 'google'),
-  AiModel('gemini-3.1-pro-preview', 'google'),
-  AiModel('gemini-3.6-flash', 'google'),
-  AiModel('gemini-3.5-flash', 'google', free: true),
-  AiModel('gemini-3.5-flash-lite', 'google', free: true),
   AiModel('claude-opus-5-5', 'anthropic', fastMode: true),
   AiModel('claude-sonnet-5-5', 'anthropic'),
   AiModel('claude-fable-5-1', 'anthropic'),

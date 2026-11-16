@@ -4,7 +4,8 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'local_bench_profile.dart';
+import 'bench_target_policy.dart';
 import 'dart:io' show Platform;
 
 import '../models/calcai_device.dart';
@@ -78,6 +79,12 @@ class BleService extends ChangeNotifier {
   /// Discovered CalcAI devices during BLE scan.
   final List<CalcAiDevice> _devices = [];
   List<CalcAiDevice> get devices => List.unmodifiable(_devices);
+  final _benchTarget = BenchTargetPolicy(
+    targetName: LocalBenchProfile.targetName,
+  );
+  int _benchScanGeneration = 0;
+  bool _benchScanInFlight = false;
+  bool _disposed = false;
 
   /// Whether a BLE scan is in progress.
   bool _isScanning = false;
@@ -113,6 +120,17 @@ class BleService extends ChangeNotifier {
   bool get savedNetworksLoading => _savedNetworksLoading;
   String? _savedNetworksError;
   String? get savedNetworksError => _savedNetworksError;
+
+  Completer<bool>? _networkRemoval;
+  int? _uncertainRemovalGeneration;
+  bool _forceSaveInProgress = false;
+  bool get networkRemovalNeedsReconnect =>
+      _uncertainRemovalGeneration == connectionGeneration;
+
+  void _cancelNetworkRemoval() {
+    final pending = _networkRemoval;
+    if (pending != null && !pending.isCompleted) pending.complete(false);
+  }
 
   /// Stable key used to persist saved networks (the user's primary device MAC),
   /// so they survive restarts and match what the home page loads. Set via
@@ -247,6 +265,7 @@ class BleService extends ChangeNotifier {
   Future<void> startScan({
     Duration timeout = const Duration(seconds: 10),
   }) async {
+    if (LocalBenchProfile.enabled) return _startBenchScan(timeout);
     if (_isScanning) return;
 
     _clearError();
@@ -298,13 +317,90 @@ class BleService extends ChangeNotifier {
     }
   }
 
+  Future<void> _startBenchScan(Duration timeout) async {
+    if (_disposed || _isScanning || _benchScanInFlight) return;
+    final generation = ++_benchScanGeneration;
+    _benchScanInFlight = true;
+    _benchTarget.beginScan();
+    _clearError();
+    _devices.clear();
+    _isScanning = true;
+    notifyListeners();
+    final candidates = <String, CalcAiDevice>{};
+    StreamSubscription<List<ScanResult>>? subscription;
+    var completed = false;
+    try {
+      await FlutterBluePlus.stopScan();
+      if (_disposed || generation != _benchScanGeneration) return;
+      subscription = FlutterBluePlus.onScanResults.listen((results) {
+        if (generation != _benchScanGeneration) return;
+        for (final result in results) {
+          final name = result.advertisementData.advName;
+          final id = result.device.remoteId.str;
+          _benchTarget.observe(name, id);
+          if (_benchTarget.matchesName(name)) {
+            candidates[id] = CalcAiDevice(
+              device: result.device,
+              rssi: result.rssi,
+              advertisementName: name,
+            );
+          }
+        }
+        // Do not expose the first result: finish the window and reject
+        // duplicate exact-name peripherals before UI auto-connect listeners run.
+      });
+      _scanSub = subscription;
+      await FlutterBluePlus.startScan(timeout: timeout);
+      if (_disposed || generation != _benchScanGeneration) {
+        await FlutterBluePlus.stopScan();
+        return;
+      }
+      await FlutterBluePlus.isScanning
+          .where((scanning) => !scanning)
+          .first
+          .timeout(timeout + const Duration(seconds: 5));
+      completed = true;
+    } catch (error) {
+      if (generation == _benchScanGeneration) {
+        _error = 'Bench discovery failed: ${_friendlyError(error)}';
+      }
+    } finally {
+      await subscription?.cancel();
+      _benchScanInFlight = false;
+      if (!_disposed && generation == _benchScanGeneration) {
+        _scanSub = null;
+        _isScanning = false;
+        if (completed) {
+          _benchTarget.completeScan();
+          final id = _benchTarget.allowedId;
+          if (id != null && candidates.containsKey(id)) {
+            _devices.add(candidates[id]!);
+          } else {
+            _error = _benchTarget.ambiguous
+                ? 'Multiple CALCAI-C62E peripherals found. Do not connect until the wired target is confirmed.'
+                : 'CALCAI-C62E was not found. Reopen the wired calculator Bluetooth portal and scan again.';
+          }
+        } else {
+          _benchTarget.invalidate();
+          await FlutterBluePlus.stopScan();
+        }
+        notifyListeners();
+      }
+    }
+  }
+
   /// Stops an ongoing BLE scan.
   Future<void> stopScan() async {
+    if (LocalBenchProfile.enabled) {
+      ++_benchScanGeneration;
+      _benchTarget.invalidate();
+      _devices.clear();
+    }
     await FlutterBluePlus.stopScan();
     _scanSub?.cancel();
     _scanSub = null;
     _isScanning = false;
-    notifyListeners();
+    if (!_disposed) notifyListeners();
   }
 
   // ── Connection ─────────────────────────────────────────────────────
@@ -312,9 +408,10 @@ class BleService extends ChangeNotifier {
   /// Connects to the given [device] and discovers provisioning services.
   static const String _kLastDeviceIdKey = 'last_ble_device_id';
 
-  Future<void> _saveLastDeviceId(String id) async {
+  Future<void> _saveLastDeviceId(String id, int generation) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await AppPreferences.getInstance();
+      if (_disposed || generation != connectionGeneration) return;
       await prefs.setString(_kLastDeviceIdKey, id);
     } catch (_) {}
   }
@@ -325,9 +422,12 @@ class BleService extends ChangeNotifier {
   /// timeout so a "device not here" case falls back to scanning quickly.
   /// Returns true if it connected.
   Future<bool> reconnectKnownDevice() async {
+    // Every new bench link must pass fresh exact-target discovery. Never read
+    // even a namespaced remembered UUID as a substitute for that observation.
+    if (LocalBenchProfile.enabled) return false;
     if (connectionState.isConnected) return true;
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await AppPreferences.getInstance();
       final id = prefs.getString(_kLastDeviceIdKey);
       if (id == null || id.isEmpty) return false;
       final dev = CalcAiDevice(
@@ -354,16 +454,41 @@ class BleService extends ChangeNotifier {
     Duration timeout = const Duration(seconds: 15),
     int attempts = 3,
   }) async {
-    _connectionGeneration++;
+    if (LocalBenchProfile.enabled &&
+        !_benchTarget.allows(device.advertisementName ?? '', device.id)) {
+      _setError(
+        'Connection blocked: freshly discover the exact CALCAI-C62E wired bench first.',
+      );
+      _setConnectionState(DeviceConnectionState.error);
+      return;
+    }
+    if (_disposed) return;
+    _cancelNetworkRemoval();
+    final generation = ++_connectionGeneration;
+    bool current() =>
+        !_disposed &&
+        generation == connectionGeneration &&
+        identical(_connectedDevice, device);
+    Future<void> abandonStale() async {
+      // Do not tear down a newer attempt to the same peripheral.
+      if (_connectedDevice?.id != device.id) {
+        try {
+          await device.device.disconnect();
+        } catch (_) {}
+      }
+    }
+
     _pairingApprovalVersion = null;
     _clearError();
-    _setConnectionState(DeviceConnectionState.connecting);
     _connectedDevice = device;
+    _setConnectionState(DeviceConnectionState.connecting);
+    if (!current()) return;
     notifyListeners();
 
     try {
       // Stop scanning to save power
       await stopScan();
+      if (!current()) return;
 
       // Connect, with retries. On iOS the FIRST connect to a freshly-
       // discovered peripheral very often hangs to timeout while an immediate
@@ -378,17 +503,27 @@ class BleService extends ChangeNotifier {
       Object? lastError;
       var didConnect = false;
       for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+        if (!current()) return;
         try {
           await device.device.connect(timeout: perAttempt, autoConnect: false);
+          if (!current()) {
+            await abandonStale();
+            return;
+          }
           didConnect = true;
           break;
         } catch (e) {
+          if (!current()) {
+            await abandonStale();
+            return;
+          }
           lastError = e;
           logDebug('connect attempt $attempt/$maxAttempts failed: $e');
           // Make sure we're fully torn down before retrying, then settle.
           try {
             await device.device.disconnect();
           } catch (_) {}
+          if (!current()) return;
           if (attempt < maxAttempts) {
             await Future.delayed(const Duration(milliseconds: 500));
           }
@@ -402,7 +537,7 @@ class BleService extends ChangeNotifier {
       // AFTER the retry loop so a failed attempt's teardown doesn't trip it.)
       _connectionSub?.cancel();
       _connectionSub = device.device.connectionState.listen((state) {
-        if (state == BluetoothConnectionState.disconnected) {
+        if (current() && state == BluetoothConnectionState.disconnected) {
           _handleDisconnection();
         }
       });
@@ -412,14 +547,22 @@ class BleService extends ChangeNotifier {
       if (Platform.isAndroid) {
         await device.device.requestMtu(517);
       }
+      if (!current()) return;
 
       _setConnectionState(DeviceConnectionState.connected);
+      if (!current()) return;
       // Remember this peripheral for fast direct reconnects next time.
-      _saveLastDeviceId(device.device.remoteId.str);
+      await _saveLastDeviceId(device.device.remoteId.str, generation);
+      if (!current()) return;
 
       // Discover services
       _setConnectionState(DeviceConnectionState.discovering);
+      if (!current()) return;
       final services = await device.device.discoverServices();
+      if (!current()) {
+        await abandonStale();
+        return;
+      }
 
       // Find the provisioning service
       bool serviceFound = false;
@@ -443,6 +586,7 @@ class BleService extends ChangeNotifier {
 
       // Subscribe to status notifications if available
       await _subscribeToStatus();
+      if (!current()) return;
 
       // Do not request saved networks here. The firmware handles `list`
       // asynchronously, while pairing commands answer immediately on the same
@@ -452,6 +596,7 @@ class BleService extends ChangeNotifier {
       // refresh it after provisioning.
       _setConnectionState(DeviceConnectionState.ready);
     } catch (e) {
+      if (!current()) return;
       _setError('Connection failed: ${_friendlyError(e)}');
       _setConnectionState(DeviceConnectionState.error);
     }
@@ -459,6 +604,7 @@ class BleService extends ChangeNotifier {
 
   /// Disconnects from the current device.
   Future<void> disconnect() async {
+    _cancelNetworkRemoval();
     final generation = ++_connectionGeneration;
     final device = _connectedDevice;
     _pairingApprovalVersion = null;
@@ -480,6 +626,7 @@ class BleService extends ChangeNotifier {
   }
 
   void _handleDisconnection() {
+    _cancelNetworkRemoval();
     _connectionGeneration++;
     _wifiScanGeneration++;
     _savedNetworksLoading = false;
@@ -511,12 +658,19 @@ class BleService extends ChangeNotifier {
   }
 
   Future<void> _subscribeToStatus() async {
-    if (_statusChar == null) return;
-    if (!_statusChar!.properties.notify) return;
+    final characteristic = _statusChar;
+    final generation = connectionGeneration;
+    if (characteristic == null || !characteristic.properties.notify) return;
 
     try {
-      await _statusChar!.setNotifyValue(true);
-      _statusNotifySub = _statusChar!.lastValueStream.listen((value) {
+      await characteristic.setNotifyValue(true);
+      if (_disposed ||
+          generation != connectionGeneration ||
+          !identical(characteristic, _statusChar)) {
+        return;
+      }
+      _statusNotifySub = characteristic.lastValueStream.listen((value) {
+        if (_disposed || generation != connectionGeneration) return;
         _handleStatusUpdate(value);
       });
     } catch (e) {
@@ -532,6 +686,12 @@ class BleService extends ChangeNotifier {
       final data = jsonDecode(json) as Map<String, dynamic>;
 
       final status = data['status'] as String?;
+      // Removal has its own fresh, SSID-bound notification waiter. Its failure
+      // must not be interpreted as a failed Wi-Fi connection attempt.
+      if (_networkRemoval != null &&
+          (status == 'removed' || status == 'failed' || status == 'error')) {
+        return;
+      }
       if (status == 'connected') {
         _connectedSsid = data['ssid'] as String? ?? _connectedSsid;
         // Normalize MAC: "AA:BB:CC:DD:EE:FF" → "aabbccddeeff".
@@ -848,7 +1008,7 @@ class BleService extends ChangeNotifier {
     if (norm == null) return;
     _persistMac = norm; // keep persist + load keyed identically
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await AppPreferences.getInstance();
       final json = prefs.getString('saved_networks_$norm');
       if (json != null) {
         final list = jsonDecode(json) as List;
@@ -879,7 +1039,7 @@ class BleService extends ChangeNotifier {
         _normMac(_connectedDevice?.device.remoteId.str);
     if (mac == null) return;
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await AppPreferences.getInstance();
       await prefs.setString('saved_networks_$mac', jsonEncode(_savedNetworks));
       await prefs.setString(
         'iphone_hotspots_$mac',
@@ -946,6 +1106,10 @@ class BleService extends ChangeNotifier {
     final generation = connectionGeneration;
     final characteristic = commandCharacteristic;
     _lastCommandError = null;
+    final benchProbe =
+        LocalBenchProfile.enabled &&
+        (cmd['cmd'] == 'capabilities' || cmd['cmd'] == 'pairinfo');
+    var stage = 'write';
     if (characteristic == null) {
       _lastCommandError = 'no command characteristic';
       return null;
@@ -971,27 +1135,45 @@ class BleService extends ChangeNotifier {
       for (var attempt = 0; attempt < 4; attempt++) {
         await Future.delayed(const Duration(milliseconds: 250));
         if (generation != connectionGeneration) return null;
+        stage = 'read';
         final raw = await characteristic.read();
         if (generation != connectionGeneration) return null;
-        if (raw.isEmpty) continue;
+        if (raw.isEmpty) {
+          if (benchProbe) _lastCommandError = 'empty characteristic read';
+          continue;
+        }
         try {
           final data = jsonDecode(utf8.decode(raw));
-          if (data is! Map<String, dynamic>) continue;
+          if (data is! Map<String, dynamic>) {
+            if (benchProbe) {
+              _lastCommandError = 'characteristic returned a non-object reply';
+            }
+            continue;
+          }
           // Firmware that echoes the command lets us prove the reply is ours
           // rather than a leftover from another exchange. Older firmware sends
           // no echo, so absence is accepted rather than treated as a mismatch.
           final echo = data['cmd'];
-          if (echo is String && echo != cmd['cmd']) continue;
+          if (echo is String && echo != cmd['cmd']) {
+            if (benchProbe) _lastCommandError = 'reply was for another command';
+            continue;
+          }
+          _lastCommandError = null;
           return data;
         } catch (_) {
           // Could still be a stale scan/list payload — try again.
+          if (benchProbe) {
+            _lastCommandError = 'characteristic returned invalid JSON';
+          }
         }
       }
     } on PairingV2Exception {
       rethrow;
     } catch (e) {
       logDebug('CalcAI BLE: command ${cmd['cmd']} failed: $e');
-      _lastCommandError = e.toString();
+      _lastCommandError = benchProbe
+          ? '$stage: ${_friendlyError(e)}'
+          : e.toString();
     }
     return null;
   }
@@ -1012,6 +1194,18 @@ class BleService extends ChangeNotifier {
     final generation = connectionGeneration;
     final reply = await sendPairingCommand({'cmd': 'capabilities'});
     if (generation != connectionGeneration || reply == null) {
+      if (LocalBenchProfile.enabled && generation == connectionGeneration) {
+        final capabilitiesFailure = _lastCommandError ?? 'no matching reply';
+        final info = await sendPairingCommand({'cmd': 'pairinfo'});
+        final infoResult = info == null
+            ? (_lastCommandError ?? 'no matching reply')
+            : 'reply received (version ${info['pairingApprovalVersion'] ?? 'unspecified'})';
+        throw PairingV2Exception(
+          'Pairing support read failed. Capabilities: $capabilitiesFailure. '
+          'Pair info: $infoResult.',
+          restartRequired: true,
+        );
+      }
       throw const PairingV2Exception(
         'Could not read pairing support. Reconnect and try again.',
         restartRequired: true,
@@ -1153,12 +1347,19 @@ class BleService extends ChangeNotifier {
   }
 
   /// Ask the authenticated calculator to stop advertising as well as drop
-  /// this link. Older firmware echoes normal mode, so cannot fake success.
+  /// this link. Only the exact same-connection closed acceptance is success.
+  /// This is not a measurement of radio shutdown or the TI's physical screen.
+  /// Firmware 1.4.8 preserves accepted shutdown across this disconnect; earlier
+  /// versions can lose it. No local sleep can certify that physical outcome.
   Future<bool> closeBlePortal() async {
     final generation = connectionGeneration;
     final reply = await _command({'cmd': 'uimode', 'mode': 'closed'});
     if (generation != connectionGeneration) return false;
-    if (reply?['ok'] != true || reply?['mode'] != 'closed') return false;
+    if (reply?['cmd'] != 'uimode' ||
+        reply?['ok'] != true ||
+        reply?['mode'] != 'closed') {
+      return false;
+    }
     await disconnect();
     return true;
   }
@@ -1394,6 +1595,10 @@ class BleService extends ChangeNotifier {
     String password = '',
     bool iphoneHotspot = false,
   }) async {
+    if (_networkRemoval != null || _forceSaveInProgress) {
+      _setError('Wait for the current Wi-Fi request before changing settings.');
+      return false;
+    }
     if (_configChar == null) {
       _setError('WiFi config characteristic not available.');
       return false;
@@ -1415,6 +1620,10 @@ class BleService extends ChangeNotifier {
       return false;
     }
 
+    if (_networkRemoval != null || _forceSaveInProgress) {
+      _setError('Wait for the current Wi-Fi request before changing settings.');
+      return false;
+    }
     _connectedSsid = ssid;
     _provisioningState = ProvisioningState.sendingCredentials;
     notifyListeners();
@@ -1465,6 +1674,31 @@ class BleService extends ChangeNotifier {
     String password = '',
     bool iphoneHotspot = false,
   }) async {
+    if (_networkRemoval != null || _forceSaveInProgress) {
+      _setError('Wait for the current Wi-Fi request before saving a network.');
+      return false;
+    }
+    _forceSaveInProgress = true;
+    try {
+      return await _forceSaveNetwork(
+        ssid: ssid,
+        password: password,
+        iphoneHotspot: iphoneHotspot,
+      );
+    } finally {
+      _forceSaveInProgress = false;
+    }
+  }
+
+  Future<bool> _forceSaveNetwork({
+    required String ssid,
+    String password = '',
+    bool iphoneHotspot = false,
+  }) async {
+    if (_networkRemoval != null) {
+      _setError('Wait for the current Wi-Fi request before changing settings.');
+      return false;
+    }
     if (_configChar == null) {
       _setError('WiFi config characteristic not available.');
       return false;
@@ -1478,6 +1712,10 @@ class BleService extends ChangeNotifier {
     }
 
     try {
+      if (_networkRemoval != null) {
+        _setError('Wait for the current Wi-Fi request before changing settings.');
+        return false;
+      }
       final payload = jsonEncode({
         'action': 'force_save',
         'ssid': ssid,
@@ -1598,31 +1836,158 @@ class BleService extends ChangeNotifier {
     }
   }
 
-  /// Removes one saved network from the ESP32 and local cache.
-  Future<bool> removeWifiNetwork(String ssid) async {
-    if (_configChar == null) {
-      _setError('WiFi config characteristic not available.');
+  /// A GATT write only queues removal. Keep the cache until the calculator
+  /// confirms persistent removal with a fresh status notification.
+  Future<bool> removeWifiNetwork(String ssid) {
+    final generation = connectionGeneration;
+    return _serialize(() async {
+      if (_disposed || generation != connectionGeneration) return false;
+      return _removeWifiNetworkLocked(ssid, generation);
+    });
+  }
+
+  Future<bool> _removeWifiNetworkLocked(String ssid, int generation) async {
+    final config = _configChar;
+    final status = _statusChar;
+    if (config == null ||
+        status == null ||
+        connectionState != DeviceConnectionState.ready ||
+        pairedOwner == null) {
+      _setError('Reconnect to your calculator to remove this network.');
+      return false;
+    }
+    if (!status.properties.notify) {
+      _setError(
+        'The calculator cannot confirm removal over Bluetooth. '
+        'Update its firmware and reconnect before trying again.',
+      );
+      return false;
+    }
+    if (_uncertainRemovalGeneration == generation) {
+      _setError(
+        'Removal was not confirmed. Reconnect to your calculator before '
+        'trying again, or refresh its saved networks. It may already be removed.',
+      );
+      return false;
+    }
+    if (_forceSaveInProgress ||
+        _provisioningState == ProvisioningState.sendingCredentials ||
+        _provisioningState == ProvisioningState.waitingForConnection) {
+      _setError(
+        'Wait for the Wi-Fi connection attempt before removing a network.',
+      );
       return false;
     }
 
+    bool current() =>
+        !_disposed &&
+        generation == connectionGeneration &&
+        identical(config, _configChar) &&
+        identical(status, _statusChar);
+    final completion = Completer<bool>();
+    _networkRemoval = completion;
     _clearError();
+    var dispatched = false;
+    StreamSubscription<List<int>>? subscription;
+    Timer? deadline;
+
+    void fail(String message, {bool uncertain = false}) {
+      if (completion.isCompleted) return;
+      if (current()) {
+        if (uncertain && dispatched) _uncertainRemovalGeneration = generation;
+        _setError(message);
+      }
+      if (!completion.isCompleted) completion.complete(false);
+    }
 
     try {
-      final payload = jsonEncode({'action': 'remove', 'ssid': ssid});
+      deadline = Timer(const Duration(seconds: 10), () {
+        fail(
+          'Network removal timed out. It may already be removed. '
+          'Reconnect before trying again, or refresh saved networks.',
+          uncertain: true,
+        );
+      });
+      // Unlike lastValueStream this never replays cached status. Do not read
+      // or poll this characteristic: a stale matching read is not an ACK.
+      subscription = status.onValueReceived.listen(
+        (bytes) {
+          if (!dispatched || !current() || completion.isCompleted) return;
+          try {
+            final reply = jsonDecode(utf8.decode(bytes));
+            if (reply is! Map<String, dynamic>) return;
+            final sameSsid = reply['ssid'] == ssid;
+            if (reply['status'] == 'removed' && sameSsid) {
+              completion.complete(true);
+            } else if (reply['status'] == 'failed' &&
+                (sameSsid ||
+                    (reply['ssid'] == null &&
+                        reply['error'] == 'bad_request'))) {
+              fail(
+                'The calculator could not confirm removal. It may already be '
+                'removed. Refresh saved networks or try again.',
+              );
+            } else if (reply['status'] == 'error' &&
+                reply['error'] == 'no remove handler' &&
+                (sameSsid || reply['ssid'] == null)) {
+              fail('Update the calculator firmware before removing networks.');
+            }
+          } catch (_) {
+            // Partial, unrelated and wrong-SSID replies cannot confirm removal.
+          }
+        },
+        onError: (Object error) => fail(
+          'Could not confirm removal. Reconnect before trying again. '
+          'The network may already be removed.',
+          uncertain: true,
+        ),
+        onDone: () => fail(
+          'Bluetooth disconnected before removal was confirmed. '
+          'Reconnect and refresh saved networks.',
+          uncertain: true,
+        ),
+      );
 
-      await _configChar!.write(utf8.encode(payload), withoutResponse: false);
+      // Arm before writing so an immediate firmware notification is not lost.
+      // No request fields or pairing/ownership gates are changed.
+      unawaited(() async {
+        try {
+          await status
+              .setNotifyValue(true, timeout: 5)
+              .timeout(const Duration(seconds: 5));
+          if (!current() || completion.isCompleted) return;
+          dispatched = true;
+          await config
+              .write(
+                utf8.encode(jsonEncode({'action': 'remove', 'ssid': ssid})),
+                withoutResponse: false,
+                timeout: 5,
+              )
+              .timeout(const Duration(seconds: 5));
+        } catch (_) {
+          fail(
+            'Could not confirm removal. Reconnect before trying again. '
+            'The network may already be removed.',
+            uncertain: dispatched,
+          );
+        }
+      }());
 
-      // Remove from local lists and persist
+      final confirmed = await completion.future;
+      if (!confirmed || !current()) return false;
       _wifiNetworks.removeWhere((n) => n.ssid == ssid);
       _savedNetworks.remove(ssid);
       _iphoneHotspotNetworks.remove(ssid);
       await _persistSavedNetworks();
-      notifyListeners();
-
-      return true;
-    } catch (e) {
-      _setError('Failed to remove network: $e');
+      if (current()) notifyListeners();
+      return current();
+    } catch (_) {
+      fail('Could not confirm network removal. Reconnect and try again.');
       return false;
+    } finally {
+      deadline?.cancel();
+      await subscription?.cancel();
+      if (identical(_networkRemoval, completion)) _networkRemoval = null;
     }
   }
 
@@ -1687,6 +2052,11 @@ class BleService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _cancelNetworkRemoval();
+    _disposed = true;
+    ++_connectionGeneration;
+    ++_benchScanGeneration;
+    _benchTarget.invalidate();
     _scanSub?.cancel();
     _connectionSub?.cancel();
     _statusNotifySub?.cancel();

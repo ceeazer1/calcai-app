@@ -202,12 +202,12 @@ void main() {
         if (r.method == 'GET') return jsonResponse(configuration());
         sent.add(jsonDecode(r.body));
         // Missing fresh capability must not inherit the old model's access.
-        return jsonResponse({'model': 'gemini-3.5-flash', 'fastMode': false});
+        return jsonResponse({'model': 'claude-sonnet-5-5', 'fastMode': false});
       }),
     );
     addTearDown(cloud.dispose);
     await cloud.getModel('session', mac);
-    await cloud.setModel('session', mac, 'gemini-3.5-flash', 'small');
+    await cloud.setModel('session', mac, 'claude-sonnet-5-5', 'small');
     expect(sent.single.containsKey('fastModeFunding'), false);
     expect(sent.single.containsKey('fastMode'), false);
     expect(cloud.fastModeCapability, null);
@@ -330,7 +330,8 @@ void main() {
         cloud.providerFundingDetail('OpenAI'),
         contains('does not use your CalcAI allowance'),
       );
-      expect(cloud.providerFundingLabel('Google'), 'Using CalcAI allowance');
+      expect(cloud.providerFunding('Google'), isNull);
+      expect(cloud.apiKeyEnabled('Google'), isFalse);
       expect(cloud.providerFundingLabel('Anthropic'), 'Using CalcAI allowance');
       expect(cloud.providerFundingDetail('Google'), null);
     },
@@ -365,7 +366,7 @@ void main() {
     fail = true;
     await cloud.listApiKeys('session');
     expect(cloud.providerFunding('openai'), null);
-    expect(cloud.providerFundingLabel('google'), 'Could not confirm billing');
+    expect(cloud.providerFundingLabel('openai'), 'Could not confirm billing');
   });
 
   test('failed key toggle does not optimistically show allowance', () async {

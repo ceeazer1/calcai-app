@@ -19,10 +19,12 @@ import '../utils/latex_readable.dart';
 import '../utils/safe_image.dart';
 import '../widgets/calc_photo.dart';
 import '../widgets/qa_line.dart';
+import '../models/initial_release_ai.dart';
+import '../widgets/response_style_usage_dots.dart';
 
 /// What the backend falls back to when a device has no model set
 /// (`OPENAI_MODEL` in edge-worker/wrangler.toml).
-const String kDefaultModel = 'gpt-5.6-luna';
+const String kDefaultModel = InitialReleaseAi.defaultModel;
 
 /// Model IDs usable on the free plan. Everything else is premium.
 ///
@@ -30,12 +32,9 @@ const String kDefaultModel = 'gpt-5.6-luna';
 const Set<String> kFreeModels = {
   'gpt-6-luna',
   'gpt-5.6-luna',
-  'gemini-3.5-flash',
-  'gemini-3.5-flash-lite',
   'claude-haiku-4-5',
   // Retired from the picker but still valid on devices provisioned earlier.
   'gpt-5-mini',
-  'gemini-3.1-flash-lite',
 };
 
 bool isFreeModel(String model) => kFreeModels.contains(model);
@@ -311,13 +310,22 @@ class _DashboardScreenState extends State<DashboardScreen>
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      cloud.currentModel ?? 'Not set',
+                      cloud.modelUnavailable
+                          ? 'Choose an available AI model'
+                          : cloud.currentModel ?? 'Not set',
                       style: GoogleFonts.inter(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                         color: AppColors.textPrimary,
                       ),
                     ),
+                    if (cloud.modelUnavailable) ...[
+                      const SizedBox(height: 4),
+                      const Text(
+                        InitialReleaseAi.unavailableMessage,
+                        style: TextStyle(color: AppColors.textSecondary),
+                      ),
+                    ],
                     if (provider != null) ...[
                       const SizedBox(height: 4),
                       ProviderFundingLabel(
@@ -353,6 +361,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   Widget _buildFastMode() => Consumer2<AuthService, CloudService>(
     builder: (context, auth, cloud, _) {
+      if (cloud.modelUnavailable) return const SizedBox.shrink();
       final model = cloud.currentModel ?? kDefaultModel;
       final capability = cloud.fastModeCapability;
       if (capability?.supported == false ||
@@ -458,7 +467,10 @@ class _DashboardScreenState extends State<DashboardScreen>
           presets: _styles,
           current: current,
           expanded: _styleExpanded,
-          onToggle: () => setState(() => _styleExpanded = !_styleExpanded),
+          showUsage: true,
+          onToggle: () {
+            setState(() => _styleExpanded = !_styleExpanded);
+          },
           onSelect: (id) {
             _setStyle(id);
             setState(() => _styleExpanded = false);
@@ -486,7 +498,9 @@ class _DashboardScreenState extends State<DashboardScreen>
           presets: _efforts,
           current: current,
           expanded: _effortExpanded,
-          onToggle: () => setState(() => _effortExpanded = !_effortExpanded),
+          onToggle: () {
+            setState(() => _effortExpanded = !_effortExpanded);
+          },
           onSelect: (id) {
             _setEffort(id);
             setState(() => _effortExpanded = false);
@@ -497,8 +511,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   /// "Add your own" — the last entry in the response-style list. Opens the
-  /// full-screen editor, and once something is saved it shows the first line so
-  /// the setting stays legible without opening it.
+  /// full-screen editor. Its usage depends on the instructions supplied.
   Widget _addYourOwnOption(String saved) {
     final text = saved.trim();
     final hasText = text.isNotEmpty;
@@ -515,40 +528,19 @@ class _DashboardScreenState extends State<DashboardScreen>
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
           child: Row(
             children: [
-              Icon(
-                hasText ? Icons.edit_rounded : Icons.add_rounded,
-                size: 18,
-                color: hasText
-                    ? AppColors.electricBlue
-                    : AppColors.textSecondary,
-              ),
-              const SizedBox(width: 10),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      hasText ? 'Your own instructions' : 'Add your own',
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    Text(
-                      hasText
-                          ? text.split(RegExp(r'\r?\n')).first
-                          : 'Tell the AI how you want answers',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: AppColors.textTertiary,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  hasText ? 'Your own instructions' : 'Add your own',
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
               ),
+              const SizedBox(width: 12),
+              const ResponseStyleUsageDots(style: null),
+              const SizedBox(width: 32),
             ],
           ),
         ),
@@ -566,6 +558,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     required VoidCallback onToggle,
     required ValueChanged<String> onSelect,
     Widget? extraOption,
+    bool showUsage = false,
   }) {
     return GlassCard(
       padding: EdgeInsets.zero,
@@ -608,6 +601,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                         ],
                       ),
                     ),
+                    if (showUsage) ...[
+                      const SizedBox(width: 12),
+                      ResponseStyleUsageDots(style: current),
+                      const SizedBox(width: 10),
+                    ],
                     AnimatedRotation(
                       turns: expanded ? 0.5 : 0.0,
                       duration: const Duration(milliseconds: 220),
@@ -636,7 +634,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                         margin: const EdgeInsets.symmetric(horizontal: 14),
                         color: AppColors.glassBorder,
                       ),
-                      ...presets.map((s) => _option(s, current, onSelect)),
+                      ...presets.map(
+                        (s) =>
+                            _option(s, current, onSelect, showUsage: showUsage),
+                      ),
                       if (extraOption != null) ...[
                         Container(
                           height: 0.5,
@@ -659,48 +660,62 @@ class _DashboardScreenState extends State<DashboardScreen>
   Widget _option(
     (String, String, String) s,
     String current,
-    ValueChanged<String> onSelect,
-  ) {
+    ValueChanged<String> onSelect, {
+    bool showUsage = false,
+  }) {
     final isSelected = s.$1 == current;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => onSelect(s.$1),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      s.$2,
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: isSelected
-                            ? FontWeight.w600
-                            : FontWeight.w500,
-                        color: AppColors.textPrimary,
+    return Semantics(
+      selected: isSelected,
+      button: true,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => onSelect(s.$1),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 48),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        s.$2,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: isSelected
+                              ? FontWeight.w600
+                              : FontWeight.w500,
+                          color: AppColors.textPrimary,
+                        ),
                       ),
-                    ),
-                    Text(
-                      s.$3,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: AppColors.textTertiary,
-                      ),
-                    ),
-                  ],
+                      if (!showUsage)
+                        Text(
+                          s.$3,
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: AppColors.textTertiary,
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-              ),
-              if (isSelected)
-                const Icon(
-                  Icons.check_circle_rounded,
-                  color: AppColors.electricBlue,
-                  size: 20,
-                ),
-            ],
+                if (showUsage) ...[
+                  const SizedBox(width: 12),
+                  ResponseStyleUsageDots(style: s.$1),
+                  const SizedBox(width: 12),
+                ],
+                if (isSelected)
+                  const Icon(
+                    Icons.check_circle_rounded,
+                    color: AppColors.electricBlue,
+                    size: 20,
+                  )
+                else if (showUsage)
+                  const SizedBox(width: 20),
+              ],
+            ),
           ),
         ),
       ),
@@ -820,42 +835,50 @@ class _DashboardScreenState extends State<DashboardScreen>
 
             const SizedBox(height: 12),
 
-            // ── Bare "Add or manage networks" row (no box, no chevron) ──
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: _openWifi,
-                borderRadius: BorderRadius.circular(12),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 6,
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: AppColors.electricBlue.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(10),
+            // Keep this action separate from the saved-list text in iOS
+            // accessibility, with bounds matching the tappable row.
+            Semantics(
+              container: true,
+              button: true,
+              label: 'Edit network',
+              onTap: _openWifi,
+              excludeSemantics: true,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: _openWifi,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 6,
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: AppColors.electricBlue.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(
+                            Icons.add_rounded,
+                            color: AppColors.electricBlue,
+                            size: 20,
+                          ),
                         ),
-                        child: const Icon(
-                          Icons.add_rounded,
-                          color: AppColors.electricBlue,
-                          size: 20,
+                        const SizedBox(width: 12),
+                        Text(
+                          'Edit network',
+                          style: GoogleFonts.inter(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        'Edit network',
-                        style: GoogleFonts.inter(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1002,7 +1025,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     final providers = [
       for (final entry in [
         ('openai', 'OpenAI', Icons.auto_awesome_rounded),
-        ('google', 'Google', Icons.cloud_rounded),
         ('anthropic', 'Anthropic', Icons.psychology_rounded),
       ])
         if (cloud.modelCatalog.any((m) => m.provider == entry.$1))
@@ -1054,11 +1076,10 @@ class _DashboardScreenState extends State<DashboardScreen>
     final auth = context.read<AuthService>();
     final cloud = context.read<CloudService>();
     if (auth.token != null && auth.primaryMac != null) {
-      await cloud.setModel(
+      await cloud.updateModelPreferences(
         auth.token!,
         auth.primaryMac!,
-        cloud.currentModel ?? kDefaultModel,
-        style,
+        style: style,
       );
     }
   }
@@ -1067,11 +1088,9 @@ class _DashboardScreenState extends State<DashboardScreen>
     final auth = context.read<AuthService>();
     final cloud = context.read<CloudService>();
     if (auth.token != null && auth.primaryMac != null) {
-      await cloud.setModel(
+      await cloud.updateModelPreferences(
         auth.token!,
         auth.primaryMac!,
-        cloud.currentModel ?? kDefaultModel,
-        cloud.responseStyle,
         effort: effort,
       );
     }

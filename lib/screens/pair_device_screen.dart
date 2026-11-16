@@ -313,9 +313,11 @@ class _PairDeviceScreenState extends State<PairDeviceScreen> {
                       ),
                     ],
                     const SizedBox(height: 24),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 52,
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        minWidth: double.infinity,
+                        minHeight: 52,
+                      ),
                       child: ElevatedButton(
                         onPressed: _submitting || _restartRequired
                             ? null
@@ -341,7 +343,10 @@ class _PairDeviceScreenState extends State<PairDeviceScreen> {
                                 ),
                               )
                             : Text(
-                                _offer != null ? 'Retry' : 'Pair',
+                                _offer != null ||
+                                        (_error != null && !_restartRequired)
+                                    ? 'Retry'
+                                    : 'Pair',
                                 style: GoogleFonts.inter(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,

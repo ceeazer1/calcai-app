@@ -7,7 +7,7 @@ void main() {
     // the app labels a model free that the backend charges as premium.
     expect(isFreeModel('gpt-5.6-luna'), isTrue);
     expect(isFreeModel('gpt-6-luna'), isTrue);
-    expect(isFreeModel('gemini-3.5-flash'), isTrue);
+    expect(isFreeModel('gemini-3.5-flash'), isFalse);
     expect(isFreeModel('claude-haiku-4-5'), isTrue);
 
     expect(isFreeModel('gpt-5.6-sol'), isFalse);

@@ -7,7 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+import 'local_bench_profile.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import 'resilient_http_client.dart';
@@ -29,10 +29,23 @@ enum EmailAuthOutcome {
   failed,
 }
 
+class _AuthAttempt {
+  bool pending = true;
+  bool sessionCommitted = false;
+}
+
+typedef _SessionSnapshot = ({
+  String token,
+  String? username,
+  String? email,
+  List<String> deviceMacs,
+  String? primaryMac,
+});
+
 /// Manages authentication state for the CalcAI app.
 ///
 /// Handles sign-in / sign-out, token persistence via [FlutterSecureStorage],
-/// and device-list management via [SharedPreferences].
+/// and device-list management via [AppPreferences].
 ///
 /// Consumers should listen to this [ChangeNotifier] (e.g. via `Provider`) to
 /// react to auth-state transitions, loading indicators, and error messages.
@@ -43,6 +56,62 @@ class AuthService extends ChangeNotifier {
   int _sessionGeneration = 0;
   bool _disposed = false;
   Future<void> _storageTail = Future<void>.value();
+  _AuthAttempt? _activeAuthAttempt;
+
+  /// Opaque handle for canceling only the request started by a particular route.
+  Object? get activeAuthAttempt => _activeAuthAttempt;
+
+  bool isCurrentAuthAttempt(Object? attempt) =>
+      !_disposed && identical(attempt, _activeAuthAttempt);
+
+  /// Leaving an auth route must not cancel a newer request or an accepted login.
+  void cancelAuthAttempt(Object? attempt, {bool notify = true}) {
+    final active = _activeAuthAttempt;
+    if (active == null ||
+        !identical(active, attempt) ||
+        !active.pending ||
+        active.sessionCommitted) {
+      return;
+    }
+    _activeAuthAttempt = null;
+    _isLoading = false;
+    _error = null;
+    if (notify) notifyListeners();
+  }
+
+  _AuthAttempt _startAuthAttempt({bool notify = true}) {
+    final attempt = _AuthAttempt();
+    if (_disposed) return attempt;
+    _activeAuthAttempt = attempt;
+    _error = null;
+    _isLoading = true;
+    if (notify) notifyListeners();
+    return attempt;
+  }
+
+  bool _ownsAttempt(_AuthAttempt attempt) =>
+      !_disposed && identical(_activeAuthAttempt, attempt);
+
+  void _finishAuthAttempt(_AuthAttempt attempt) {
+    if (!_ownsAttempt(attempt)) return;
+    attempt.pending = false;
+    _isLoading = false;
+    notifyListeners();
+  }
+
+  static Map<String, dynamic> _responseData(http.Response response) {
+    try {
+      final body = jsonDecode(response.body);
+      if (body is Map<String, dynamic>) return body;
+    } catch (_) {}
+    return const {};
+  }
+
+  static String? _sessionToken(Object? value) =>
+      value is String && value.trim().isNotEmpty ? value : null;
+
+  static const _supersededMessage =
+      'This request is no longer active. Please try again.';
 
   @override
   void notifyListeners() {
@@ -61,7 +130,8 @@ class AuthService extends ChangeNotifier {
       '520192434738-sgkjkb455cb147rt10nabsa3auul2eki.apps.googleusercontent.com';
 
   // Storage keys
-  static const String _keyToken = 'auth_token';
+  static const String _keyToken =
+      '${LocalBenchProfile.storagePrefix}auth_token';
   static const String _keyUsername = 'username';
   static const String _keyEmail = 'email';
   static const String _keyDeviceMacs = 'device_macs';
@@ -126,6 +196,14 @@ class AuthService extends ChangeNotifier {
   String? _primaryMac;
   String? get primaryMac => _primaryMac;
 
+  bool _deviceListVerified = false;
+  bool get deviceListVerified => _deviceListVerified;
+  bool _deviceListLoading = false;
+  bool get deviceListLoading => _deviceListLoading;
+  String? _deviceListError;
+  String? get deviceListError => _deviceListError;
+  int _deviceRequestGeneration = 0;
+
   /// Convenience getter — `true` when the user has at least one paired device.
   bool get hasDevices => _deviceMacs.isNotEmpty;
 
@@ -174,50 +252,69 @@ class AuthService extends ChangeNotifier {
   /// authenticated immediately (the token's validity is **not** verified
   /// against the server here).
   Future<void> init() async {
-    _isLoading = true;
-    _error = null;
-    // Don't call notifyListeners() here — we're likely inside a build frame.
-    // The finally block will notify once loading completes.
-
+    // Init can race a new login or sign-out; read a single queued snapshot and
+    // only install it while this startup attempt still owns the operation.
+    final attempt = _startAuthAttempt(notify: false);
+    if (!_ownsAttempt(attempt)) return;
     try {
-      // Retrieve non-sensitive data from shared preferences first.
-      final prefs = await SharedPreferences.getInstance();
-      _username = prefs.getString(_keyUsername);
-      _email = prefs.getString(_keyEmail);
+      await _queueStorage(() async {
+        if (!_ownsAttempt(attempt)) return;
+        final prefs = await AppPreferences.getInstance();
+        if (!_ownsAttempt(attempt)) return;
+        final username = prefs.getString(_keyUsername);
+        final email = prefs.getString(_keyEmail);
+        final sessionValid = prefs.getBool(_keySessionValid) ?? false;
+        final macsJson = prefs.getString(_keyDeviceMacs);
+        final savedPrimary = _normaliseDeviceMac(
+          prefs.getString(_keyPrimaryMac),
+        );
+        final token = _sessionToken(await _secureStorage.read(key: _keyToken));
+        if (!_ownsAttempt(attempt)) return;
 
-      // Retrieve sensitive token from secure storage.
-      _token = await _secureStorage.read(key: _keyToken);
-
-      // iOS Keychain survives app reinstalls but SharedPreferences does not.
-      // If the session flag is absent, the token is left over from a previous
-      // install — discard it so the user sees the sign-in screen.
-      final sessionValid = prefs.getBool(_keySessionValid) ?? false;
-      if (_token != null && !sessionValid) {
-        await _secureStorage.delete(key: _keyToken);
-        _token = null;
-      }
-
-      // Device MAC list stored as a JSON-encoded List<String>.
-      final macsJson = prefs.getString(_keyDeviceMacs);
-      if (macsJson != null) {
-        _deviceMacs = (jsonDecode(macsJson) as List)
-            .map(_normaliseDeviceMac)
-            .where(_isUsableDeviceMac)
-            .toList();
-      }
-      final savedPrimary = _normaliseDeviceMac(prefs.getString(_keyPrimaryMac));
-      _primaryMac =
-          _isUsableDeviceMac(savedPrimary) && _deviceMacs.contains(savedPrimary)
-          ? savedPrimary
-          : (_deviceMacs.isEmpty ? null : _deviceMacs.first);
-
-      _isAuthenticated = _token != null;
+        // Keychain survives reinstall. A missing install marker, or a malformed
+        // token, must not restore credentials or pairing from an older install.
+        if (!sessionValid || token == null) {
+          await _clearStorage();
+          if (!_ownsAttempt(attempt)) return;
+          _clearSessionState();
+          return;
+        }
+        var macs = <String>[];
+        try {
+          final decoded = macsJson == null ? null : jsonDecode(macsJson);
+          if (decoded is List) {
+            macs = decoded
+                .map(_normaliseDeviceMac)
+                .where(_isUsableDeviceMac)
+                .toSet()
+                .toList();
+          }
+        } catch (_) {
+          // A corrupt local pairing list does not invalidate a valid session.
+        }
+        _sessionGeneration++;
+        _token = token;
+        _username = username;
+        _email = email;
+        _deviceMacs = macs;
+        _primaryMac = macs.contains(savedPrimary)
+            ? savedPrimary
+            : (macs.isEmpty ? null : macs.first);
+        _deviceListVerified = false;
+        _deviceListLoading = false;
+        _deviceListError = null;
+        _deviceRequestGeneration++;
+        _setupSkipped = false;
+        _unpairedNotice = false;
+        _isAuthenticated = true;
+        attempt.sessionCommitted = true;
+      });
     } catch (e) {
+      if (!_ownsAttempt(attempt)) return;
       logDebug('AuthService.init error: $e');
       _error = 'Failed to load saved session.';
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      _finishAuthAttempt(attempt);
     }
   }
 
@@ -227,8 +324,8 @@ class AuthService extends ChangeNotifier {
   ///
   /// Returns `null` on success, or an error message string on failure.
   Future<String?> signInWithApple() async {
-    _error = null;
-    _setLoading(true);
+    final attempt = _startAuthAttempt();
+    if (!_ownsAttempt(attempt)) return _supersededMessage;
 
     try {
       final rawNonce = _generateNonce();
@@ -240,10 +337,11 @@ class AuthService extends ChangeNotifier {
           AppleIDAuthorizationScopes.fullName,
         ],
         nonce: hashedNonce,
-      );
+      ).timeout(const Duration(minutes: 2));
+      if (!_ownsAttempt(attempt)) return _supersededMessage;
 
       final identityToken = credential.identityToken;
-      if (identityToken == null) {
+      if (_sessionToken(identityToken) == null) {
         return 'No identity token received from Apple.';
       }
 
@@ -264,42 +362,44 @@ class AuthService extends ChangeNotifier {
             }),
           )
           .timeout(const Duration(seconds: 30));
+      if (!_ownsAttempt(attempt)) return _supersededMessage;
 
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final data = _responseData(response);
       if (response.statusCode != 200 || data['ok'] != true) {
         return data['error']?.toString() ??
             'Sign-in failed (${response.statusCode})';
       }
 
-      _token = data['token'] as String?;
-      _email = data['email'] as String?;
+      final token = _sessionToken(data['token']);
+      if (token == null) return 'Sign-in failed. Please try again.';
+      final email = data['email'] is String ? data['email'] as String : null;
       // Apple only sends givenName on the FIRST sign-in
-      _username =
+      final username =
           credential.givenName ??
           credential.familyName ??
-          _email?.split('@').first ??
+          email?.split('@').first ??
           'User';
-      _isAuthenticated = true;
-      _error = null;
-
-      await _saveToStorage();
-      await fetchDevices();
-
-      return null; // success
+      return await _acceptSession(attempt, token, email, username)
+          ? null
+          : _supersededMessage;
     } on SignInWithAppleAuthorizationException catch (e) {
+      if (!_ownsAttempt(attempt)) return _supersededMessage;
       if (e.code == AuthorizationErrorCode.canceled) {
         return null; // user cancelled — not an error
       }
       return 'Apple sign-in failed: ${e.message}';
     } on TimeoutException {
+      if (!_ownsAttempt(attempt)) return _supersededMessage;
       return 'Connection timed out. Please try again.';
     } on http.ClientException catch (e) {
+      if (!_ownsAttempt(attempt)) return _supersededMessage;
       return connectionFailureMessage(e);
     } catch (e) {
+      if (!_ownsAttempt(attempt)) return _supersededMessage;
       logDebug('signInWithApple error: $e');
       return 'Sign-in failed. Please try again.';
     } finally {
-      _setLoading(false);
+      _finishAuthAttempt(attempt);
     }
   }
 
@@ -308,8 +408,8 @@ class AuthService extends ChangeNotifier {
   /// Uses the `google_sign_in` package to get an ID token, then exchanges
   /// it with the CalcAI backend for a server session token.
   Future<bool> signInWithGoogle() async {
-    _error = null;
-    _setLoading(true);
+    final attempt = _startAuthAttempt();
+    if (!_ownsAttempt(attempt)) return false;
 
     try {
       final googleSignIn = GoogleSignIn(
@@ -317,49 +417,62 @@ class AuthService extends ChangeNotifier {
         serverClientId: _googleWebClientId,
         scopes: ['email'],
       );
-      final account = await googleSignIn.signIn();
+      final account = await googleSignIn.signIn().timeout(
+        const Duration(minutes: 2),
+      );
+      if (!_ownsAttempt(attempt)) return false;
 
       if (account == null) {
         _error = null; // User cancelled
         return false;
       }
 
-      final auth = await account.authentication;
+      final auth = await account.authentication.timeout(
+        const Duration(seconds: 30),
+      );
+      if (!_ownsAttempt(attempt)) return false;
       final idToken = auth.idToken;
 
-      if (idToken == null) {
+      if (_sessionToken(idToken) == null) {
         _error = 'No ID token received from Google.';
         return false;
       }
 
       // Exchange with backend
-      final response = await _httpClient.post(
-        Uri.parse('$_baseUrl/auth/google'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'idToken': idToken}),
-      );
+      final response = await _httpClient
+          .post(
+            Uri.parse('$_baseUrl/auth/google'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'idToken': idToken}),
+          )
+          .timeout(const Duration(seconds: 30));
+      if (!_ownsAttempt(attempt)) return false;
 
-      final data = jsonDecode(response.body);
+      final data = _responseData(response);
       if (response.statusCode != 200 || data['ok'] != true) {
-        _error = data['error'] ?? 'Google sign-in failed';
+        _error = data['error']?.toString() ?? 'Google sign-in failed';
         return false;
       }
 
-      _token = data['token'];
-      _email = data['email'];
-      _username = account.displayName ?? _email?.split('@').first ?? 'User';
-      _isAuthenticated = true;
-      _error = null;
-
-      await _saveToStorage();
-      await fetchDevices();
-      return true;
+      final token = _sessionToken(data['token']);
+      if (token == null) {
+        _error = 'Google sign-in failed. Please try again.';
+        return false;
+      }
+      final email = data['email'] is String ? data['email'] as String : null;
+      final username = account.displayName ?? email?.split('@').first ?? 'User';
+      return await _acceptSession(attempt, token, email, username);
+    } on TimeoutException {
+      if (!_ownsAttempt(attempt)) return false;
+      _error = 'Connection timed out. Please try again.';
+      return false;
     } catch (e) {
+      if (!_ownsAttempt(attempt)) return false;
       logDebug('signInWithGoogle error: $e');
       _error = 'Google sign-in failed. Please try again.';
       return false;
     } finally {
-      _setLoading(false);
+      _finishAuthAttempt(attempt);
     }
   }
 
@@ -384,8 +497,8 @@ class AuthService extends ChangeNotifier {
     String email,
     String password,
   ) async {
-    _error = null;
-    _setLoading(true);
+    final attempt = _startAuthAttempt();
+    if (!_ownsAttempt(attempt)) return EmailAuthOutcome.failed;
     try {
       final response = await _httpClient
           .post(
@@ -394,14 +507,8 @@ class AuthService extends ChangeNotifier {
             body: jsonEncode({'email': email.trim(), 'password': password}),
           )
           .timeout(const Duration(seconds: 30));
-
-      Map<String, dynamic> data = const {};
-      try {
-        final decoded = jsonDecode(response.body);
-        if (decoded is Map<String, dynamic>) data = decoded;
-      } catch (_) {
-        // Fall through to the status-code message below.
-      }
+      if (!_ownsAttempt(attempt)) return EmailAuthOutcome.failed;
+      final data = _responseData(response);
 
       final code = data['error']?.toString();
 
@@ -422,28 +529,31 @@ class AuthService extends ChangeNotifier {
         return EmailAuthOutcome.verificationRequired;
       }
 
-      _token = data['token'] as String?;
-      if (_token == null || _token!.isEmpty) {
+      final token = _sessionToken(data['token']);
+      if (token == null) {
         _error = 'Sign-in failed. Please try again.';
         return EmailAuthOutcome.failed;
       }
-      _email = (data['email'] as String?) ?? email.trim();
-      _username = (data['username'] as String?) ?? _email!.split('@').first;
-      _isAuthenticated = true;
-      _error = null;
-
-      await _saveToStorage();
-      await fetchDevices();
-      return EmailAuthOutcome.success;
+      final sessionEmail = data['email'] is String
+          ? data['email'] as String
+          : email.trim();
+      final username = data['username'] is String
+          ? data['username'] as String
+          : sessionEmail.split('@').first;
+      return await _acceptSession(attempt, token, sessionEmail, username)
+          ? EmailAuthOutcome.success
+          : EmailAuthOutcome.failed;
     } on TimeoutException {
+      if (!_ownsAttempt(attempt)) return EmailAuthOutcome.failed;
       _error = 'Connection timed out. Please try again.';
       return EmailAuthOutcome.failed;
     } catch (e) {
+      if (!_ownsAttempt(attempt)) return EmailAuthOutcome.failed;
       logDebug('_emailAuth error: $e');
       _error = 'Network error — check your internet connection.';
       return EmailAuthOutcome.failed;
     } finally {
-      _setLoading(false);
+      _finishAuthAttempt(attempt);
     }
   }
 
@@ -452,8 +562,8 @@ class AuthService extends ChangeNotifier {
   /// POST /ai/auth/verify. Returns true when the account is confirmed and a
   /// session is stored.
   Future<bool> verifyEmailCode(String email, String code) async {
-    _error = null;
-    _setLoading(true);
+    final attempt = _startAuthAttempt();
+    if (!_ownsAttempt(attempt)) return false;
     try {
       final response = await _httpClient
           .post(
@@ -462,78 +572,82 @@ class AuthService extends ChangeNotifier {
             body: jsonEncode({'email': email.trim(), 'code': code}),
           )
           .timeout(const Duration(seconds: 30));
-
-      Map<String, dynamic> data = const {};
-      try {
-        final decoded = jsonDecode(response.body);
-        if (decoded is Map<String, dynamic>) data = decoded;
-      } catch (_) {}
+      if (!_ownsAttempt(attempt)) return false;
+      final data = _responseData(response);
 
       if (response.statusCode != 200 || data['ok'] != true) {
         _error = _verifyMessage(data['error']?.toString(), response.statusCode);
         return false;
       }
 
-      _token = data['token'] as String?;
-      if (_token == null || _token!.isEmpty) {
+      final token = _sessionToken(data['token']);
+      if (token == null) {
         _error = 'Could not finish signing in. Please try again.';
         return false;
       }
-      _email = email.trim();
-      _username = _email!.split('@').first;
-      _isAuthenticated = true;
-      _error = null;
-
-      await _saveToStorage();
-      await fetchDevices();
-      return true;
+      return await _acceptSession(
+        attempt,
+        token,
+        email.trim(),
+        email.trim().split('@').first,
+      );
     } on TimeoutException {
+      if (!_ownsAttempt(attempt)) return false;
       _error = 'Connection timed out. Please try again.';
       return false;
     } catch (e) {
+      if (!_ownsAttempt(attempt)) return false;
       logDebug('verifyEmailCode error: $e');
       _error = 'Network error — check your internet connection.';
       return false;
     } finally {
-      _setLoading(false);
+      _finishAuthAttempt(attempt);
     }
   }
 
   /// Asks the backend to email a fresh code.
   ///
-  /// Always reports success: the endpoint deliberately answers the same way
-  /// for a registered and an unregistered address, so there is nothing here to
-  /// tell the user apart from "check your inbox".
-  Future<void> resendVerificationCode(String email) async {
-    try {
-      await _httpClient
-          .post(
-            Uri.parse('$_baseUrl/auth/resend-code'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'email': email.trim()}),
-          )
-          .timeout(const Duration(seconds: 20));
-    } catch (e) {
-      logDebug('resendVerificationCode error: $e');
-    }
-  }
+  /// The accepted response remains identical for known and unknown addresses.
+  /// Transport/server failures are retryable and must not claim an email sent.
+  Future<bool> resendVerificationCode(String email) =>
+      _sendEmailCode('/auth/resend-code', email);
 
   /// Asks the backend to email a password-reset code.
   ///
-  /// POST /ai/auth/forgot. Always reports success: the endpoint answers the
-  /// same way for a registered and an unregistered address, so there is
-  /// nothing to tell the user apart from "check your inbox".
-  Future<void> requestPasswordReset(String email) async {
+  /// POST /ai/auth/forgot. Accepted requests do not reveal account existence.
+  Future<bool> requestPasswordReset(String email) =>
+      _sendEmailCode('/auth/forgot', email);
+
+  Future<bool> _sendEmailCode(String path, String email) async {
+    final attempt = _startAuthAttempt();
+    if (!_ownsAttempt(attempt)) return false;
     try {
-      await _httpClient
+      final response = await _httpClient
           .post(
-            Uri.parse('$_baseUrl/auth/forgot'),
+            Uri.parse('$_baseUrl$path'),
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({'email': email.trim()}),
           )
           .timeout(const Duration(seconds: 20));
+      if (!_ownsAttempt(attempt)) return false;
+      if (response.statusCode == 200 && _responseData(response)['ok'] == true) {
+        return true;
+      }
+      _error = response.statusCode == 429
+          ? 'Too many attempts. Please wait a moment and try again.'
+          : 'Could not send the code. Please try again.';
+      return false;
+    } on TimeoutException {
+      if (!_ownsAttempt(attempt)) return false;
+      _error = 'Connection timed out. Please try again.';
+      return false;
     } catch (e) {
-      logDebug('requestPasswordReset error: $e');
+      if (!_ownsAttempt(attempt)) return false;
+      logDebug('sendEmailCode error: $e');
+      _error = 'Network error — check your internet connection.';
+      return false;
+    } finally {
+      _finishAuthAttempt(attempt);
     }
   }
 
@@ -544,8 +658,8 @@ class AuthService extends ChangeNotifier {
   /// typed. Wrong guesses still count against the same attempt budget as the
   /// real reset, so this is not a free oracle.
   Future<bool> verifyResetCode(String email, String code) async {
-    _error = null;
-    _setLoading(true);
+    final attempt = _startAuthAttempt();
+    if (!_ownsAttempt(attempt)) return false;
     try {
       final response = await _httpClient
           .post(
@@ -554,12 +668,8 @@ class AuthService extends ChangeNotifier {
             body: jsonEncode({'email': email.trim(), 'code': code}),
           )
           .timeout(const Duration(seconds: 30));
-
-      Map<String, dynamic> data = const {};
-      try {
-        final decoded = jsonDecode(response.body);
-        if (decoded is Map<String, dynamic>) data = decoded;
-      } catch (_) {}
+      if (!_ownsAttempt(attempt)) return false;
+      final data = _responseData(response);
 
       if (response.statusCode != 200 || data['ok'] != true) {
         _error = _verifyMessage(data['error']?.toString(), response.statusCode);
@@ -567,14 +677,16 @@ class AuthService extends ChangeNotifier {
       }
       return true;
     } on TimeoutException {
+      if (!_ownsAttempt(attempt)) return false;
       _error = 'Connection timed out. Please try again.';
       return false;
     } catch (e) {
+      if (!_ownsAttempt(attempt)) return false;
       logDebug('verifyResetCode error: $e');
       _error = 'Network error — check your internet connection.';
       return false;
     } finally {
-      _setLoading(false);
+      _finishAuthAttempt(attempt);
     }
   }
 
@@ -583,8 +695,8 @@ class AuthService extends ChangeNotifier {
   /// POST /ai/auth/reset. On success the backend returns a session, so the
   /// user is signed in straight away rather than being bounced back to login.
   Future<bool> resetPassword(String email, String code, String password) async {
-    _error = null;
-    _setLoading(true);
+    final attempt = _startAuthAttempt();
+    if (!_ownsAttempt(attempt)) return false;
     try {
       final response = await _httpClient
           .post(
@@ -597,12 +709,8 @@ class AuthService extends ChangeNotifier {
             }),
           )
           .timeout(const Duration(seconds: 30));
-
-      Map<String, dynamic> data = const {};
-      try {
-        final decoded = jsonDecode(response.body);
-        if (decoded is Map<String, dynamic>) data = decoded;
-      } catch (_) {}
+      if (!_ownsAttempt(attempt)) return false;
+      final data = _responseData(response);
 
       if (response.statusCode != 200 || data['ok'] != true) {
         final code = data['error']?.toString();
@@ -612,28 +720,28 @@ class AuthService extends ChangeNotifier {
         return false;
       }
 
-      _token = data['token'] as String?;
-      if (_token == null || _token!.isEmpty) {
+      final token = _sessionToken(data['token']);
+      if (token == null) {
         _error = 'Could not finish signing in. Please try again.';
         return false;
       }
-      _email = email.trim();
-      _username = _email!.split('@').first;
-      _isAuthenticated = true;
-      _error = null;
-
-      await _saveToStorage();
-      await fetchDevices();
-      return true;
+      return await _acceptSession(
+        attempt,
+        token,
+        email.trim(),
+        email.trim().split('@').first,
+      );
     } on TimeoutException {
+      if (!_ownsAttempt(attempt)) return false;
       _error = 'Connection timed out. Please try again.';
       return false;
     } catch (e) {
+      if (!_ownsAttempt(attempt)) return false;
       logDebug('resetPassword error: $e');
       _error = 'Network error — check your internet connection.';
       return false;
     } finally {
-      _setLoading(false);
+      _finishAuthAttempt(attempt);
     }
   }
 
@@ -689,6 +797,15 @@ class AuthService extends ChangeNotifier {
     final token = _token;
     final generation = _sessionGeneration;
     if (token == null || _disposed) return;
+    final request = ++_deviceRequestGeneration;
+    bool stillCurrent() =>
+        !_disposed &&
+        generation == _sessionGeneration &&
+        token == _token &&
+        request == _deviceRequestGeneration;
+    _deviceListLoading = true;
+    _deviceListError = null;
+    notifyListeners();
 
     try {
       final response = await _httpClient
@@ -701,32 +818,31 @@ class AuthService extends ChangeNotifier {
           )
           .timeout(const Duration(seconds: 15));
 
-      if (_disposed || generation != _sessionGeneration || token != _token) {
-        return;
-      }
+      if (!stillCurrent()) return;
 
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
 
-        // The API may return a bare list or an object wrapping it.
-        List<dynamic> rawMacs;
-        if (body is List) {
-          rawMacs = body;
-        } else if (body is Map<String, dynamic>) {
-          rawMacs = (body['devices'] ?? body['macs'] ?? []) as List<dynamic>;
-        } else {
-          rawMacs = [];
+        // Only the server's confirmed schema is authoritative for unpairing.
+        if (body is! Map<String, dynamic> ||
+            body['ok'] != true ||
+            body['devices'] is! List) {
+          throw const FormatException('Unconfirmed device list');
         }
-
-        // Worker returns either plain strings or {mac, pairedAt} objects.
-        _deviceMacs = rawMacs
-            .map((e) {
-              if (e is Map) return (e['mac'] ?? '').toString();
-              return e.toString();
-            })
-            .map(_normaliseDeviceMac)
-            .where(_isUsableDeviceMac)
-            .toList();
+        final rawMacs = body['devices'] as List;
+        final macs = <String>[];
+        for (final device in rawMacs) {
+          if (device is! Map) throw const FormatException('Invalid device');
+          final rawMac = device['mac'];
+          if (rawMac is! String) throw const FormatException('Invalid device');
+          final mac = _normaliseDeviceMac(rawMac);
+          if (!_isUsableDeviceMac(mac)) {
+            throw const FormatException('Invalid device');
+          }
+          if (!macs.contains(mac)) macs.add(mac);
+        }
+        _deviceMacs = macs;
+        _deviceListVerified = true;
 
         // Keep primaryMac in sync: reset if the previous value is no longer
         // in the list, or default to the first entry.
@@ -739,14 +855,21 @@ class AuthService extends ChangeNotifier {
         }
 
         await _saveToStorage();
-        if (generation == _sessionGeneration && token == _token) {
-          notifyListeners();
-        }
       } else {
         logDebug('AuthService.fetchDevices failed: ${response.statusCode}');
+        _deviceListError =
+            'Could not confirm linked calculators. Please try again.';
       }
     } catch (e) {
+      if (!stillCurrent()) return;
       logDebug('AuthService.fetchDevices error: $e');
+      _deviceListError =
+          'Could not confirm linked calculators. Please try again.';
+    } finally {
+      if (stillCurrent()) {
+        _deviceListLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -770,21 +893,27 @@ class AuthService extends ChangeNotifier {
   }
 
   Future<void> forgetDevice() async {
+    if (_disposed) return;
+    final generation = _sessionGeneration;
     _deviceMacs = [];
     _primaryMac = null;
+    _deviceListVerified = true;
+    _deviceListLoading = false;
+    _deviceListError = null;
+    _deviceRequestGeneration++;
     _unpairedNotice = true;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_keyPrimaryMac);
-      await prefs.remove(_keyDeviceMacs);
+      await _saveToStorage();
     } catch (_) {
       // Losing the persisted copy is not worth failing over; the in-memory
       // state is what routing reads.
     }
-    notifyListeners();
+    if (generation == _sessionGeneration) notifyListeners();
   }
 
   Future<void> addDevice(String mac, {bool announce = true}) async {
+    if (_disposed) return;
+    final generation = _sessionGeneration;
     // Lowercase, no separators — the backend's canonical form. This used to
     // uppercase, which meant the value written here never matched the list
     // /ai/user/devices returns, so primaryMac silently reset on the next
@@ -800,12 +929,16 @@ class AuthService extends ChangeNotifier {
     }
 
     _primaryMac = normalised;
+    _deviceListVerified = true;
+    _deviceListLoading = false;
+    _deviceListError = null;
+    _deviceRequestGeneration++;
     // A successful claim is authoritative. Do not carry an unpair banner from
     // a previous account or an earlier revoked pairing into this device.
     _unpairedNotice = false;
 
     await _saveToStorage();
-    if (announce) notifyListeners();
+    if (announce && generation == _sessionGeneration) notifyListeners();
   }
 
   // ── Account Deletion ──────────────────────────────────────────────────
@@ -815,9 +948,14 @@ class AuthService extends ChangeNotifier {
   ///
   /// Required by App Store Review Guideline 5.1.1(v).
   Future<String?> deleteAccount() async {
-    if (_token == null) return 'You are not signed in.';
-    _error = null;
-    _setLoading(true);
+    final token = _token;
+    final generation = _sessionGeneration;
+    if (token == null || _disposed) return 'You are not signed in.';
+    final attempt = _startAuthAttempt();
+    bool stillCurrent() =>
+        _ownsAttempt(attempt) &&
+        generation == _sessionGeneration &&
+        token == _token;
 
     try {
       var response = await _httpClient
@@ -825,13 +963,14 @@ class AuthService extends ChangeNotifier {
             Uri.parse('$_baseUrl/account/delete'),
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': 'Bearer $_token',
+              'Authorization': 'Bearer $token',
             },
           )
           .timeout(const Duration(seconds: 30));
+      if (!stillCurrent()) return _supersededMessage;
 
       if (response.statusCode == 409 &&
-          (jsonDecode(response.body) as Map<String, dynamic>)['error'] ==
+          _responseData(response)['error'] ==
               'apple_reauthorization_required') {
         // Older accounts predate server-side refresh-token storage. Reauthorize
         // the same Apple identity; the backend binds it to the current account.
@@ -839,13 +978,17 @@ class AuthService extends ChangeNotifier {
         final credential = await SignInWithApple.getAppleIDCredential(
           scopes: [AppleIDAuthorizationScopes.email],
           nonce: sha256.convert(utf8.encode(rawNonce)).toString(),
-        );
+        ).timeout(const Duration(minutes: 2));
+        if (!stillCurrent()) return _supersededMessage;
+        if (_sessionToken(credential.identityToken) == null) {
+          return 'Apple could not confirm your identity. Please try again.';
+        }
         response = await _httpClient
             .post(
               Uri.parse('$_baseUrl/account/delete'),
               headers: {
                 'Content-Type': 'application/json',
-                'Authorization': 'Bearer $_token',
+                'Authorization': 'Bearer $token',
               },
               body: jsonEncode({
                 'identityToken': credential.identityToken,
@@ -854,9 +997,10 @@ class AuthService extends ChangeNotifier {
               }),
             )
             .timeout(const Duration(seconds: 45));
+        if (!stillCurrent()) return _supersededMessage;
       }
 
-      if (response.statusCode != 200) {
+      if (response.statusCode != 200 || _responseData(response)['ok'] != true) {
         String message = 'Failed to delete account (${response.statusCode}).';
         try {
           final body = jsonDecode(response.body) as Map<String, dynamic>;
@@ -873,14 +1017,22 @@ class AuthService extends ChangeNotifier {
 
       // Wipe all local state so the user returns to the sign-in screen.
       await signOut();
-      return null;
+      // A new login can begin while the old Keychain cleanup is finishing.
+      // Its caller must not clear that new account's cloud/BLE state either.
+      return _sessionGeneration == generation + 1 &&
+              _token == null &&
+              _activeAuthAttempt == null
+          ? null
+          : _supersededMessage;
     } on TimeoutException {
+      if (!stillCurrent()) return _supersededMessage;
       return 'Request timed out. Please try again.';
     } catch (e) {
+      if (!stillCurrent()) return _supersededMessage;
       logDebug('deleteAccount error: $e');
       return 'Could not delete account. Please try again.';
     } finally {
-      _setLoading(false);
+      _finishAuthAttempt(attempt);
     }
   }
 
@@ -888,16 +1040,11 @@ class AuthService extends ChangeNotifier {
 
   /// Signs the user out and wipes all persisted auth state.
   Future<void> signOut() async {
-    _sessionGeneration++;
-    _isAuthenticated = false;
-    _token = null;
-    _username = null;
-    _email = null;
+    if (_disposed) return;
+    _activeAuthAttempt = null;
+    _isLoading = false;
+    _clearSessionState();
     _error = null;
-    _deviceMacs = [];
-    _primaryMac = null;
-    _setupSkipped = false;
-    _unpairedNotice = false;
 
     // Invalidate cloud/BLE consumers immediately, even if Keychain is slow.
     notifyListeners();
@@ -905,6 +1052,54 @@ class AuthService extends ChangeNotifier {
   }
 
   // ── Private Helpers ───────────────────────────────────────────────────
+
+  void _clearSessionState() {
+    _sessionGeneration++;
+    _isAuthenticated = false;
+    _token = null;
+    _username = null;
+    _email = null;
+    _deviceMacs = [];
+    _primaryMac = null;
+    _deviceListVerified = false;
+    _deviceListLoading = false;
+    _deviceListError = null;
+    _deviceRequestGeneration++;
+    _setupSkipped = false;
+    _unpairedNotice = false;
+  }
+
+  Future<bool> _acceptSession(
+    _AuthAttempt attempt,
+    String token,
+    String? email,
+    String username,
+  ) async {
+    if (!_ownsAttempt(attempt)) return false;
+    _clearSessionState();
+    final generation = _sessionGeneration;
+    _token = token;
+    _email = email;
+    _username = username;
+    _isAuthenticated = true;
+    attempt.sessionCommitted = true;
+    try {
+      await _saveToStorage(clearPrevious: true);
+    } catch (_) {
+      if (_ownsAttempt(attempt) && generation == _sessionGeneration) {
+        _clearSessionState();
+        try {
+          await _queueStorage(_clearStorage);
+        } catch (_) {}
+      }
+      rethrow;
+    }
+    if (!_ownsAttempt(attempt) || generation != _sessionGeneration) {
+      return false;
+    }
+    await fetchDevices();
+    return _ownsAttempt(attempt) && generation == _sessionGeneration;
+  }
 
   /// Persists the current auth state to secure & shared storage.
   Future<void> _queueStorage(Future<void> Function() operation) {
@@ -917,48 +1112,60 @@ class AuthService extends ChangeNotifier {
     return result;
   }
 
-  Future<void> _saveToStorage() {
+  Future<void> _saveToStorage({bool clearPrevious = false}) {
     final generation = _sessionGeneration;
+    final token = _token;
+    if (token == null) return Future<void>.value();
+    final snapshot = (
+      token: token,
+      username: _username,
+      email: _email,
+      deviceMacs: List<String>.unmodifiable(_deviceMacs),
+      primaryMac: _primaryMac,
+    );
     return _queueStorage(() async {
-      if (_disposed || generation != _sessionGeneration || _token == null) {
-        return;
+      if (_disposed || generation != _sessionGeneration) return;
+      if (clearPrevious) {
+        await _clearStorage();
+        if (_disposed || generation != _sessionGeneration) return;
       }
-      await _writeToStorage();
+      await _writeToStorage(snapshot, generation);
     });
   }
 
-  Future<void> _writeToStorage() async {
-    // Sensitive — goes into flutter_secure_storage.
-    if (_token != null) {
-      await _secureStorage.write(key: _keyToken, value: _token);
+  Future<void> _writeToStorage(
+    _SessionSnapshot snapshot,
+    int generation,
+  ) async {
+    final prefs = await AppPreferences.getInstance();
+    if (_disposed || generation != _sessionGeneration) return;
+    // The marker is written last so a failed or superseded write cannot make
+    // an incomplete Keychain/preferences snapshot restorable on next launch.
+    await prefs.remove(_keySessionValid);
+    await _secureStorage.write(key: _keyToken, value: snapshot.token);
+    if (_disposed || generation != _sessionGeneration) return;
+    for (final entry in {
+      _keyUsername: snapshot.username,
+      _keyEmail: snapshot.email,
+      _keyDeviceMacs: jsonEncode(snapshot.deviceMacs),
+      _keyPrimaryMac: snapshot.primaryMac,
+    }.entries) {
+      if (entry.value == null) {
+        await prefs.remove(entry.key);
+      } else {
+        await prefs.setString(entry.key, entry.value!);
+      }
+      if (_disposed || generation != _sessionGeneration) return;
     }
-
-    // Non-sensitive — goes into shared_preferences.
-    final prefs = await SharedPreferences.getInstance();
-
-    // Mark that a real session exists so the stale-token check in init()
-    // doesn't mistake a valid Keychain token for a post-reinstall leftover.
     await prefs.setBool(_keySessionValid, true);
-
-    if (_username != null) {
-      await prefs.setString(_keyUsername, _username!);
-    }
-    if (_email != null) {
-      await prefs.setString(_keyEmail, _email!);
-    }
-
-    await prefs.setString(_keyDeviceMacs, jsonEncode(_deviceMacs));
-
-    if (_primaryMac != null) {
-      await prefs.setString(_keyPrimaryMac, _primaryMac!);
-    } else {
-      await prefs.remove(_keyPrimaryMac);
+    if (_disposed || generation != _sessionGeneration) {
+      await prefs.remove(_keySessionValid);
     }
   }
 
   /// Removes all auth-related entries from both storage backends.
   Future<void> _clearStorage() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferences.getInstance();
     // A Keychain failure must not make the next launch restore this session.
     await prefs.remove(_keySessionValid);
     await _secureStorage.delete(key: _keyToken);
@@ -975,26 +1182,17 @@ class AuthService extends ChangeNotifier {
     // The saved Wi-Fi SSIDs are per-device and were surviving sign-out, so the
     // next account on this phone inherited the previous user's network names.
     for (final k in prefs.getKeys().toList()) {
-      if (k.startsWith('saved_networks_')) await prefs.remove(k);
+      if (k.startsWith('saved_networks_') || k.startsWith('iphone_hotspots_')) {
+        await prefs.remove(k);
+      }
     }
-  }
-
-  /// Sets [_isLoading] and notifies listeners in one call.
-  ///
-  /// Deliberately does **not** touch [_error]. It used to clear it, and since
-  /// every operation calls this from its `finally`, the error a `catch` had
-  /// just set was wiped before the caller could read it — which is why failed
-  /// sign-ins only ever showed a generic message. Operations clear the error
-  /// themselves when they start.
-  void _setLoading(bool value) {
-    _isLoading = value;
-    notifyListeners();
   }
 
   /// Cleans up the HTTP client when this service is disposed.
   @override
   void dispose() {
     _disposed = true;
+    _activeAuthAttempt = null;
     _sessionGeneration++;
     _httpClient.close();
     super.dispose();

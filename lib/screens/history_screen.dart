@@ -10,12 +10,18 @@ import '../utils/latex_readable.dart';
 import '../utils/safe_image.dart';
 import '../widgets/calc_photo.dart';
 import '../widgets/qa_line.dart';
+import '../widgets/answer_report_dialog.dart';
 
 /// History screen — shows all AI interactions from the calculator,
 /// including camera photos and text prompts.
 class HistoryScreen extends StatefulWidget {
-  const HistoryScreen({super.key, this.isActive = true});
+  const HistoryScreen({
+    super.key,
+    this.isActive = true,
+    this.reportEmailLauncher,
+  });
   final bool isActive;
+  final Future<bool> Function(Uri)? reportEmailLauncher;
 
   @override
   State<HistoryScreen> createState() => _HistoryScreenState();
@@ -26,7 +32,9 @@ class _HistoryScreenState extends State<HistoryScreen>
   String _selectedRange = '24h';
   String _searchQuery = '';
   final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
   Future<void>? _refreshing;
+  bool _clearingHistory = false;
 
   final _ranges = ['24h', '72h', '1w', '2w', '1mo', '6mo', 'all'];
 
@@ -90,73 +98,91 @@ class _HistoryScreenState extends State<HistoryScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
   /// Confirms, then permanently deletes all activity for this device.
   Future<void> _confirmClearHistory() async {
+    if (_clearingHistory) return;
     final auth = context.read<AuthService>();
     final cloud = context.read<CloudService>();
-    if (auth.token == null || auth.primaryMac == null) return;
+    final token = auth.token;
+    final mac = auth.primaryMac;
+    if (token == null || mac == null || cloud.isHistoryClearing) return;
     if (cloud.history.isEmpty) return;
 
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: const BorderSide(color: AppColors.glassBorder),
-        ),
-        title: Text(
-          'Clear history?',
-          style: GoogleFonts.outfit(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.w600,
+    setState(() => _clearingHistory = true);
+    try {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: const BorderSide(color: AppColors.glassBorder),
           ),
-        ),
-        content: Text(
-          'This permanently deletes every saved prompt and photo for this '
-          'device. It cannot be undone.',
-          style: GoogleFonts.inter(
-            color: AppColors.textSecondary,
-            fontSize: 14,
-            height: 1.4,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(
-              'Cancel',
-              style: GoogleFonts.inter(color: AppColors.textSecondary),
+          title: Text(
+            'Clear history?',
+            style: GoogleFonts.outfit(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w600,
             ),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              'Clear',
-              style: GoogleFonts.inter(
-                color: AppColors.error,
-                fontWeight: FontWeight.w600,
+          content: Text(
+            'This permanently deletes every saved prompt and photo for this '
+            'device. It cannot be undone.',
+            style: GoogleFonts.inter(
+              color: AppColors.textSecondary,
+              fontSize: 14,
+              height: 1.4,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.inter(color: AppColors.textSecondary),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(
+                'Clear',
+                style: GoogleFonts.inter(
+                  color: AppColors.error,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+      if (ok != true ||
+          !mounted ||
+          auth.token != token ||
+          auth.primaryMac != mac) {
+        return;
+      }
 
-    final cleared = await cloud.clearHistory(auth.token!, auth.primaryMac!);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(cleared ? 'History cleared' : 'Could not clear history'),
-        backgroundColor: AppColors.surfaceLight,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
+      final cleared = await cloud.clearHistory(token, mac);
+      if (!mounted || auth.token != token || auth.primaryMac != mac) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            cleared ? 'History cleared' : 'Could not clear history',
+          ),
+          backgroundColor: AppColors.surfaceLight,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _clearingHistory = false);
+    }
   }
 
   // Returns the earliest allowed timestamp for the selected range.
@@ -184,6 +210,9 @@ class _HistoryScreenState extends State<HistoryScreen>
 
   @override
   Widget build(BuildContext context) {
+    final clearing = context.select<CloudService, bool>(
+      (cloud) => cloud.isHistoryClearing,
+    );
     return Container(
       decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
       child: SafeArea(
@@ -204,7 +233,9 @@ class _HistoryScreenState extends State<HistoryScreen>
                   ),
                   const Spacer(),
                   IconButton(
-                    onPressed: _confirmClearHistory,
+                    onPressed: _clearingHistory || clearing
+                        ? null
+                        : _confirmClearHistory,
                     tooltip: 'Clear history',
                     icon: const Icon(
                       Icons.delete_outline_rounded,
@@ -235,6 +266,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                 ),
                 child: TextField(
                   controller: _searchController,
+                  focusNode: _searchFocusNode,
                   onChanged: (v) => setState(() => _searchQuery = v),
                   style: GoogleFonts.inter(
                     fontSize: 14,
@@ -469,6 +501,11 @@ class _HistoryScreenState extends State<HistoryScreen>
   );
 
   void _showDetail(BuildContext context, Map<String, dynamic> entry) {
+    // Clear search focus before the sheet can restore it on dismissal.
+    _searchFocusNode.unfocus();
+    final auth = context.read<AuthService>();
+    final token = auth.token;
+    final mac = auth.primaryMac;
     final isImage = _isImageEntry(entry);
     final imageUrl = safeImageUrl(entry['imageUrl']?.toString());
     final question = _questionOf(entry);
@@ -485,85 +522,118 @@ class _HistoryScreenState extends State<HistoryScreen>
         initialChildSize: 0.85,
         minChildSize: 0.5,
         maxChildSize: 0.95,
-        builder: (ctx, scrollCtrl) => Container(
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            border: Border.all(color: AppColors.glassBorder, width: 0.5),
-          ),
-          child: Column(
-            children: [
-              const SizedBox(height: 12),
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.textTertiary,
-                  borderRadius: BorderRadius.circular(2),
+        builder: (ctx, scrollCtrl) {
+          final currentAuth = ctx.watch<AuthService>();
+          if (token == null ||
+              mac == null ||
+              currentAuth.token != token ||
+              currentAuth.primaryMac != mac) {
+            return Material(
+              child: Center(
+                child: TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text(
+                    'Account or calculator changed. Close this answer.',
+                  ),
                 ),
               ),
-              Expanded(
-                child: ListView(
-                  controller: scrollCtrl,
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
-                  children: [
-                    // Image
-                    if (isImage && imageUrl != null) ...[
-                      CalcPhoto(imageUrl: imageUrl, height: 240),
-                      const SizedBox(height: 16),
-                    ],
-
-                    // Question
-                    if (question.isNotEmpty) ...[
-                      Text(
-                        'Q',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textTertiary,
-                          letterSpacing: 0.8,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        question,
-                        style: GoogleFonts.inter(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.textPrimary,
-                          height: 1.5,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                    ],
-
-                    // Response
-                    if (response.isNotEmpty) ...[
-                      Text(
-                        'A',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textTertiary,
-                          letterSpacing: 0.8,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        response,
-                        style: GoogleFonts.inter(
-                          fontSize: 14,
-                          color: AppColors.textSecondary,
-                          height: 1.6,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
+            );
+          }
+          return Container(
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
               ),
-            ],
-          ),
-        ),
+              border: Border.all(color: AppColors.glassBorder, width: 0.5),
+            ),
+            child: Column(
+              children: [
+                const SizedBox(height: 12),
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.textTertiary,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Expanded(
+                  child: ListView(
+                    controller: scrollCtrl,
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+                    children: [
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: () => showAnswerReportDialog(
+                            ctx,
+                            question: question,
+                            answer: response,
+                            launchEmail: widget.reportEmailLauncher,
+                          ),
+                          icon: const Icon(Icons.flag_outlined),
+                          label: const Text('Report this answer'),
+                        ),
+                      ),
+                      // Image
+                      if (isImage && imageUrl != null) ...[
+                        CalcPhoto(imageUrl: imageUrl, height: 240),
+                        const SizedBox(height: 16),
+                      ],
+
+                      // Question
+                      if (question.isNotEmpty) ...[
+                        Text(
+                          'Q',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textTertiary,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          question,
+                          style: GoogleFonts.inter(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.textPrimary,
+                            height: 1.5,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                      ],
+
+                      // Response
+                      if (response.isNotEmpty) ...[
+                        Text(
+                          'A',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textTertiary,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          response,
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            color: AppColors.textSecondary,
+                            height: 1.6,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

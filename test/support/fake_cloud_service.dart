@@ -1,6 +1,7 @@
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:calcai_app/services/cloud_service.dart';
+import 'package:calcai_app/models/initial_release_ai.dart';
 
 /// Test double for [CloudService].
 ///
@@ -20,6 +21,9 @@ class FakeCloudService extends CloudService {
   String? _currentMac, _notes;
   String _customContext = '';
   Map<String, dynamic>? _modelInfo;
+  int _modelSaveRevision = 0;
+  @override
+  int get modelSaveRevision => _modelSaveRevision;
   List<Map<String, dynamic>> _history = [];
   final List<String> _devices = [];
   final Map<String, dynamic> _apiKeys = {};
@@ -40,6 +44,7 @@ class FakeCloudService extends CloudService {
 
   /// Notes envelope, exactly as the real backend would store it.
   String _notesPayload = '';
+  int _notesRevision = 0;
   FakeCloudService({http.Client? client})
     : super(
         client:
@@ -56,17 +61,50 @@ class FakeCloudService extends CloudService {
   }
 
   @override
-  Future<String> getNotes(String token, String mac) async {
+  Future<String> getNotes(String token, String mac) async =>
+      (await readNotesSnapshot(token, mac)).text;
+
+  @override
+  Future<EditSnapshot> readNotesSnapshot(String token, String mac) async {
     _notes = _notesPayload;
     notifyListeners();
-    return _notesPayload;
+    return (
+      text: _notesPayload,
+      revision: _notesRevision,
+      etag: '"fixture-notes-$_notesRevision"',
+    );
   }
 
   @override
-  Future<void> setNotes(String token, String mac, String text) async {
+  Future<bool> setNotes(
+    String token,
+    String mac,
+    String text, {
+    EditSnapshot? base,
+  }) async =>
+      base != null &&
+      await writeNotesSnapshot(token, mac, text, base: base) != null;
+
+  @override
+  Future<EditSnapshot?> writeNotesSnapshot(
+    String token,
+    String mac,
+    String text, {
+    required EditSnapshot base,
+  }) async {
+    if (base.revision != _notesRevision ||
+        base.etag != '"fixture-notes-$_notesRevision"') {
+      return null;
+    }
+    _notesRevision++;
     _notesPayload = text;
     _notes = text;
     notifyListeners();
+    return (
+      text: text,
+      revision: _notesRevision,
+      etag: '"fixture-notes-$_notesRevision"',
+    );
   }
 
   // ── Everything else stays local so the test never hits the network ──
@@ -100,13 +138,64 @@ class FakeCloudService extends CloudService {
   Future<Map<String, dynamic>> listApiKeys(String token) async => _apiKeys;
 
   @override
-  Future<String> getContext(String token, String mac) async => customContext;
+  Future<String> getContext(String token, String mac) async =>
+      (await readContextSnapshot(token, mac)).text;
+
+  int _contextRevision = 0;
 
   @override
-  Future<bool> setContext(String token, String mac, String context) async {
+  Future<EditSnapshot> readContextSnapshot(String token, String mac) async => (
+    text: _customContext,
+    revision: _contextRevision,
+    etag: '"fixture-context-$_contextRevision"',
+  );
+
+  @override
+  Future<bool> setContext(
+    String token,
+    String mac,
+    String context, {
+    EditSnapshot? base,
+  }) async =>
+      base != null &&
+      await writeContextSnapshot(token, mac, context, base: base) != null;
+
+  @override
+  Future<EditSnapshot?> writeContextSnapshot(
+    String token,
+    String mac,
+    String context, {
+    required EditSnapshot base,
+  }) async {
+    if (base.revision != _contextRevision ||
+        base.etag != '"fixture-context-$_contextRevision"') {
+      return null;
+    }
+    _contextRevision++;
     _customContext = context;
     notifyListeners();
-    return true;
+    return (
+      text: context,
+      revision: _contextRevision,
+      etag: '"fixture-context-$_contextRevision"',
+    );
+  }
+
+  @override
+  Future<void> updateModelPreferences(
+    String token,
+    String mac, {
+    String? style,
+    String? effort,
+  }) async {
+    _modelInfo = {
+      ...?_modelInfo,
+      'model': _modelInfo?['model'] ?? InitialReleaseAi.defaultModel,
+      'style': style ?? responseStyle,
+      'effort': effort ?? thinkingEffort,
+    };
+    _modelSaveRevision++;
+    notifyListeners();
   }
 
   @override
@@ -125,6 +214,7 @@ class FakeCloudService extends CloudService {
       'effort': effort ?? thinkingEffort,
       'fastMode': fastMode ?? false,
     };
+    _modelSaveRevision++;
     notifyListeners();
   }
 }

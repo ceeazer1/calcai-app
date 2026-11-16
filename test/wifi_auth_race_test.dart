@@ -111,6 +111,72 @@ class _AuthBle extends SetupTestAppBle {
   }
 }
 
+class _ScanningAuthBle extends _AuthBle {
+  _ScanningAuthBle() {
+    connected = false;
+  }
+
+  bool candidateFound = false;
+  bool connecting = false;
+  int scanStops = 0;
+
+  @override
+  DeviceConnectionState get connectionState =>
+      connecting ? DeviceConnectionState.connecting : super.connectionState;
+
+  @override
+  List<CalcAiDevice> get devices => candidateFound
+      ? [
+          CalcAiDevice(
+            device: BluetoothDevice.fromId(peripheral),
+            rssi: -40,
+            advertisementName: 'CALCAI-C62E',
+          ),
+        ]
+      : [];
+
+  @override
+  Future<bool> reconnectKnownDevice() async => false;
+
+  @override
+  Future<void> startScan({
+    Duration timeout = const Duration(seconds: 10),
+  }) async {}
+
+  @override
+  Future<void> stopScan() async {
+    scanStops++;
+  }
+
+  @override
+  Future<void> connectToDevice(
+    CalcAiDevice device, {
+    Duration timeout = const Duration(seconds: 15),
+    int attempts = 3,
+  }) async {
+    connecting = true;
+    notifyListeners();
+  }
+
+  @override
+  void replaceConnection({bool newGeneration = true, String? device}) {
+    connecting = false;
+    super.replaceConnection(newGeneration: newGeneration, device: device);
+  }
+
+  void loseConnection() {
+    connecting = false;
+    connected = false;
+    generation++;
+    notifyListeners();
+  }
+
+  void discoverCandidate() {
+    candidateFound = true;
+    notifyListeners();
+  }
+}
+
 Future<void> _open(
   WidgetTester tester,
   _AuthBle ble,
@@ -145,6 +211,76 @@ Future<void> _close(
 }
 
 void main() {
+  testWidgets('a late scan candidate retains its pending ownership nonce', (
+    tester,
+  ) async {
+    final nonce = Completer<({String mac, String nonce})?>();
+    final ble = _ScanningAuthBle()..nonceReply = (_) => nonce.future;
+    final cloud = _ProofCloud();
+    final auth = FakeAuthService();
+    await _open(tester, ble, cloud, auth);
+
+    await tester.pump(const Duration(seconds: 10));
+    ble.discoverCandidate();
+    await tester.pump(const Duration(milliseconds: 1500));
+    ble.replaceConnection();
+    await tester.pump();
+    expect(ble.nonceCalls, 1);
+
+    // The 12-second discovery deadline falls while authnonce is in flight.
+    await tester.pump(const Duration(seconds: 1));
+    expect(ble.disconnectCalls, 0);
+    nonce.complete((mac: 'ca1ca1000001', nonce: 'fresh-nonce'));
+    await tester.pump();
+    expect(cloud.nonces, ['fresh-nonce']);
+    cloud.requests.single.complete('current-proof');
+    await tester.pump();
+    expect(ble.helloProofs, ['current-proof']);
+    expect(ble.wifiModeCalls, 1);
+    expect(find.text('Saved Networks'), findsOneWidget);
+    await _close(tester, ble, cloud, auth);
+  });
+
+  testWidgets('a scan with no candidate still reaches the retry screen', (
+    tester,
+  ) async {
+    final ble = _ScanningAuthBle();
+    final cloud = _ProofCloud();
+    final auth = FakeAuthService();
+    await _open(tester, ble, cloud, auth);
+
+    await tester.pump(const Duration(seconds: 12));
+    expect(ble.scanStops, 1);
+    expect(ble.nonceCalls, 0);
+    expect(ble.disconnectCalls, 0);
+    expect(find.text('Calc not found'), findsOneWidget);
+    expect(find.text('Try again'), findsOneWidget);
+    await _close(tester, ble, cloud, auth);
+  });
+
+  testWidgets('a dropped link during ownership verification can be retried', (
+    tester,
+  ) async {
+    final nonce = Completer<({String mac, String nonce})?>();
+    final ble = _ScanningAuthBle()..nonceReply = (_) => nonce.future;
+    final cloud = _ProofCloud();
+    final auth = FakeAuthService();
+    await _open(tester, ble, cloud, auth);
+
+    await tester.pump(const Duration(seconds: 10));
+    ble.discoverCandidate();
+    ble.replaceConnection();
+    await tester.pump();
+    expect(ble.nonceCalls, 1);
+    ble.loseConnection();
+    await tester.pump();
+    expect(find.text('Try again'), findsOneWidget);
+    nonce.complete((mac: 'ca1ca1000001', nonce: 'stale-nonce'));
+    await tester.pump();
+    expect(cloud.requests, isEmpty);
+    await _close(tester, ble, cloud, auth);
+  });
+
   testWidgets('skip then retry on the same link cannot revive an old proof', (
     tester,
   ) async {

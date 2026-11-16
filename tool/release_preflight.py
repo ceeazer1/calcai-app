@@ -52,14 +52,24 @@ check(not re.search(r"-----BEGIN (?:RSA |EC )?PRIVATE KEY-----|badCertificateCal
 with (APP / "ios/Runner/Info.plist").open("rb") as f:
     info = plistlib.load(f)
 check(all(info.get(k) for k in ["NSBluetoothAlwaysUsageDescription",
-      "NSPhotoLibraryAddUsageDescription", "NSPhotoLibraryUsageDescription"]),
-      "Bluetooth and photo usage descriptions present")
+      "NSPhotoLibraryAddUsageDescription"]),
+      "Bluetooth and append-only Photos usage descriptions present")
+check("NSPhotoLibraryUsageDescription" not in info,
+      "Photo saving does not declare read/write library access")
+photo_source = (LIB / "screens/photo_view_screen.dart").read_text()
+check(re.search(r"Gal\.putImage\(\s*file\.path\s*\)", photo_source) and
+      not re.search(r"Gal\.(?:putImage|putImageBytes|putVideo)\([^;]*\balbum\s*:", source) and
+      not re.search(r"Gal\.(?:requestAccess|hasAccess)\([^;]*\btoAlbum\s*:\s*true", source),
+      "Photo saving uses append-only access without a custom album")
 check(not info.get("NSAppTransportSecurity", {}).get("NSAllowsArbitraryLoads", False),
       "iOS arbitrary HTTP loads are disabled")
 with (APP / "ios/Runner/PrivacyInfo.xcprivacy").open("rb") as f:
     privacy = plistlib.load(f)
 check(privacy.get("NSPrivacyTracking") is False and
       privacy.get("NSPrivacyAccessedAPITypes"), "Privacy manifest parses and declares required-reason APIs")
+check(any(item.get("NSPrivacyCollectedDataType") == "NSPrivacyCollectedDataTypePhotosorVideos"
+          for item in privacy.get("NSPrivacyCollectedDataTypes", [])),
+      "Privacy manifest retains calculator photo collection disclosure")
 project = (APP / "ios/Runner.xcodeproj/project.pbxproj").read_text()
 check("PrivacyInfo.xcprivacy in Resources" in project and
       "com.calcai.calcaiApp" in project, "Bundle ID and privacy manifest wired into Xcode")

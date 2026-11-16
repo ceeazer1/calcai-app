@@ -38,6 +38,16 @@ class _AuthScreenState extends State<AuthScreen>
   bool _obscure = true;
   bool _isLoading = false;
   String? _error;
+  AuthService? _pendingAuth;
+  Object? _authAttempt;
+  int _authGeneration = 0;
+
+  void _cancelPendingAuth() {
+    _authGeneration++;
+    _pendingAuth?.cancelAuthAttempt(_authAttempt, notify: false);
+    _pendingAuth = null;
+    _authAttempt = null;
+  }
 
   @override
   void initState() {
@@ -62,6 +72,7 @@ class _AuthScreenState extends State<AuthScreen>
 
   @override
   void dispose() {
+    _cancelPendingAuth();
     _animController.dispose();
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
@@ -71,6 +82,8 @@ class _AuthScreenState extends State<AuthScreen>
   }
 
   Future<void> _openReset() async {
+    _cancelPendingAuth();
+    setState(() => _isLoading = false);
     FocusScope.of(context).unfocus();
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -82,9 +95,11 @@ class _AuthScreenState extends State<AuthScreen>
 
   void _switchMode(bool signUp) {
     if (_isSignUp == signUp) return;
+    _cancelPendingAuth();
     FocusScope.of(context).unfocus();
     setState(() {
       _isSignUp = signUp;
+      _isLoading = false;
       _error = null; // A login error doesn't apply to sign-up, or vice versa.
     });
   }
@@ -107,6 +122,7 @@ class _AuthScreenState extends State<AuthScreen>
   }
 
   Future<void> _submitEmail() async {
+    if (_isLoading) return;
     final problem = _validate();
     if (problem != null) {
       setState(() => _error = problem);
@@ -121,11 +137,19 @@ class _AuthScreenState extends State<AuthScreen>
     final auth = context.read<AuthService>();
     final email = _emailCtrl.text.trim();
     final password = _passwordCtrl.text;
-    final outcome = _isSignUp
-        ? await auth.signUpWithEmail(email, password)
-        : await auth.signInWithEmail(email, password);
+    final generation = ++_authGeneration;
+    final request = _isSignUp
+        ? auth.signUpWithEmail(email, password)
+        : auth.signInWithEmail(email, password);
+    _pendingAuth = auth;
+    final attempt = _authAttempt = auth.activeAuthAttempt;
+    final outcome = await request;
 
-    if (!mounted) return;
+    if (!mounted ||
+        generation != _authGeneration ||
+        !auth.isCurrentAuthAttempt(attempt)) {
+      return;
+    }
     setState(() => _isLoading = false);
 
     switch (outcome) {
@@ -145,24 +169,31 @@ class _AuthScreenState extends State<AuthScreen>
   }
 
   Future<void> _handleSocial(String provider) async {
+    if (_isLoading) return;
     setState(() {
       _isLoading = true;
       _error = null;
     });
 
+    final auth = context.read<AuthService>();
+    final generation = ++_authGeneration;
+    final request = provider == 'apple'
+        ? auth.signInWithApple()
+        : () async {
+            final success = await auth.signInWithGoogle();
+            return success ? null : auth.error ?? 'Google sign-in failed';
+          }();
+    _pendingAuth = auth;
+    final attempt = _authAttempt = auth.activeAuthAttempt;
     String? errorDetail;
     try {
-      final auth = context.read<AuthService>();
-      if (provider == 'apple') {
-        errorDetail = await auth.signInWithApple();
-      } else {
-        final success = await auth.signInWithGoogle();
-        if (!success) errorDetail = auth.error ?? 'Google sign-in failed';
-      }
+      errorDetail = await request;
     } catch (_) {
       errorDetail = 'Sign in failed. Please try again.';
     } finally {
-      if (mounted) {
+      if (mounted &&
+          generation == _authGeneration &&
+          auth.isCurrentAuthAttempt(attempt)) {
         setState(() {
           _isLoading = false;
           _error = errorDetail;
@@ -220,18 +251,19 @@ class _AuthScreenState extends State<AuthScreen>
                           : AutofillHints.password,
                     ],
                     onSubmitted: (_) => _submitEmail(),
-                    trailing: GestureDetector(
-                      onTap: () => setState(() => _obscure = !_obscure),
-                      behavior: HitTestBehavior.opaque,
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 8, bottom: 6),
-                        child: Icon(
-                          _obscure
-                              ? Icons.visibility_off_rounded
-                              : Icons.visibility_rounded,
-                          size: 18,
-                          color: _muted,
-                        ),
+                    trailing: IconButton(
+                      tooltip: _obscure ? 'Show password' : 'Hide password',
+                      onPressed: () => setState(() => _obscure = !_obscure),
+                      constraints: const BoxConstraints(
+                        minWidth: 48,
+                        minHeight: 48,
+                      ),
+                      icon: Icon(
+                        _obscure
+                            ? Icons.visibility_off_rounded
+                            : Icons.visibility_rounded,
+                        size: 18,
+                        color: _muted,
                       ),
                     ),
                   ),
@@ -472,34 +504,39 @@ class _PrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: _cream,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
+    return Semantics(
+      button: true,
+      enabled: onTap != null && !loading,
+      label: loading ? label : null,
+      child: Material(
+        color: _cream,
         borderRadius: BorderRadius.circular(12),
-        child: SizedBox(
-          height: 52,
-          child: Center(
-            child: loading
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        Color(0xFF16161A),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: SizedBox(
+            height: 52,
+            child: Center(
+              child: loading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Color(0xFF16161A),
+                        ),
+                      ),
+                    )
+                  : Text(
+                      label,
+                      style: GoogleFonts.inter(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF16161A),
                       ),
                     ),
-                  )
-                : Text(
-                    label,
-                    style: GoogleFonts.inter(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF16161A),
-                    ),
-                  ),
+            ),
           ),
         ),
       ),
@@ -521,38 +558,42 @@ class _SocialButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Opacity(
-      opacity: onTap == null ? 0.55 : 1,
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: onTap,
+    return Semantics(
+      button: true,
+      enabled: onTap != null,
+      child: Opacity(
+        opacity: onTap == null ? 0.55 : 1,
+        child: Material(
+          color: Colors.transparent,
           borderRadius: BorderRadius.circular(12),
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 50),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFF3A3A40)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(icon, color: Colors.white, size: 21),
-                const SizedBox(width: 9),
-                Flexible(
-                  child: Text(
-                    label,
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.inter(
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 50),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF3A3A40)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, color: Colors.white, size: 21),
+                  const SizedBox(width: 9),
+                  Flexible(
+                    child: Text(
+                      label,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

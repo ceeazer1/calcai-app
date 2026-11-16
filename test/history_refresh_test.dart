@@ -4,6 +4,7 @@ import 'dart:ui' show SemanticsAction;
 
 import 'package:calcai_app/screens/dashboard_screen.dart';
 import 'package:calcai_app/screens/history_screen.dart';
+import 'package:calcai_app/screens/main_shell.dart';
 import 'package:calcai_app/services/auth_service.dart';
 import 'package:calcai_app/services/ble_service.dart';
 import 'package:calcai_app/services/cloud_service.dart';
@@ -47,7 +48,7 @@ CloudService _cloud(Future<http.Response> Function(http.Request) history) =>
 Future<void> _show(
   WidgetTester tester,
   CloudService cloud, {
-  Widget screen = const HistoryScreen(),
+  Widget home = const Scaffold(body: HistoryScreen()),
 }) async {
   final auth = FakeAuthService();
   await auth.init();
@@ -61,7 +62,7 @@ Future<void> _show(
         ChangeNotifierProvider<CloudService>.value(value: cloud),
         ChangeNotifierProvider<BleService>.value(value: ble),
       ],
-      child: MaterialApp(home: Scaffold(body: screen)),
+      child: MaterialApp(home: home),
     ),
   );
   await tester.pumpAndSettle();
@@ -94,6 +95,128 @@ void main() {
     expect(calls, 2);
     expect(find.text('SOLVE2X+3=11'), findsOneWidget);
     expect(find.text('No prompts yet'), findsNothing);
+  });
+
+  for (final dismissWithDrag in [true, false]) {
+    final dismissal = dismissWithDrag ? 'drag' : 'back';
+    testWidgets(
+      'history detail $dismissal keeps the search keyboard closed',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(390, 844);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+
+        const question = 'SOLVE2X+3=11';
+        final cloud = _cloud((_) async => _answer(question));
+        addTearDown(cloud.dispose);
+        await _show(tester, cloud, home: const MainShell());
+        await tester.tap(find.text('History'));
+        await tester.pumpAndSettle();
+
+        final search = find.byType(EditableText);
+        await tester.enterText(search, 'no matching answer');
+        await tester.pump();
+        expect(find.text('No matching prompts'), findsOneWidget);
+        expect(find.text(question), findsNothing);
+
+        final editable = tester.widget<EditableText>(search);
+        // Clear by editing while the keyboard still owns the input connection.
+        tester.testTextInput.enterText('');
+        await tester.pump();
+        expect(find.text(question), findsOneWidget);
+        expect(editable.controller.text, isEmpty);
+        expect(editable.focusNode.hasFocus, isTrue);
+        expect(tester.testTextInput.isVisible, isTrue);
+
+        await tester.tap(find.text(question));
+        await tester.pumpAndSettle();
+        final report = find.text('Report this answer');
+        expect(report, findsOneWidget);
+        final keyboardVisibleInDetail = tester.testTextInput.isVisible;
+
+        if (dismissWithDrag) {
+          await tester.drag(report, const Offset(0, 375));
+        } else {
+          await tester.binding.handlePopRoute();
+        }
+        await tester.pumpAndSettle();
+        expect(report, findsNothing);
+        expect(editable.focusNode.hasFocus, isFalse);
+        expect(tester.testTextInput.isVisible, isFalse);
+        expect(keyboardVisibleInDetail, isFalse);
+        expect(editable.controller.text, isEmpty);
+        expect(find.text(question), findsOneWidget);
+
+        await tester.tap(find.text('Home').hitTestable());
+        await tester.pumpAndSettle();
+        expect(find.byType(DashboardScreen), findsOneWidget);
+        await tester.tap(find.text('History'));
+        await tester.pumpAndSettle();
+        expect(tester.testTextInput.isVisible, isFalse);
+        await tester.tap(search);
+        await tester.pump();
+        expect(tester.testTextInput.isVisible, isTrue);
+      },
+      variant: const TargetPlatformVariant({TargetPlatform.iOS}),
+    );
+  }
+
+  testWidgets(
+    'repeat result taps open one History detail and Back dismisses it',
+    (tester) async {
+      var reads = 0;
+      final cloud = _cloud((_) async {
+        reads++;
+        return _answer('A SINGLE RESULT');
+      });
+      addTearDown(cloud.dispose);
+      await _show(tester, cloud);
+      final point = tester.getCenter(find.text('A SINGLE RESULT'));
+      await tester.tapAt(point);
+      await tester.tapAt(point);
+      await tester.pumpAndSettle();
+      expect(find.text('Report this answer'), findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('Report this answer'), findsNothing);
+      expect(find.text('A SINGLE RESULT'), findsOneWidget);
+      expect(reads, 1);
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.iOS}),
+  );
+
+  testWidgets('History pull and repeated Refresh share one pending request', (
+    tester,
+  ) async {
+    var calls = 0;
+    final refresh = Completer<http.Response>();
+    final cloud = _cloud((request) async {
+      expect(request.url.queryParameters['limit'], '200');
+      return ++calls == 1 ? _answer('SAVED RESULT') : refresh.future;
+    });
+    addTearDown(cloud.dispose);
+    await _show(tester, cloud);
+    expect(calls, 1);
+
+    final list = find.descendant(
+      of: find.byType(RefreshIndicator),
+      matching: find.byType(ListView),
+    );
+    await tester.drag(list, const Offset(0, 350));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(calls, 2);
+    final button = find.byTooltip('Refresh history');
+    await tester.tap(button);
+    await tester.tap(button);
+    await tester.pump();
+    expect(calls, 2);
+
+    refresh.complete(_answer('REFRESHED RESULT'));
+    await tester.pumpAndSettle();
+    expect(find.text('REFRESHED RESULT'), findsOneWidget);
+    expect(calls, 2);
   });
 
   testWidgets('a failed read shows Retry instead of an empty history', (
@@ -148,7 +271,7 @@ void main() {
             : http.Response('{"error":"unavailable"}', 503),
       );
       addTearDown(cloud.dispose);
-      await _show(tester, cloud, screen: const DashboardScreen());
+      await _show(tester, cloud, home: const Scaffold(body: DashboardScreen()));
       await tester.scrollUntilVisible(
         find.textContaining('History is unavailable'),
         250,

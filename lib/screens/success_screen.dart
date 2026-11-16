@@ -210,80 +210,99 @@ class _SuccessScreenState extends State<SuccessScreen>
       body: Container(
         decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(28),
-            child: Column(
-              children: [
-                Expanded(
-                  child: Center(
+          child: LayoutBuilder(
+            builder: (context, constraints) => SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: (constraints.maxHeight - 32).clamp(
+                    0.0,
+                    double.infinity,
+                  ),
+                ),
+                child: IntrinsicHeight(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                     child: Column(
-                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        AnimatedBuilder(
-                          animation: _pairController,
-                          builder: (context, _) => Opacity(
-                            opacity: _pairOpacity.value,
-                            child: Transform.scale(
-                              scale: _pairScale.value,
-                              child: ShaderMask(
-                                shaderCallback: (bounds) =>
-                                    const LinearGradient(
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                      colors: [
-                                        Color(0xFFF5F6FA),
-                                        Color(0xFFA5ADBC),
-                                      ],
-                                    ).createShader(bounds),
-                                child: const Icon(
-                                  Icons.link_rounded,
-                                  size: 112,
-                                  color: Colors.white,
-                                  semanticLabel: 'Device linked',
-                                  shadows: [
-                                    Shadow(
-                                      color: Color(0x507F879B),
-                                      blurRadius: 28,
+                        Expanded(
+                          child: Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                AnimatedBuilder(
+                                  animation: _pairController,
+                                  builder: (context, _) => Opacity(
+                                    opacity: _pairOpacity.value,
+                                    child: Transform.scale(
+                                      scale: _pairScale.value,
+                                      child: ShaderMask(
+                                        shaderCallback: (bounds) =>
+                                            const LinearGradient(
+                                              begin: Alignment.topLeft,
+                                              end: Alignment.bottomRight,
+                                              colors: [
+                                                Color(0xFFF5F6FA),
+                                                Color(0xFFA5ADBC),
+                                              ],
+                                            ).createShader(bounds),
+                                        child: const Icon(
+                                          Icons.link_rounded,
+                                          size: 112,
+                                          color: Colors.white,
+                                          semanticLabel: 'Device linked',
+                                          shadows: [
+                                            Shadow(
+                                              color: Color(0x507F879B),
+                                              blurRadius: 28,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
                                     ),
-                                  ],
+                                  ),
                                 ),
-                              ),
+                                const SizedBox(height: 24),
+                                SlideTransition(
+                                  position: _contentSlide,
+                                  child: FadeTransition(
+                                    opacity: _contentFade,
+                                    child: Text(
+                                      'Device paired',
+                                      textAlign: TextAlign.center,
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 44,
+                                        height: 1.12,
+                                        letterSpacing: -1,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
                         const SizedBox(height: 24),
-                        SlideTransition(
-                          position: _contentSlide,
-                          child: FadeTransition(
-                            opacity: _contentFade,
-                            child: Text(
-                              'Device paired',
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.outfit(
-                                fontSize: 44,
-                                height: 1.12,
-                                letterSpacing: -1,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textPrimary,
-                              ),
+                        FadeTransition(
+                          opacity: _contentFade,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: GradientButton(
+                              label: 'Home page',
+                              icon: Icons.home_rounded,
+                              onPressed: _onDone,
+                              width: double.infinity,
                             ),
                           ),
                         ),
+                        const SizedBox(height: 16),
                       ],
                     ),
                   ),
                 ),
-                FadeTransition(
-                  opacity: _contentFade,
-                  child: GradientButton(
-                    label: 'Home page',
-                    icon: Icons.home_rounded,
-                    onPressed: _onDone,
-                    width: double.infinity,
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
+              ),
             ),
           ),
         ),

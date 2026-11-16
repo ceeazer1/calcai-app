@@ -6,6 +6,7 @@ import 'package:http/io_client.dart';
 import 'package:objective_c/objective_c.dart';
 
 import 'bodyless_read_client.dart';
+import 'deferred_close_client.dart';
 
 /// Include only the numeric native code, never request URLs or credentials.
 String connectionFailureMessage(http.ClientException error) {
@@ -18,7 +19,7 @@ String connectionFailureMessage(http.ClientException error) {
 /// Reuse this client for the service lifetime and close it on disposal.
 /// Platform transports own DNS, certificate validation, and connection pooling.
 /// Do not replay authentication codes or other mutations on network failures.
-http.Client createResilientClient() {
+http.Client createResilientClient({int? maxResponseBytes}) {
   if (Platform.isIOS || Platform.isMacOS) {
     final configuration =
         URLSessionConfiguration.ephemeralSessionConfiguration()
@@ -37,13 +38,19 @@ http.Client createResilientClient() {
           // responsible for the total time a user action can take.
           ..waitsForConnectivity = false;
     return BodylessReadClient(
-      CupertinoClient.fromSessionConfiguration(configuration),
+      DeferredCloseClient(
+        CupertinoClient.fromSessionConfiguration(configuration),
+        maxResponseBytes: maxResponseBytes,
+      ),
     );
   }
 
-  return IOClient(
+  final client = IOClient(
     HttpClient()
       ..connectionTimeout = const Duration(seconds: 15)
       ..idleTimeout = const Duration(seconds: 30),
   );
+  return maxResponseBytes == null
+      ? client
+      : DeferredCloseClient(client, maxResponseBytes: maxResponseBytes);
 }

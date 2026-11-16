@@ -41,6 +41,7 @@ class ScanningAnimation extends StatefulWidget {
 class _ScanningAnimationState extends State<ScanningAnimation>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+  bool _reduceMotion = true;
 
   @override
   void initState() {
@@ -49,16 +50,29 @@ class _ScanningAnimationState extends State<ScanningAnimation>
       vsync: this,
       duration: const Duration(milliseconds: 3000),
     );
-    if (widget.isScanning) _controller.repeat();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _reduceMotion =
+        MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.accessibleNavigationOf(context);
+    _syncAnimation();
   }
 
   @override
   void didUpdateWidget(covariant ScanningAnimation oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.isScanning && !_controller.isAnimating) {
-      _controller.repeat();
-    } else if (!widget.isScanning && _controller.isAnimating) {
+    _syncAnimation();
+  }
+
+  void _syncAnimation() {
+    if (widget.isScanning && !_reduceMotion && TickerMode.of(context)) {
+      if (!_controller.isAnimating) _controller.repeat();
+    } else {
       _controller.stop();
+      _controller.value = 0;
     }
   }
 
@@ -81,7 +95,7 @@ class _ScanningAnimationState extends State<ScanningAnimation>
               progress: _controller.value,
               ringCount: widget.ringCount,
               color: widget.color,
-              isActive: widget.isScanning,
+              isActive: widget.isScanning && !_reduceMotion,
             ),
             child: Center(child: widget.child),
           );
@@ -161,10 +175,7 @@ class _RadarPainter extends CustomPainter {
       ..shader = SweepGradient(
         startAngle: sweepAngle - 0.8,
         endAngle: sweepAngle,
-        colors: [
-          color.withOpacity(0.0),
-          color.withOpacity(0.15),
-        ],
+        colors: [color.withOpacity(0.0), color.withOpacity(0.15)],
         transform: GradientRotation(sweepAngle - 0.8),
       ).createShader(Rect.fromCircle(center: center, radius: maxRadius))
       ..style = PaintingStyle.fill;
@@ -201,7 +212,6 @@ class _RadarPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _RadarPainter oldDelegate) {
-    return oldDelegate.progress != progress ||
-        oldDelegate.isActive != isActive;
+    return oldDelegate.progress != progress || oldDelegate.isActive != isActive;
   }
 }

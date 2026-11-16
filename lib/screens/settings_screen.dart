@@ -12,6 +12,7 @@ import '../theme/app_colors.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/calcai_mark.dart';
 import '../widgets/provider_funding_label.dart';
+import '../models/initial_release_ai.dart';
 
 /// Settings screen — account, device info, and sign out.
 class SettingsScreen extends StatefulWidget {
@@ -253,13 +254,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           height: 1,
                           indent: 56,
                         ),
-                        _providerSection('Google', Icons.cloud_rounded),
-                        Divider(
-                          color: AppColors.glassBorder,
-                          height: 1,
-                          indent: 56,
-                        ),
                         _providerSection('Anthropic', Icons.psychology_rounded),
+                        _legacyGoogleKeyRemoval(),
                         const SizedBox(height: 4),
                       ],
                     ),
@@ -698,16 +694,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   bool _modelBelongsTo(String model, String provider) {
-    switch (provider) {
-      case 'OpenAI':
-        return model.startsWith('gpt') || model.startsWith('o');
-      case 'Google':
-        return model.startsWith('gemini');
-      case 'Anthropic':
-        return model.startsWith('claude');
-      default:
-        return false;
-    }
+    return InitialReleaseAi.providerForModel(model) == provider.toLowerCase();
   }
 
   void _showCustomModelDialog(BuildContext context, String provider) {
@@ -719,99 +706,193 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
     final hint = switch (provider) {
       'OpenAI' => 'e.g. gpt-5.4 or gpt-4o',
-      'Google' => 'e.g. gemini-3.1-pro-preview',
       'Anthropic' => 'e.g. claude-opus-4-8',
       _ => 'model id',
     };
+    String? modelError;
+    var saving = false;
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: BorderSide(color: AppColors.glassBorder),
-        ),
-        title: Text(
-          '$provider Custom Model',
-          style: GoogleFonts.outfit(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.w600,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          scrollable: true,
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(color: AppColors.glassBorder),
           ),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Run any $provider model your API key supports — including '
-              'older or niche ones not in the picker.',
-              style: GoogleFonts.inter(
-                color: AppColors.textSecondary,
-                fontSize: 13,
+          title: Text(
+            '$provider Custom Model',
+            style: GoogleFonts.outfit(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Run any $provider model your API key supports — including '
+                'older or niche ones not in the picker.',
+                style: GoogleFonts.inter(
+                  color: AppColors.textSecondary,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                autocorrect: false,
+                style: GoogleFonts.inter(
+                  color: AppColors.textPrimary,
+                  fontSize: 14,
+                ),
+                decoration: InputDecoration(
+                  errorText: modelError,
+                  errorMaxLines: 5,
+                  hintText: hint,
+                  hintStyle: GoogleFonts.inter(color: AppColors.textTertiary),
+                  filled: true,
+                  fillColor: AppColors.surfaceLight,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(ctx),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.inter(color: AppColors.textSecondary),
               ),
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              autocorrect: false,
-              style: GoogleFonts.inter(
-                color: AppColors.textPrimary,
-                fontSize: 14,
-              ),
-              decoration: InputDecoration(
-                hintText: hint,
-                hintStyle: GoogleFonts.inter(color: AppColors.textTertiary),
-                filled: true,
-                fillColor: AppColors.surfaceLight,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
+            ElevatedButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      final model = controller.text.trim();
+                      if (!_modelBelongsTo(model, provider)) {
+                        setDialogState(
+                          () => modelError =
+                              'Enter a supported $provider model ID.',
+                        );
+                        return;
+                      }
+                      if (auth.token != null && auth.primaryMac != null) {
+                        final saveRevision = cloud.modelSaveRevision;
+                        final requestToken = auth.token!;
+                        final requestMac = auth.primaryMac!;
+                        setDialogState(() {
+                          saving = true;
+                          modelError = null;
+                        });
+                        await cloud.setModel(
+                          requestToken,
+                          requestMac,
+                          model,
+                          cloud.responseStyle,
+                        );
+                        if (ctx.mounted) {
+                          final saved =
+                              cloud.modelSaveRevision > saveRevision &&
+                              auth.token == requestToken &&
+                              auth.primaryMac == requestMac &&
+                              cloud.currentModel != null &&
+                              InitialReleaseAi.acknowledges(
+                                model,
+                                cloud.currentModel!,
+                              ) &&
+                              cloud.modelError == null;
+                          if (!saved) {
+                            setDialogState(() {
+                              saving = false;
+                              modelError =
+                                  cloud.modelError ??
+                                  'Model change was not confirmed.';
+                            });
+                            return;
+                          }
+                          Navigator.pop(ctx);
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Model set to ${cloud.currentModel}',
+                              ),
+                              backgroundColor: AppColors.surface,
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      } else {
+                        setDialogState(
+                          () => modelError =
+                              'Sign in and select a calculator first.',
+                        );
+                      }
+                    },
+              child: Text(
+                'Apply',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w600),
               ),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              'Cancel',
-              style: GoogleFonts.inter(color: AppColors.textSecondary),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final model = controller.text.trim();
-              if (model.isEmpty) return;
-              Navigator.pop(ctx);
-              if (auth.token != null && auth.primaryMac != null) {
-                await cloud.setModel(
-                  auth.token!,
-                  auth.primaryMac!,
-                  model,
-                  cloud.responseStyle,
-                );
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Model set to $model'),
-                      backgroundColor: AppColors.surface,
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                }
-              }
-            },
-            child: Text(
-              'Apply',
-              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
       ),
     );
   }
+
+  /// A legacy Google credential can be removed, never enabled or verified.
+  Widget _legacyGoogleKeyRemoval() => Consumer2<AuthService, CloudService>(
+    builder: (context, auth, cloud, _) {
+      if (!cloud.hasApiKey('google')) return const SizedBox.shrink();
+      return ListTile(
+        title: const Text('Remove saved Google key'),
+        subtitle: const Text('Gemini is unavailable in this release.'),
+        trailing: const Icon(Icons.delete_outline_rounded),
+        enabled: !cloud.apiKeysLoading && auth.token != null,
+        onTap: () async {
+          final remove = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Remove saved Google key?'),
+              content: const Text(
+                'This deletes CalcAI’s saved copy. Revoke the key separately with Google to invalidate it there.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Remove'),
+                ),
+              ],
+            ),
+          );
+          if (remove != true || auth.token == null) return;
+          final ok = await cloud.deleteApiKey(auth.token!, 'google');
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                ok
+                    ? 'Saved Google key removed.'
+                    : cloud.apiKeysError ?? 'Key removal was not confirmed.',
+              ),
+            ),
+          );
+        },
+      );
+    },
+  );
 
   void _showApiKeyDialog(BuildContext context, String provider) {
     final controller = TextEditingController();
@@ -1008,14 +1089,15 @@ class _LinkRow extends StatelessWidget {
             children: [
               Icon(icon, color: AppColors.textSecondary, size: 20),
               const SizedBox(width: 14),
-              Text(
-                label,
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  color: AppColors.textPrimary,
+              Expanded(
+                child: Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
               ),
-              const Spacer(),
               Icon(
                 Icons.open_in_new_rounded,
                 color: AppColors.textTertiary,
@@ -1050,24 +1132,33 @@ class _SettingsRow extends StatelessWidget {
         children: [
           Icon(icon, color: AppColors.textSecondary, size: 20),
           const SizedBox(width: 14),
-          Text(
-            label,
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              color: AppColors.textPrimary,
+          Expanded(
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 12,
+              runSpacing: 6,
+              children: [
+                Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                if (trailing != null)
+                  trailing!
+                else if (value != null)
+                  Text(
+                    value!,
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+              ],
             ),
           ),
-          const Spacer(),
-          if (trailing != null)
-            trailing!
-          else if (value != null)
-            Text(
-              value!,
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                color: AppColors.textSecondary,
-              ),
-            ),
         ],
       ),
     );
@@ -1099,33 +1190,51 @@ class _MacAddressRowState extends State<_MacAddressRow> {
               size: 20,
             ),
             const SizedBox(width: 14),
-            Text(
-              'MAC Address',
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                color: AppColors.textPrimary,
+            Expanded(
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 12,
+                runSpacing: 6,
+                children: [
+                  Text(
+                    'MAC Address',
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 200),
+                          child: Text(
+                            _revealed ? widget.mac : '••:••:••:••:••:••',
+                            key: ValueKey(_revealed),
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              color: AppColors.textSecondary,
+                              fontFeatures: [
+                                const FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Icon(
+                        _revealed
+                            ? Icons.visibility_off_rounded
+                            : Icons.visibility_rounded,
+                        color: AppColors.textTertiary,
+                        size: 16,
+                      ),
+                    ],
+                  ),
+                ],
               ),
-            ),
-            const Spacer(),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: Text(
-                _revealed ? widget.mac : '••:••:••:••:••:••',
-                key: ValueKey(_revealed),
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  color: AppColors.textSecondary,
-                  fontFeatures: [const FontFeature.tabularFigures()],
-                ),
-              ),
-            ),
-            const SizedBox(width: 6),
-            Icon(
-              _revealed
-                  ? Icons.visibility_off_rounded
-                  : Icons.visibility_rounded,
-              color: AppColors.textTertiary,
-              size: 16,
             ),
           ],
         ),

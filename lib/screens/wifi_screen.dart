@@ -33,6 +33,9 @@ class _WifiScreenState extends State<WifiScreen> {
   bool _isAddingNetwork = false;
   bool _showAvailableNetworks = false;
   String? _expandedSavedSsid;
+  String? _removingNetworkSsid;
+  String? _removeNetworkError;
+  String? _retryRemovalSsid;
   BleService? _ble;
   bool _bleListenerAttached = false;
   bool _closing = false;
@@ -60,8 +63,8 @@ class _WifiScreenState extends State<WifiScreen> {
   /// "Searching…" instead of the failed state, so there's no initial flash.
   bool _attempted = false;
 
-  /// Fallback timer that gives up auto-connect if nothing connects in time.
-  Timer? _connectTimeout;
+  /// Ends fallback discovery when the scan has no candidate.
+  Timer? _discoveryTimeout;
 
   @override
   void didChangeDependencies() {
@@ -96,7 +99,7 @@ class _WifiScreenState extends State<WifiScreen> {
 
   @override
   void dispose() {
-    _connectTimeout?.cancel();
+    _discoveryTimeout?.cancel();
     final ble = _ble;
     if (ble != null && _bleListenerAttached) ble.removeListener(_onBle);
     // Fallback for route replacement/app teardown. Normal back navigation
@@ -114,7 +117,7 @@ class _WifiScreenState extends State<WifiScreen> {
   Future<void> _endWifiSession() async {
     final ble = _ble;
     if (ble == null) return;
-    _connectTimeout?.cancel();
+    _discoveryTimeout?.cancel();
     try {
       await ble.stopScan();
     } catch (_) {
@@ -132,7 +135,12 @@ class _WifiScreenState extends State<WifiScreen> {
   }
 
   Future<void> _leaveScreen() async {
-    if (_closing || _askingToLeave || _isAddingNetwork) return;
+    if (_closing ||
+        _askingToLeave ||
+        _isAddingNetwork ||
+        _removingNetworkSsid != null) {
+      return;
+    }
     final ble = _ble;
     if (ble != null && ble.connectionState.isConnected) {
       _askingToLeave = true;
@@ -158,7 +166,7 @@ class _WifiScreenState extends State<WifiScreen> {
       _askingToLeave = false;
       if (!mounted || closePortal == null) return;
       _closing = true;
-      _connectTimeout?.cancel();
+      _discoveryTimeout?.cancel();
       if (closePortal) {
         final closed = await ble.closeBlePortal();
         if (!mounted) return;
@@ -193,7 +201,7 @@ class _WifiScreenState extends State<WifiScreen> {
   }
 
   void _stopAutoConnecting() {
-    _connectTimeout?.cancel();
+    _discoveryTimeout?.cancel();
     _connectStarted = false;
     // Skip/timeout/hidden-tab cancellation also invalidates a pending proof.
     // A retry on the same BLE generation must start a fresh handshake.
@@ -226,14 +234,18 @@ class _WifiScreenState extends State<WifiScreen> {
     }
 
     // A started connect attempt failed → stop showing the connecting state.
-    if (_connectStarted && ble.connectionState == DeviceConnectionState.error) {
+    if (_connectStarted &&
+        (ble.connectionState == DeviceConnectionState.error ||
+            ble.connectionState == DeviceConnectionState.disconnected)) {
       _stopAutoConnecting();
       return;
     }
 
-    // First device found during the scan → connect to it.
+    // A candidate ends discovery. Connecting and proving ownership have
+    // their own deadlines and must not inherit the remaining scan time.
     if (!_connectStarted && ble.devices.isNotEmpty) {
       _connectStarted = true;
+      _discoveryTimeout?.cancel();
       ble.connectToDevice(ble.devices.first);
     }
     // Note: "nothing found" is handled by the timeout timer, not here, so we
@@ -276,14 +288,12 @@ class _WifiScreenState extends State<WifiScreen> {
 
     // Fall back to scanning for the device.
     _connectStarted = false;
-    _connectTimeout?.cancel();
-    // Short timeout so a missing device drops to "Bluetooth disconnected"
-    // quickly instead of leaving the user on "Connecting…".
-    _connectTimeout = Timer(const Duration(seconds: 12), () {
-      if (mounted && _autoConnecting) {
-        ble.stopScan();
-        ble.disconnect();
+    _discoveryTimeout?.cancel();
+    // This deadline only applies while searching for a candidate.
+    _discoveryTimeout = Timer(const Duration(seconds: 12), () {
+      if (mounted && _autoConnecting && !_connectStarted) {
         _stopAutoConnecting();
+        unawaited(ble.stopScan());
       }
     });
 
@@ -403,7 +413,9 @@ class _WifiScreenState extends State<WifiScreen> {
                       child: Row(
                         children: [
                           IconButton(
-                            onPressed: _closing ? null : _leaveScreen,
+                            onPressed: _closing || _removingNetworkSsid != null
+                                ? null
+                                : _leaveScreen,
                             tooltip: MaterialLocalizations.of(
                               context,
                             ).backButtonTooltip,
@@ -458,6 +470,32 @@ class _WifiScreenState extends State<WifiScreen> {
   /// "Connecting…" once one is found. If it can't be found, it drops straight
   /// to "Bluetooth disconnected" with a retry.
   Widget _buildDisconnectedView(BleService ble) {
+    if (_removeNetworkError != null) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(32, 12, 32, 32),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('Bluetooth disconnected'),
+            const SizedBox(height: 12),
+            Semantics(
+              liveRegion: true,
+              child: Text(
+                _removeNetworkError!,
+                style: const TextStyle(color: AppColors.error),
+              ),
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton(
+              onPressed: _autoConnecting ? null : _attemptAutoConnect,
+              child: Text(_autoConnecting ? 'Reconnecting…' : 'Reconnect'),
+            ),
+            const SizedBox(height: 20),
+            ..._savedNetworkTiles(ble, readOnly: true),
+          ],
+        ),
+      );
+    }
     // A device has been found and we're establishing the link.
     final isLinking =
         _connectStarted ||
@@ -627,6 +665,44 @@ class _WifiScreenState extends State<WifiScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 20),
           sliver: SliverList.list(
             children: [
+              if (_removingNetworkSsid != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Text('Removing "$_removingNetworkSsid"…'),
+                  ),
+                ),
+              if (_removeNetworkError != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Semantics(
+                        liveRegion: true,
+                        child: Text(
+                          _removeNetworkError!,
+                          style: const TextStyle(color: AppColors.error),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed:
+                            _removingNetworkSsid != null ||
+                                _retryRemovalSsid == null
+                            ? null
+                            : ble.networkRemovalNeedsReconnect
+                            ? _reconnectForRemoval
+                            : () => _performRemoveNetwork(_retryRemovalSsid!),
+                        child: Text(
+                          ble.networkRemovalNeedsReconnect
+                              ? 'Reconnect to retry'
+                              : 'Retry removal',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               _savedNetworksHeader(),
               const SizedBox(height: 10),
               ..._savedNetworkTiles(ble, readOnly: false),
@@ -663,7 +739,9 @@ class _WifiScreenState extends State<WifiScreen> {
                       else
                         IconButton(
                           tooltip: 'Scan network',
-                          onPressed: () => _addNetwork(ble),
+                          onPressed: _removingNetworkSsid != null
+                              ? null
+                              : () => _addNetwork(ble),
                           icon: const Icon(Icons.refresh_rounded),
                         ),
                     ],
@@ -681,19 +759,23 @@ class _WifiScreenState extends State<WifiScreen> {
                         ),
                       ),
                     ),
-                  WifiNetworkPicker(
-                    networks: ble.wifiNetworks,
-                    onConnect: (network, password, hotspot) {
-                      setState(() => _showAvailableNetworks = false);
-                      _attemptConnect(
-                        network.ssid,
-                        password,
-                        iphoneHotspot: hotspot,
-                      );
-                    },
+                  AbsorbPointer(
+                    absorbing: _removingNetworkSsid != null,
+                    child: WifiNetworkPicker(
+                      networks: ble.wifiNetworks,
+                      onConnect: (network, password, hotspot) {
+                        if (_removingNetworkSsid != null) return;
+                        setState(() => _showAvailableNetworks = false);
+                        _attemptConnect(
+                          network.ssid,
+                          password,
+                          iphoneHotspot: hotspot,
+                        );
+                      },
+                    ),
                   ),
                   TextButton(
-                    onPressed: _isAddingNetwork
+                    onPressed: _isAddingNetwork || _removingNetworkSsid != null
                         ? null
                         : _showManualNetworkDialog,
                     child: const Text('Add network manually'),
@@ -728,7 +810,9 @@ class _WifiScreenState extends State<WifiScreen> {
                             )
                           : IconButton(
                               tooltip: 'Scan network',
-                              onPressed: () => _addNetwork(ble),
+                              onPressed: _removingNetworkSsid != null
+                                  ? null
+                                  : () => _addNetwork(ble),
                               iconSize: 76,
                               color: AppColors.textPrimary,
                               icon: const Icon(Icons.wifi_find_rounded),
@@ -736,7 +820,8 @@ class _WifiScreenState extends State<WifiScreen> {
                     ),
                     const SizedBox(height: 12),
                     TextButton(
-                      onPressed: _isAddingNetwork
+                      onPressed:
+                          _isAddingNetwork || _removingNetworkSsid != null
                           ? null
                           : _showManualNetworkDialog,
                       style: TextButton.styleFrom(
@@ -760,6 +845,7 @@ class _WifiScreenState extends State<WifiScreen> {
   /// Manual SSID + password entry, for hidden networks or when the scan can't
   /// see the network.
   void _showManualNetworkDialog() {
+    if (_removingNetworkSsid != null) return;
     final ssidController = TextEditingController();
     final passwordController = TextEditingController();
     bool iphoneHotspot = false;
@@ -896,7 +982,10 @@ class _WifiScreenState extends State<WifiScreen> {
               ),
               if (!readOnly)
                 TextButton(
-                  onPressed: ble.savedNetworksLoading || _isAddingNetwork
+                  onPressed:
+                      ble.savedNetworksLoading ||
+                          _isAddingNetwork ||
+                          _removingNetworkSsid != null
                       ? null
                       : ble.requestSavedNetworks,
                   child: const Text('Retry'),
@@ -938,7 +1027,7 @@ class _WifiScreenState extends State<WifiScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 InkWell(
-                  onTap: readOnly
+                  onTap: readOnly || _removingNetworkSsid != null
                       ? null
                       : () => setState(() {
                           _expandedSavedSsid = _expandedSavedSsid == ssid
@@ -982,7 +1071,11 @@ class _WifiScreenState extends State<WifiScreen> {
                       ),
                       if (!readOnly)
                         IconButton(
-                          onPressed: () => _removeNetwork(ssid),
+                          tooltip: 'Remove $ssid',
+                          onPressed:
+                              _isAddingNetwork || _removingNetworkSsid != null
+                              ? null
+                              : () => _removeNetwork(ssid),
                           icon: const Icon(
                             Icons.close_rounded,
                             color: AppColors.textTertiary,
@@ -1021,6 +1114,7 @@ class _WifiScreenState extends State<WifiScreen> {
   }
 
   Future<void> _addNetwork(BleService ble) async {
+    if (_removingNetworkSsid != null) return;
     setState(() => _isAddingNetwork = true);
     try {
       await ble.requestWifiScan();
@@ -1123,6 +1217,7 @@ class _WifiScreenState extends State<WifiScreen> {
     String password, {
     bool iphoneHotspot = false,
   }) async {
+    if (_removingNetworkSsid != null) return;
     final ble = context.read<BleService>();
 
     // Show a connecting indicator
@@ -1272,6 +1367,7 @@ class _WifiScreenState extends State<WifiScreen> {
   }
 
   void _removeNetwork(String ssid) {
+    if (_isAddingNetwork || _removingNetworkSsid != null) return;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1302,8 +1398,7 @@ class _WifiScreenState extends State<WifiScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
-              final ble = context.read<BleService>();
-              ble.removeWifiNetwork(ssid);
+              unawaited(_performRemoveNetwork(ssid));
             },
             child: Text(
               'Remove',
@@ -1313,6 +1408,41 @@ class _WifiScreenState extends State<WifiScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _performRemoveNetwork(String ssid) async {
+    if (_isAddingNetwork || _removingNetworkSsid != null) return;
+    final ble = context.read<BleService>();
+    final generation = ble.connectionGeneration;
+    setState(() {
+      _removingNetworkSsid = ssid;
+      _expandedSavedSsid = null;
+      _removeNetworkError = null;
+      _retryRemovalSsid = null;
+    });
+    var success = false;
+    try {
+      success = await ble.removeWifiNetwork(ssid);
+    } catch (_) {
+      // Preserve the row and expose a recovery action even after a link error.
+    }
+    if (!mounted) return;
+    setState(() {
+      _removingNetworkSsid = null;
+      if (!success) {
+        _retryRemovalSsid = ssid;
+        _removeNetworkError = generation == ble.connectionGeneration
+            ? ble.error ?? 'Could not confirm network removal. Try again.'
+            : 'Bluetooth disconnected before removal was confirmed. '
+                  'Reconnect and refresh saved networks.';
+      }
+    });
+  }
+
+  Future<void> _reconnectForRemoval() async {
+    if (_removingNetworkSsid != null || _autoConnecting) return;
+    await context.read<BleService>().disconnect();
+    if (mounted) await _attemptAutoConnect();
   }
 }
 

@@ -33,6 +33,8 @@ class FakeAuthService extends AuthService {
   @override
   bool get hasDevices => deviceMacs.isNotEmpty;
   @override
+  bool get deviceListVerified => true;
+  @override
   String? get error => _error;
 
   @override
@@ -87,10 +89,10 @@ class FakeAuthService extends AuthService {
   }
 
   @override
-  Future<void> resendVerificationCode(String email) async {}
+  Future<bool> resendVerificationCode(String email) async => true;
 
   @override
-  Future<void> requestPasswordReset(String email) async {}
+  Future<bool> requestPasswordReset(String email) async => true;
 
   @override
   Future<bool> verifyResetCode(String email, String code) async => true;

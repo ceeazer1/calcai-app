@@ -67,9 +67,10 @@ class _GradientButtonState extends State<GradientButton>
       vsync: this,
       duration: const Duration(milliseconds: 120),
     );
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.96).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+    _scaleAnimation = Tween<double>(
+      begin: 1.0,
+      end: 0.96,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
 
   @override
@@ -97,81 +98,82 @@ class _GradientButtonState extends State<GradientButton>
   @override
   Widget build(BuildContext context) {
     final opacity = widget.enabled ? 1.0 : 0.5;
+    final active = widget.enabled && !widget.isLoading;
 
     return AnimatedBuilder(
       animation: _scaleAnimation,
       builder: (context, child) {
-        return Transform.scale(
-          scale: _scaleAnimation.value,
-          child: child,
-        );
+        return Transform.scale(scale: _scaleAnimation.value, child: child);
       },
-      child: GestureDetector(
-        onTapDown: _handleTapDown,
-        onTapUp: _handleTapUp,
-        onTapCancel: _handleTapCancel,
-        onTap: widget.enabled && !widget.isLoading
-            ? widget.onPressed
-            : null,
-        child: AnimatedOpacity(
-          duration: const Duration(milliseconds: 200),
-          opacity: opacity,
-          child: Container(
-            width: widget.width,
-            height: widget.height,
-            decoration: BoxDecoration(
-              gradient: widget.gradient,
-              borderRadius: BorderRadius.circular(widget.borderRadius),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.electricBlue.withOpacity(
-                    _isPressed ? 0.3 : 0.2,
-                  ),
-                  blurRadius: _isPressed ? 20 : 16,
-                  offset: const Offset(0, 4),
-                  spreadRadius: _isPressed ? 1 : 0,
-                ),
-                BoxShadow(
-                  color: AppColors.purple.withOpacity(0.15),
-                  blurRadius: 24,
-                  offset: const Offset(4, 8),
-                ),
-              ],
-            ),
-            child: Center(
-              child: widget.isLoading
-                  ? const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          AppColors.textOnAccent,
-                        ),
-                      ),
-                    )
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (widget.icon != null) ...[
-                          Icon(
-                            widget.icon,
-                            color: AppColors.textOnAccent,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 10),
-                        ],
-                        Text(
-                          widget.label,
-                          style: GoogleFonts.outfit(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textOnAccent,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ],
+      child: Semantics(
+        button: true,
+        enabled: active,
+        label: widget.isLoading ? widget.label : null,
+        child: GestureDetector(
+          onTapDown: active ? _handleTapDown : null,
+          onTapUp: active ? _handleTapUp : null,
+          onTapCancel: active ? _handleTapCancel : null,
+          onTap: active ? widget.onPressed : null,
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 200),
+            opacity: opacity,
+            child: Container(
+              width: widget.width,
+              height: widget.height,
+              decoration: BoxDecoration(
+                gradient: widget.gradient,
+                borderRadius: BorderRadius.circular(widget.borderRadius),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.electricBlue.withOpacity(
+                      _isPressed ? 0.3 : 0.2,
                     ),
+                    blurRadius: _isPressed ? 20 : 16,
+                    offset: const Offset(0, 4),
+                    spreadRadius: _isPressed ? 1 : 0,
+                  ),
+                  BoxShadow(
+                    color: AppColors.purple.withOpacity(0.15),
+                    blurRadius: 24,
+                    offset: const Offset(4, 8),
+                  ),
+                ],
+              ),
+              child: Center(
+                child: widget.isLoading
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            AppColors.textOnAccent,
+                          ),
+                        ),
+                      )
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (widget.icon != null) ...[
+                            Icon(
+                              widget.icon,
+                              color: AppColors.textOnAccent,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 10),
+                          ],
+                          Text(
+                            widget.label,
+                            style: GoogleFonts.outfit(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textOnAccent,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
             ),
           ),
         ),

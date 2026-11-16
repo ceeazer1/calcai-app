@@ -10,8 +10,13 @@ import 'resilient_http_client.dart';
 import 'session_http_client.dart';
 import '../utils/log.dart';
 import '../models/ai_model.dart';
+import '../models/initial_release_ai.dart';
 import '../models/ai_funding.dart';
 import '../models/pairing_v2.dart';
+
+/// A verified edit base. Keep its content and validators together for the
+/// lifetime of a draft, even if another screen refreshes the shared cache.
+typedef EditSnapshot = ({String text, int revision, String etag});
 
 /// Returns true only for the Worker's explicit ownership-revocation response.
 ///
@@ -219,6 +224,9 @@ class CloudService extends ChangeNotifier {
   bool _modelReady = false;
   bool _modelLoading = false;
   bool _modelSaving = false;
+  bool _modelUnavailableFromServer = false;
+  int _modelSaveRevision = 0;
+  int get modelSaveRevision => _modelSaveRevision;
   bool get modelSettingsLoading => _modelLoading || apiKeysLoading;
   String? _modelError;
   String? get modelError => _modelError;
@@ -235,6 +243,9 @@ class CloudService extends ChangeNotifier {
   int _historyGeneration = 0;
   String? _historyMac;
   int _historyLimit = 0;
+  bool _historyClearing = false;
+  bool get isHistoryClearing => _historyClearing;
+  int _historyClearGeneration = 0;
 
   /// Authoritative account usage; independent of calculator pairing.
   Map<String, dynamic>? get usage => usageTracker.data?.json;
@@ -255,6 +266,12 @@ class CloudService extends ChangeNotifier {
 
   String? _notesError;
   String? get notesError => _notesError;
+  int _notesGeneration = 0;
+  bool _notesSaving = false;
+  bool _notesConflict = false;
+  bool get notesConflict => _notesConflict;
+  bool _notesRequiresRefresh = false;
+  bool get notesRequiresRefresh => _notesRequiresRefresh;
 
   // ── Convenience Getters ─────────────────────────────────────────────
 
@@ -263,14 +280,27 @@ class CloudService extends ChangeNotifier {
       _deviceInfo?['model']?.toString() ?? _deviceInfo?['name']?.toString();
 
   /// Current AI model name (e.g. "gpt-5.4-mini").
-  String? get currentModel => _modelInfo?['model']?.toString();
+  String? get currentModel {
+    final model = _modelInfo?['model']?.toString();
+    return !modelUnavailable && model != null ? model : null;
+  }
+
+  /// Keep the server's persisted selection for diagnosis without presenting it
+  /// as an active choice or replacing it with a different billable model.
+  bool get modelUnavailable {
+    final model = _modelInfo?['model'];
+    return _modelUnavailableFromServer ||
+        _modelInfo?['modelAvailability'] is Map &&
+            _modelInfo!['modelAvailability']['available'] == false ||
+        model is String && !InitialReleaseAi.allowsModel(model);
+  }
 
   /// Current response style ("answer", "small", or "detailed").
   String get responseStyle => _modelInfo?['style']?.toString() ?? 'small';
 
   /// How hard the model may think before answering ("fast", "balanced" or
   /// "thorough"). The worker translates it per provider.
-  bool get fastMode => modelInfo?['fastMode'] == true;
+  bool get fastMode => !modelUnavailable && modelInfo?['fastMode'] == true;
 
   AiFunding? get fastModeFunding =>
       AiFunding.parse(modelInfo?['fastModeFunding']);
@@ -310,13 +340,8 @@ class CloudService extends ChangeNotifier {
     for (final entry in modelCatalog) {
       if (entry.id == model) return entry.provider;
     }
-    // Custom BYOK model IDs are allowed, but this does not grant Fast support.
-    if (model.startsWith('gpt-') || RegExp(r'^o\d').hasMatch(model)) {
-      return 'openai';
-    }
-    if (model.startsWith('gemini-')) return 'google';
-    if (model.startsWith('claude-')) return 'anthropic';
-    return null;
+    // Custom BYOK IDs follow the same release policy as catalog models.
+    return InitialReleaseAi.providerForModel(model);
   }
 
   String get thinkingEffort => _modelInfo?['effort']?.toString() ?? 'fast';
@@ -324,6 +349,15 @@ class CloudService extends ChangeNotifier {
   /// The user's own standing instructions, appended to every prompt.
   String _customContext = '';
   String get customContext => _customContext;
+  String? _contextMac;
+  int _contextGeneration = 0;
+  bool _contextSaving = false;
+  String? _contextError;
+  String? get contextError => _contextError;
+  EditSnapshot? _contextSnapshot;
+  EditSnapshot? get contextSnapshot => _contextSnapshot;
+  bool _contextConflict = false;
+  bool get contextConflict => _contextConflict;
 
   /// The server's effective plan; the welcome allowance is finite, not paid Pro.
   String? get planType {
@@ -379,31 +413,34 @@ class CloudService extends ChangeNotifier {
     }
   }
 
-  /// Re-checks the authoritative account-to-device mapping without changing
-  /// any cached UI state. `null` means the check itself failed, so callers must
-  /// preserve the local pairing instead of treating a network problem as an
-  /// unpair.
+  /// Re-checks ownership of this exact device without changing any cached UI
+  /// state. The existing context read enforces device ownership directly;
+  /// account device lists can be partial and cannot establish ownership loss.
+  /// Null means unknown, so callers must preserve the local pairing.
   Future<bool?> confirmDeviceOwnership(String token, String mac) async {
     try {
       final response = await _client
           .get(
-            Uri.parse('$_baseUrl/ai/user/devices'),
+            Uri.parse(
+              '$_baseUrl/ai/context/get?mac=${Uri.encodeQueryComponent(mac)}',
+            ),
             headers: _authHeaders(token),
           )
           .timeout(const Duration(seconds: 15));
-      if (response.statusCode != 200) return null;
-
+      _client.ensureCurrent(response);
       final data = jsonDecode(response.body);
-      final List<dynamic> raw = data is List ? data : (data['devices'] ?? []);
-      final target = mac.replaceAll(RegExp(r'[^0-9a-zA-Z]'), '').toLowerCase();
-      return raw.any((entry) {
-        final value = entry is Map ? (entry['mac'] ?? '') : entry;
-        final candidate = value
-            .toString()
-            .replaceAll(RegExp(r'[^0-9a-zA-Z]'), '')
-            .toLowerCase();
-        return candidate == target;
-      });
+      if (data is! Map<String, dynamic>) return null;
+      if (response.statusCode == 200 &&
+          data['ok'] == true &&
+          data['context'] is String) {
+        return true;
+      }
+      if (response.statusCode == 403 &&
+          data['ok'] == false &&
+          data['error'] == 'device_not_owned') {
+        return false;
+      }
+      return null;
     } catch (_) {
       return null;
     }
@@ -499,6 +536,13 @@ class CloudService extends ChangeNotifier {
           code == 'pairing_identity_upgrade_required') {
         throw const PairingV2Exception(
           'Secure pairing is not available for this calculator yet. Contact CalcAI support.',
+          restartRequired: true,
+        );
+      }
+      if (response.statusCode == 409 && code == 'device_already_paired') {
+        throw const PairingV2Exception(
+          'This CalcAI is already linked to another account. '
+          'Sign in with that account, or contact CalcAI support for help.',
           restartRequired: true,
         );
       }
@@ -663,11 +707,16 @@ class CloudService extends ChangeNotifier {
         throw const FormatException('Invalid model configuration');
       }
       _modelInfo = data;
-      _modelReady = true;
+      _modelUnavailableFromServer = false;
+      _modelReady = !modelUnavailable;
+      if (modelUnavailable) _modelError = InitialReleaseAi.unavailableMessage;
       notifyListeners();
       return _modelInfo!;
     } catch (e) {
       if (generation == _modelGeneration) {
+        if (e is CloudException && e.message == 'provider_unavailable') {
+          _modelUnavailableFromServer = true;
+        }
         _modelError = 'Failed to load model: ${_friendlyError(e)}';
         _setError(_modelError!);
       }
@@ -773,7 +822,19 @@ class CloudService extends ChangeNotifier {
   /// Loads the device's custom instructions.
   ///
   /// GET /ai/context/get?mac=…
-  Future<String> getContext(String token, String mac) async {
+  /// Null means the read failed or was superseded; only a confirmed empty
+  /// string means there are no saved instructions.
+  Future<String?> getContext(String token, String mac) async =>
+      (await readContextSnapshot(token, mac))?.text;
+
+  Future<EditSnapshot?> readContextSnapshot(String token, String mac) async {
+    if (_disposed) return null;
+    _bindContext(token, mac);
+    if (_contextSaving) return null;
+    final generation = ++_contextGeneration;
+    final session = _sessionGeneration;
+    _contextError = null;
+    _contextConflict = false;
     try {
       final response = await _client.get(
         Uri.parse(
@@ -781,39 +842,173 @@ class CloudService extends ChangeNotifier {
         ),
         headers: _authHeaders(token),
       );
+      if (!_currentContext(generation, session, mac)) return null;
       _assertSuccess(response);
-      final j = jsonDecode(response.body) as Map<String, dynamic>;
-      _customContext = (j['context'] ?? '').toString();
+      final data = _decodeJson(response.body);
+      if (response.statusCode != 200 ||
+          data['ok'] != true ||
+          data['context'] is! String) {
+        throw const FormatException('Invalid instructions response');
+      }
+      final snapshot = _decodeContextSnapshot(
+        data,
+        data['context'] as String,
+        response,
+      );
+      _customContext = snapshot.text;
+      _contextSnapshot = snapshot;
       notifyListeners();
-      return _customContext;
+      return snapshot;
     } catch (e) {
-      // Non-fatal: an empty value just means no custom instructions.
-      return _customContext;
+      if (_currentContext(generation, session, mac)) {
+        _contextError = _contextFailure(e, saving: false);
+        notifyListeners();
+      }
+      return null;
     }
   }
 
   /// Saves the device's custom instructions.
   ///
-  /// POST /ai/context/set  body: {mac, context}
-  Future<bool> setContext(String token, String mac, String context) async {
+  /// The legacy bool wrapper never guesses a validator from mutable cache.
+  Future<bool> setContext(
+    String token,
+    String mac,
+    String context, {
+    EditSnapshot? base,
+  }) async {
+    if (base == null) {
+      if (!_disposed) {
+        _contextError = 'Reload instructions before saving.';
+        notifyListeners();
+      }
+      return false;
+    }
+    return await writeContextSnapshot(token, mac, context, base: base) != null;
+  }
+
+  /// POST /ai/context/set with the exact draft's If-Match and expectedRev.
+  Future<EditSnapshot?> writeContextSnapshot(
+    String token,
+    String mac,
+    String context, {
+    required EditSnapshot base,
+  }) async {
+    if (_disposed) return null;
+    _bindContext(token, mac);
+    if (_contextSaving) return null;
+    if (base.revision < 0 || !_strongContextEtag(base.etag)) {
+      _contextError = 'Reload instructions before saving.';
+      notifyListeners();
+      return null;
+    }
+    if (context.length > 2000) {
+      _contextError = 'Instructions must contain at most 2,000 characters.';
+      notifyListeners();
+      return null;
+    }
+    // A save invalidates all earlier reads. Reads cannot start until the
+    // mutation settles, and the mutation is never automatically replayed.
+    final generation = ++_contextGeneration;
+    final session = _sessionGeneration;
+    _contextSaving = true;
+    _contextError = null;
+    _contextConflict = false;
     try {
-      _setLoading(true);
-      _clearError();
       final response = await _client.post(
         Uri.parse('$_baseUrl/ai/context/set'),
-        headers: _jsonAuthHeaders(token),
-        body: jsonEncode({'mac': mac, 'context': context}),
+        headers: {..._jsonAuthHeaders(token), 'If-Match': base.etag},
+        body: jsonEncode({
+          'mac': mac,
+          'context': context,
+          'expectedRev': base.revision,
+        }),
       );
+      if (!_currentContext(generation, session, mac)) return null;
+      _contextConflict =
+          response.statusCode == 409 || response.statusCode == 412;
       _assertSuccess(response);
+      final accepted = _decodeJson(response.body);
+      if (response.statusCode != 200 || accepted['ok'] != true) {
+        throw const FormatException('Instructions save was not confirmed');
+      }
+      final snapshot = _decodeContextSnapshot(accepted, context, response);
+      if (snapshot.revision <= base.revision || snapshot.etag == base.etag) {
+        throw const FormatException('Instructions save did not advance');
+      }
       _customContext = context;
+      _contextSnapshot = snapshot;
       notifyListeners();
-      return true;
+      return snapshot;
     } catch (e) {
-      _setError('Failed to save instructions: ${_friendlyError(e)}');
-      return false;
+      if (_currentContext(generation, session, mac)) {
+        _contextError = _contextFailure(e, saving: true);
+        notifyListeners();
+      }
+      return null;
     } finally {
-      _setLoading(false);
+      if (_currentContext(generation, session, mac)) {
+        _contextSaving = false;
+      }
     }
+  }
+
+  bool _strongContextEtag(String value) =>
+      RegExp(r'^"[\x21\x23-\x7E\x80-\xFF]*"$').hasMatch(value);
+
+  EditSnapshot _decodeContextSnapshot(
+    Map<String, dynamic> data,
+    String text,
+    http.Response response,
+  ) {
+    final revision = data['rev'];
+    final etag = data['etag'];
+    final header = response.headers['etag'];
+    // Edge compression can weaken the HTTP representation validator. The
+    // strong JSON record validator stays authoritative for conditional writes.
+    if (revision is! int ||
+        revision < 0 ||
+        etag is! String ||
+        !_strongContextEtag(etag) ||
+        (header != null && header != etag && header != 'W/$etag')) {
+      throw const FormatException('Unconfirmed instructions revision');
+    }
+    return (text: text, revision: revision, etag: etag);
+  }
+
+  void _bindContext(String token, String mac) {
+    if (_usageSession != token) bindUsageSession(token);
+    if (_contextMac == mac) return;
+    _contextGeneration++;
+    _contextMac = mac;
+    _customContext = '';
+    _contextError = null;
+    _contextSaving = false;
+    _contextSnapshot = null;
+    _contextConflict = false;
+  }
+
+  bool _currentContext(int generation, int session, String mac) =>
+      !_disposed &&
+      generation == _contextGeneration &&
+      session == _sessionGeneration &&
+      mac == _contextMac;
+
+  String _contextFailure(Object error, {required bool saving}) {
+    final action = saving ? 'save' : 'load';
+    return switch (error) {
+      CloudException(statusCode: 401) =>
+        'Your session expired. Sign in again to $action instructions.',
+      CloudException(statusCode: 403) =>
+        'CalcAI could not authorize this instructions request. Try again.',
+      CloudException(statusCode: 429) =>
+        'Too many requests. Wait a moment, then try again.',
+      CloudException() => 'Could not $action instructions. Please try again.',
+      FormatException() =>
+        'CalcAI returned an unexpected instructions response. Try again.',
+      _ =>
+        'Could not $action instructions. Check your connection and try again.',
+    };
   }
 
   /// Updates the AI model, response style and thinking effort for a device.
@@ -824,6 +1019,44 @@ class CloudService extends ChangeNotifier {
     String mac,
     String model,
     String style, {
+    String? effort,
+    bool? fastMode,
+    String? fastModeFunding,
+  }) async {
+    if (_modelSaving || _keysSaving) return;
+    if (!InitialReleaseAi.allowsModel(model)) {
+      _modelError = InitialReleaseAi.unavailableMessage;
+      _setError(_modelError!);
+      return;
+    }
+    await _writeModelSettings(
+      token,
+      mac,
+      model: model,
+      style: style,
+      effort: effort,
+      fastMode: fastMode,
+      fastModeFunding: fastModeFunding,
+    );
+  }
+
+  /// Preference edits never resubmit a stale model or choose a replacement.
+  /// The server retains the actual selection, including unavailable Gemini.
+  Future<void> updateModelPreferences(
+    String token,
+    String mac, {
+    String? style,
+    String? effort,
+  }) async {
+    if (style == null && effort == null) return;
+    await _writeModelSettings(token, mac, style: style, effort: effort);
+  }
+
+  Future<void> _writeModelSettings(
+    String token,
+    String mac, {
+    String? model,
+    String? style,
     String? effort,
     bool? fastMode,
     String? fastModeFunding,
@@ -856,8 +1089,8 @@ class CloudService extends ChangeNotifier {
         headers: _jsonAuthHeaders(token),
         body: jsonEncode({
           'mac': mac,
-          'model': model,
-          'style': style,
+          if (model != null) 'model': model,
+          if (style != null) 'style': style,
           // Omitted rather than guessed: the worker keeps the stored value when
           // the field is absent, so a partial update can't reset it.
           if (effort != null) 'effort': effort,
@@ -871,6 +1104,17 @@ class CloudService extends ChangeNotifier {
 
       // Use the server's accepted values, including model-switch resets.
       final accepted = jsonDecode(response.body) as Map<String, dynamic>;
+      final acceptedModel = accepted['model'];
+      if (acceptedModel is! String || acceptedModel.isEmpty) {
+        throw const FormatException('Model change was not confirmed');
+      }
+      if (model != null && !InitialReleaseAi.allowsModel(acceptedModel)) {
+        throw const CloudException(409, 'provider_unavailable');
+      }
+      if (model != null &&
+          !InitialReleaseAi.acknowledges(model, acceptedModel)) {
+        throw const FormatException('Model change was not confirmed');
+      }
       if (fastMode != null && accepted['fastMode'] != fastMode) {
         throw StateError('Fast mode needs the updated CalcAI server.');
       }
@@ -892,8 +1136,9 @@ class CloudService extends ChangeNotifier {
         }
       }
       _modelInfo = {
-        'model': accepted['model'] ?? model,
-        'style': accepted['style'] ?? style,
+        ...accepted,
+        'model': acceptedModel,
+        'style': accepted['style'] ?? style ?? responseStyle,
         'effort': accepted['effort'] ?? effort ?? thinkingEffort,
         'fastMode': accepted['fastMode'] == true,
         'fastModeRequested': accepted['fastModeRequested'] == true,
@@ -901,8 +1146,13 @@ class CloudService extends ChangeNotifier {
           'fastModeFunding': accepted['fastModeFunding'],
         if (accepted.containsKey('fastModeCapability'))
           'fastModeCapability': accepted['fastModeCapability'],
+        if (accepted.containsKey('modelAvailability'))
+          'modelAvailability': accepted['modelAvailability'],
       };
-      _modelReady = true;
+      _modelUnavailableFromServer = false;
+      _modelReady = !modelUnavailable;
+      if (modelUnavailable) _modelError = InitialReleaseAi.unavailableMessage;
+      _modelSaveRevision++;
       notifyListeners();
     } catch (e) {
       if (generation == _modelGeneration) {
@@ -929,7 +1179,28 @@ class CloudService extends ChangeNotifier {
   /// answers `text/plain`, replies 204 with an empty body when there are no
   /// notes, and flattens the envelope into " | "-joined bodies for the
   /// calculator LCD — none of which the app can parse.
-  Future<String> getNotes(String token, String mac) async {
+  /// A failed or superseded read is unknown, rather than an empty note list.
+  Future<String?> getNotes(String token, String mac) async =>
+      (await readNotesSnapshot(token, mac))?.text;
+
+  EditSnapshot _parseNotesSnapshot(Map<String, dynamic> data, String text) {
+    final revision = data['rev'];
+    final etag = data['etag'];
+    if (revision is! int ||
+        revision < 0 ||
+        etag is! String ||
+        !RegExp(r'^"[\x21\x23-\x7E\x80-\xFF]*"$').hasMatch(etag)) {
+      throw const FormatException(
+        'Notes edit validators are missing or invalid',
+      );
+    }
+    return (text: text, revision: revision, etag: etag);
+  }
+
+  Future<EditSnapshot?> readNotesSnapshot(String token, String mac) async {
+    if (_notesSaving) return null;
+    final generation = ++_notesGeneration;
+    final session = _sessionGeneration;
     try {
       _setLoading(true);
       _clearError();
@@ -939,20 +1210,40 @@ class CloudService extends ChangeNotifier {
         headers: _authHeaders(token),
       );
 
+      if (generation != _notesGeneration || session != _sessionGeneration) {
+        return null;
+      }
       _assertSuccess(response);
       _notesError = null;
 
-      // An empty body is "no notes", not a failure.
-      final body = response.body.trim();
-      _notes = body.isEmpty ? '' : (_decodeJson(body)['text'] ?? '').toString();
+      // /notes/raw always returns an explicit JSON text value, including an
+      // absent record. The firmware-only /notes/get endpoint uses 204 instead.
+      final data = _decodeJson(response.body);
+      if (response.statusCode != 200 ||
+          data['ok'] != true ||
+          data['text'] is! String) {
+        throw const FormatException('Invalid notes response');
+      }
+      final snapshot = _parseNotesSnapshot(data, data['text'] as String);
+      _notes = snapshot.text;
+      _notesRequiresRefresh = false;
+      _notesConflict = false;
       notifyListeners();
-      return _notes!;
+      return snapshot;
     } catch (e) {
-      _notesError = 'Failed to load notes: ${_friendlyError(e)}';
-      _setError(_notesError!);
-      return '';
+      if (generation == _notesGeneration &&
+          session == _sessionGeneration &&
+          !_disposed) {
+        _notesError = 'Failed to load notes: ${_friendlyError(e)}';
+        _setError(_notesError!);
+      }
+      return null;
     } finally {
-      _setLoading(false);
+      if (generation == _notesGeneration &&
+          session == _sessionGeneration &&
+          !_disposed) {
+        _setLoading(false);
+      }
     }
   }
 
@@ -966,28 +1257,83 @@ class CloudService extends ChangeNotifier {
 
   /// Saves user notes for a device.
   ///
-  /// POST /ai/notes/set  body: {mac, text}
-  Future<void> setNotes(String token, String mac, String text) async {
+  /// POST /ai/notes/set with the draft's original If-Match and expectedRev.
+  Future<bool> setNotes(
+    String token,
+    String mac,
+    String text, {
+    EditSnapshot? base,
+  }) async {
+    if (base == null) {
+      _notesError = 'Reload notes before saving. Edit information is missing.';
+      _notesRequiresRefresh = true;
+      notifyListeners();
+      return false;
+    }
+    return await writeNotesSnapshot(token, mac, text, base: base) != null;
+  }
+
+  Future<EditSnapshot?> writeNotesSnapshot(
+    String token,
+    String mac,
+    String text, {
+    required EditSnapshot base,
+  }) async {
+    if (_notesSaving) return null;
+    final generation = ++_notesGeneration;
+    final session = _sessionGeneration;
+    _notesSaving = true;
+    _notesConflict = false;
+    _notesRequiresRefresh = false;
     try {
+      _parseNotesSnapshot({'rev': base.revision, 'etag': base.etag}, base.text);
       _setLoading(true);
       _clearError();
-
       final response = await _client.post(
         Uri.parse('$_baseUrl/ai/notes/set'),
-        headers: _jsonAuthHeaders(token),
-        body: jsonEncode({'mac': mac, 'text': text}),
+        headers: {..._jsonAuthHeaders(token), 'If-Match': base.etag},
+        body: jsonEncode({
+          'mac': mac,
+          'text': text,
+          'expectedRev': base.revision,
+        }),
       );
-
+      if (generation != _notesGeneration || session != _sessionGeneration) {
+        return null;
+      }
+      _notesConflict = const [403, 404, 409, 412].contains(response.statusCode);
       _assertSuccess(response);
+      final accepted = _decodeJson(response.body);
+      if (response.statusCode != 200 || accepted['ok'] != true) {
+        throw const FormatException('Notes save was not confirmed');
+      }
+      final snapshot = _parseNotesSnapshot(accepted, text);
+      if (snapshot.revision <= base.revision || snapshot.etag == base.etag) {
+        throw const FormatException('Notes save validators did not advance');
+      }
       _notesError = null;
-
       _notes = text;
       notifyListeners();
+      return snapshot;
     } catch (e) {
-      _notesError = 'Failed to save notes: ${_friendlyError(e)}';
-      _setError(_notesError!);
+      if (generation == _notesGeneration &&
+          session == _sessionGeneration &&
+          !_disposed) {
+        // A failed/lost reply may have committed. Reconcile through a GET;
+        // never silently repeat an old full-envelope mutation.
+        _notesRequiresRefresh = true;
+        _notesError =
+            'Could not confirm the notes save. Reload to compare your changes.';
+        _setError(_notesError!);
+      }
+      return null;
     } finally {
-      _setLoading(false);
+      if (generation == _notesGeneration &&
+          session == _sessionGeneration &&
+          !_disposed) {
+        _notesSaving = false;
+        _setLoading(false);
+      }
     }
   }
 
@@ -1003,6 +1349,8 @@ class CloudService extends ChangeNotifier {
   }) async {
     if (_usageSession != token) bindUsageSession(token);
     if (_historyMac != mac) {
+      _historyClearGeneration++;
+      _historyClearing = false;
       _historyMac = mac;
       _history = [];
       _historyLimit = 0;
@@ -1072,16 +1420,35 @@ class CloudService extends ChangeNotifier {
   ///
   /// DELETE /ai/logs/clear?mac=
   Future<bool> clearHistory(String token, String mac) async {
+    if (_disposed ||
+        _historyClearing ||
+        _usageSession != token ||
+        _historyMac != mac) {
+      return false;
+    }
+    final session = _sessionGeneration;
+    final generation = ++_historyClearGeneration;
+    bool current() =>
+        !_disposed &&
+        session == _sessionGeneration &&
+        generation == _historyClearGeneration &&
+        _usageSession == token &&
+        _historyMac == mac;
+    _historyClearing = true;
+    _clearError();
+    notifyListeners();
     try {
-      _setLoading(true);
-      _clearError();
-
       final response = await _client.delete(
         Uri.parse('$_baseUrl/ai/logs/clear?mac=$mac'),
         headers: _authHeaders(token),
       );
 
+      if (!current()) return false;
       _assertSuccess(response);
+      final body = jsonDecode(response.body);
+      if (response.statusCode != 200 || body is! Map || body['ok'] != true) {
+        throw const FormatException('Unconfirmed history deletion');
+      }
 
       _historyGeneration++;
       _historyLoading = false;
@@ -1090,10 +1457,14 @@ class CloudService extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
+      if (!current()) return false;
       _setError('Failed to clear history: ${_friendlyError(e)}');
       return false;
     } finally {
-      _setLoading(false);
+      if (current()) {
+        _historyClearing = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -1263,6 +1634,7 @@ class CloudService extends ChangeNotifier {
   String? get apiKeysError => _apiKeysError;
 
   AiFunding? providerFunding(String provider) {
+    if (!InitialReleaseAi.allowsProvider(provider)) return null;
     if (!_keysVerified || apiKeysLoading) return null;
     return hasApiKey(provider) && apiKeyEnabled(provider)
         ? AiFunding.personalKey
@@ -1270,6 +1642,9 @@ class CloudService extends ChangeNotifier {
   }
 
   String providerFundingLabel(String provider, {bool currentModel = false}) {
+    if (!InitialReleaseAi.allowsProvider(provider)) {
+      return 'This AI provider is unavailable in this release.';
+    }
     final funding = currentModel
         ? currentModelFunding
         : providerFunding(provider);
@@ -1318,6 +1693,7 @@ class CloudService extends ChangeNotifier {
   /// Whether the saved key for [provider] is currently enabled (in use).
   /// Defaults to true when a key exists but no flag is present.
   bool apiKeyEnabled(String provider) {
+    if (!InitialReleaseAi.allowsProvider(provider)) return false;
     final info = _apiKeys[provider.toLowerCase()];
     if (info is! Map || info['active'] != true) return false;
     return info['enabled'] != false;
@@ -1351,7 +1727,8 @@ class CloudService extends ChangeNotifier {
       if (keysMap is! Map) throw const FormatException('Invalid key metadata');
       final clean = <String, dynamic>{};
       for (final entry in keysMap.entries) {
-        if (!['openai', 'google', 'anthropic'].contains(entry.key)) continue;
+        // Retain Google metadata solely to let an owner remove a legacy key.
+        if (!['openai', 'anthropic', 'google'].contains(entry.key)) continue;
         final value = entry.value;
         if (value is! Map ||
             value['active'] is! bool ||
@@ -1403,6 +1780,17 @@ class CloudService extends ChangeNotifier {
     Map<String, dynamic> body,
   ) async {
     if (_keysSaving || _modelSaving) return false;
+    final provider = body['provider'];
+    final legacyRemoval =
+        provider == 'google' &&
+        (action == 'delete' || action == 'toggle' && body['enabled'] == false);
+    if (provider is! String ||
+        (!InitialReleaseAi.allowsProvider(provider) && !legacyRemoval)) {
+      _apiKeysError =
+          'This AI provider is unavailable in this release. Use OpenAI or Anthropic.';
+      notifyListeners();
+      return false;
+    }
     final generation = ++_keyGeneration;
     final session = _sessionGeneration;
     _keysSaving = true;
@@ -1468,6 +1856,7 @@ class CloudService extends ChangeNotifier {
   String _friendlyError(dynamic e) {
     if (e is CloudException) {
       return switch (e.message) {
+        'provider_unavailable' => InitialReleaseAi.unavailableMessage,
         'fast_mode_funding_changed' =>
           'Billing changed. Refresh and turn Fast mode on again.',
         'fast_mode_requires_supported_personal_key' =>
@@ -1506,6 +1895,7 @@ class CloudService extends ChangeNotifier {
     _modelLoading = false;
     _modelSaving = false;
     _modelError = null;
+    _modelUnavailableFromServer = false;
     _currentMac = null;
     _devices = [];
     _deviceInfo = null;
@@ -1513,8 +1903,20 @@ class CloudService extends ChangeNotifier {
     _modelCatalog = fallbackAiModels;
     _catalogLoadedAt = null;
     _customContext = '';
+    _contextGeneration++;
+    _contextMac = null;
+    _contextSaving = false;
+    _contextError = null;
+    _contextSnapshot = null;
+    _contextConflict = false;
+    _notesGeneration++;
+    _notesSaving = false;
+    _notesConflict = false;
+    _notesRequiresRefresh = false;
     _notes = null;
     _historyGeneration++;
+    _historyClearGeneration++;
+    _historyClearing = false;
     _historyLoading = false;
     _historyMac = null;
     _historyLimit = 0;

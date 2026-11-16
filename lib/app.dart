@@ -9,6 +9,7 @@ import 'screens/main_shell.dart';
 import 'services/auth_service.dart';
 import 'services/ble_service.dart';
 import 'services/cloud_service.dart';
+import 'services/local_bench_profile.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
 import 'widgets/calcai_mark.dart';
@@ -26,6 +27,13 @@ class CalcAIApp extends StatelessWidget {
       title: 'CalcAI',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
+      builder: LocalBenchProfile.enabled
+          ? (context, child) => Banner(
+              message: 'BENCH C62E',
+              location: BannerLocation.topEnd,
+              child: child!,
+            )
+          : null,
       home: const AppGate(),
     );
   }
@@ -96,26 +104,85 @@ class AppGateState extends State<AppGate> {
 
   Future<void> _handleDeviceRevocation(
     AuthService auth,
-    CloudService cloud,
-  ) async {
-    if (_handlingDeviceRevocation) return;
-    _handlingDeviceRevocation = true;
-    cloud.clearDeviceRevoked();
-
-    final token = auth.token;
-    final mac = auth.primaryMac;
-    final stillOwned = token != null && mac != null
-        ? await cloud.confirmDeviceOwnership(token, mac)
-        : false;
-
-    if (!mounted) return;
-    if (stillOwned == false) {
-      cloud.reset();
-      await auth.forgetDevice();
+    CloudService cloud, {
+    required String? token,
+    required String? mac,
+  }) async {
+    bool sameScope() =>
+        mounted && auth.token == token && auth.primaryMac == mac;
+    if (_handlingDeviceRevocation || !sameScope() || !cloud.deviceRevoked) {
+      return;
     }
-    // A failed confirmation is normally a temporary network/auth problem.
-    // Preserve the pairing until Cloudflare can answer authoritatively.
-    _handlingDeviceRevocation = false;
+    _handlingDeviceRevocation = true;
+    try {
+      cloud.clearDeviceRevoked();
+      if (token == null ||
+          mac == null ||
+          !auth.isAuthenticated ||
+          !sameScope()) {
+        return;
+      }
+      final stillOwned = await cloud.confirmDeviceOwnership(token, mac);
+      if (stillOwned != false || !sameScope()) return;
+      cloud.reset();
+      // Reset notifies listeners synchronously; a replacement account/device
+      // must not be forgotten if one of those listeners changes the scope.
+      if (!sameScope()) return;
+      await auth.forgetDevice();
+    } catch (_) {
+      // A failed check cannot establish ownership loss. Keep the pairing.
+    } finally {
+      _handlingDeviceRevocation = false;
+      // A newer event may have arrived while this check was pending. Give it
+      // its own scope check instead of losing it behind the in-flight guard.
+      if (mounted && cloud.deviceRevoked) setState(() {});
+    }
+  }
+
+  Widget _deviceDiscovery(AuthService auth) {
+    final waiting = auth.deviceListLoading || auth.deviceListError == null;
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (waiting) const CircularProgressIndicator(),
+                const SizedBox(height: 20),
+                Text(
+                  waiting
+                      ? 'Checking your calculators…'
+                      : "Couldn't load your calculators",
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                if (!waiting) ...[
+                  const SizedBox(height: 12),
+                  Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      auth.deviceListError!,
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: auth.fetchDevices,
+                    child: const Text('Retry'),
+                  ),
+                ],
+                TextButton(
+                  onPressed: auth.signOut,
+                  child: const Text('Sign out'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -128,8 +195,10 @@ class AppGateState extends State<AppGate> {
     // so routing sends the user back to setup instead of leaving them on a
     // dashboard whose every control silently fails.
     if (cloud.deviceRevoked) {
+      final token = auth.token;
+      final mac = auth.primaryMac;
       WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _handleDeviceRevocation(auth, cloud),
+        (_) => _handleDeviceRevocation(auth, cloud, token: token, mac: mac),
       );
     }
 
@@ -171,6 +240,28 @@ class AppGateState extends State<AppGate> {
     if (!auth.isAuthenticated) {
       _setupSession = null;
       return const AuthScreen();
+    }
+
+    // A failed account-device lookup is unknown, not a first-time account.
+    // A restored session with a cached calculator can still open offline.
+    final hasDevice = auth.primaryMac?.isNotEmpty == true;
+    if (!auth.setupSkipped && !hasDevice && !auth.deviceListVerified) {
+      final token = auth.token;
+      if (!auth.deviceListLoading && auth.deviceListError == null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted &&
+              auth.token == token &&
+              auth.isAuthenticated &&
+              auth.primaryMac?.isNotEmpty != true &&
+              !auth.setupSkipped &&
+              !auth.deviceListVerified &&
+              !auth.deviceListLoading &&
+              auth.deviceListError == null) {
+            auth.fetchDevices();
+          }
+        });
+      }
+      return _deviceDiscovery(auth);
     }
 
     // ── Authenticated, no device linked → first-time setup ────────────

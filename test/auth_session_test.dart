@@ -65,7 +65,9 @@ void main() {
     final auth = await createAuth(MockClient((_) => reply.future));
     final pending = auth.fetchDevices();
     await auth.signOut();
-    reply.complete(http.Response('["112233445566"]', 200));
+    reply.complete(
+      http.Response('{"ok":true,"devices":[{"mac":"112233445566"}]}', 200),
+    );
     await pending;
     expect(auth.deviceMacs, isEmpty);
     expect(auth.primaryMac, isNull);
@@ -85,7 +87,12 @@ void main() {
         await release.future;
       };
       final auth = await createAuth(
-        MockClient((_) async => http.Response('["112233445566"]', 200)),
+        MockClient(
+          (_) async => http.Response(
+            '{"ok":true,"devices":[{"mac":"112233445566"}]}',
+            200,
+          ),
+        ),
       );
       final refresh = auth.fetchDevices();
       await entered.future;
@@ -108,7 +115,7 @@ void main() {
     'failed Keychain deletion cannot restore a signed-out session',
     () async {
       final auth = await createAuth(
-        MockClient((_) async => http.Response('[]', 200)),
+        MockClient((_) async => http.Response('{"ok":true,"devices":[]}', 200)),
       );
       failDelete = true;
       await expectLater(auth.signOut(), throwsA(isA<PlatformException>()));
@@ -119,7 +126,7 @@ void main() {
       );
       failDelete = false;
       final restored = await createAuth(
-        MockClient((_) async => http.Response('[]', 200)),
+        MockClient((_) async => http.Response('{"ok":true,"devices":[]}', 200)),
       );
       expect(restored.isAuthenticated, isFalse);
       expect(secure, isEmpty);
@@ -136,7 +143,9 @@ void main() {
     await tester.pump(const Duration(seconds: 16));
     expect(completed, isTrue);
     expect(auth.deviceMacs, ['aabbccddeeff']);
-    reply.complete(http.Response('["112233445566"]', 200));
+    reply.complete(
+      http.Response('{"ok":true,"devices":[{"mac":"112233445566"}]}', 200),
+    );
     await pending;
     await tester.pump();
     expect(auth.deviceMacs, ['aabbccddeeff']);

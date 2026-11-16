@@ -251,10 +251,7 @@ void main() {
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('ai-consent-popup')), findsOneWidget);
-      expect(
-        find.textContaining('OpenAI, Google (Gemini), or Anthropic'),
-        findsOneWidget,
-      );
+      expect(find.textContaining('OpenAI or Anthropic'), findsOneWidget);
       final button = find.text(
         allowed ? 'Allow AI sharing' : 'Continue with AI off',
       );

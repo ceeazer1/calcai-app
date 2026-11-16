@@ -8,7 +8,7 @@ definitions:
         flutter pub get --enforce-lockfile
         python3 tool/release_preflight.py
         flutter analyze --no-pub --fatal-infos
-        flutter test --no-pub
+        flutter test --no-pub --dart-define=CALCAI_BENCH_C62E=false
     - &sdk
       name: Verify App Store SDK
       script: |
@@ -43,7 +43,7 @@ workflows:
       - *verify
       - *sdk
       - name: Compile the production iOS app
-        script: flutter build ios --release --no-codesign --no-pub --target lib/main.dart
+        script: flutter build ios --release --no-codesign --no-pub --target lib/main.dart --dart-define=CALCAI_BENCH_C62E=false
     artifacts:
       - /tmp/xcodebuild_logs/*.log
 
@@ -63,7 +63,8 @@ workflows:
     scripts:
       - *verify
       - *sdk
-      - name: Use configured signing identities
+      - &sign
+        name: Use configured signing identities
         script: |
           set -euo pipefail
           : "${CERTIFICATE_PRIVATE_KEY:?Set the existing signing key in app_store_credentials}"
@@ -72,8 +73,9 @@ workflows:
           app-store-connect fetch-signing-files "com.calcai.calcaiApp" \
             --type IOS_APP_STORE --create
           keychain add-certificates
-          xcode-project use-profiles
-      - name: Build signed candidate
+          xcode-project use-profiles --project ios/Runner.xcodeproj
+      - &build-ipa
+        name: Build signed candidate
         script: |
           set -euo pipefail
           : "${APP_STORE_APP_ID:?Set the numeric App Store app ID in app_store_credentials}"
@@ -88,10 +90,11 @@ workflows:
           BUILD_NUM=$((LATEST_BUILD + 1))
           COUNTER_BUILD=$((1000 + PROJECT_BUILD_NUMBER))
           if [ "$COUNTER_BUILD" -gt "$BUILD_NUM" ]; then BUILD_NUM=$COUNTER_BUILD; fi
-          flutter build ipa --release --no-pub --target lib/main.dart \
+          flutter build ipa --release --no-pub --target lib/main.dart --dart-define=CALCAI_BENCH_C62E=false \
             --build-number="$BUILD_NUM" \
             --export-options-plist=/Users/builder/export_options.plist
-      - name: Check archived app privacy manifest
+      - &check-archive
+        name: Check archived app privacy manifest
         script: |
           set -euo pipefail
           APP=build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app
@@ -110,3 +113,29 @@ workflows:
         # Upload for the existing internal testers; external beta review is manual.
         submit_to_testflight: false
         submit_to_app_store: false
+
+  ios-archive:
+    name: CalcAI signed archive only (manual, no upload)
+    working_directory: .
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    integrations:
+      app_store_connect: CalcAI
+    environment:
+      flutter: 3.44.2
+      xcode: latest
+      groups: [app_store_credentials]
+    # No triggering or publishing block: start this workflow explicitly to
+    # validate signing and download artifacts without uploading to Apple.
+    scripts:
+      - *verify
+      - *sdk
+      - *sign
+      - *build-ipa
+      - *check-archive
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - build/ios/archive/*.xcarchive
+      - build/privacy-manifests.json
+      - /Users/builder/export_options.plist
+      - /tmp/xcodebuild_logs/*.log

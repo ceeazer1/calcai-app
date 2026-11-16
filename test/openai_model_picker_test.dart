@@ -65,8 +65,6 @@ void main() {
         ('OpenAI', 'gpt-6-astra'),
         ('OpenAI', 'gpt-6.1-sol'),
         ('OpenAI', 'gpt-6-luna'),
-        ('Google', 'gemini-3.8-flash'),
-        ('Google', 'gemini-3.7-flash'),
         ('Anthropic', 'claude-opus-5-5'),
         ('Anthropic', 'claude-sonnet-5-5'),
         ('Anthropic', 'claude-fable-5-1'),

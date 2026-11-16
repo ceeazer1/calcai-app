@@ -15,6 +15,7 @@ class CodeInput extends StatefulWidget {
     this.length = 6,
     this.autofocus = true,
     this.enabled = true,
+    this.semanticLabel = 'Pairing code',
     this.onCompleted,
   });
 
@@ -22,6 +23,7 @@ class CodeInput extends StatefulWidget {
   final int length;
   final bool autofocus;
   final bool enabled;
+  final String semanticLabel;
 
   /// Fires once the last box is filled.
   final ValueChanged<String>? onCompleted;
@@ -75,12 +77,14 @@ class _CodeInputState extends State<CodeInput> {
             children: List.generate(widget.length, (i) {
               final filled = i < text.length;
               // Highlight where the next digit will land.
-              final active = _focus.hasFocus &&
+              final active =
+                  _focus.hasFocus &&
                   i == text.length.clamp(0, widget.length - 1);
               return Expanded(
                 child: Padding(
-                  padding:
-                      EdgeInsets.only(right: i == widget.length - 1 ? 0 : 8),
+                  padding: EdgeInsets.only(
+                    right: i == widget.length - 1 ? 0 : 8,
+                  ),
                   child: AspectRatio(
                     aspectRatio: 1,
                     child: AnimatedContainer(
@@ -116,7 +120,7 @@ class _CodeInputState extends State<CodeInput> {
           // removes the editable field from the browser accessibility tree.
           Positioned.fill(
             child: Semantics(
-              label: 'Pairing code',
+              label: widget.semanticLabel,
               child: TextField(
                 controller: widget.controller,
                 focusNode: _focus,

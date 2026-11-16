@@ -3,24 +3,12 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
-import 'package:flutter/services.dart' show ImmutableBuffer;
 import 'package:http/http.dart' as http;
 
 import '../services/resilient_http_client.dart';
+import 'private_photo.dart';
 
-Map<String, String> privateImageHeaders(String url, String? token) {
-  final uri = Uri.tryParse(url);
-  if (token == null ||
-      uri == null ||
-      uri.scheme != 'https' ||
-      uri.host != 'ai.calcai.cc' ||
-      uri.userInfo.isNotEmpty ||
-      (uri.hasPort && uri.port != 443) ||
-      !uri.path.startsWith('/ai/image/view/')) {
-    return const {};
-  }
-  return {'Authorization': 'Bearer $token'};
-}
+export 'private_photo.dart' show privateImageHeaders;
 
 /// An [ImageProvider] that loads over the app's DoH-resolving client.
 ///
@@ -36,14 +24,22 @@ Map<String, String> privateImageHeaders(String url, String? token) {
 /// when it is opened full screen.
 @immutable
 class ResilientNetworkImage extends ImageProvider<ResilientNetworkImage> {
-  const ResilientNetworkImage(this.url, {this.scale = 1.0, this.token});
+  const ResilientNetworkImage(
+    this.url, {
+    this.scale = 1.0,
+    this.token,
+    this.client,
+  });
 
   final String url;
   final double scale;
   final String? token;
+  final http.Client? client;
 
   /// One client for every image; each request opens its own socket.
-  static final http.Client _client = createResilientClient();
+  static final http.Client _client = createResilientClient(
+    maxResponseBytes: maxPrivatePhotoBytes,
+  );
 
   @override
   Future<ResilientNetworkImage> obtainKey(ImageConfiguration _) =>
@@ -69,22 +65,13 @@ class ResilientNetworkImage extends ImageProvider<ResilientNetworkImage> {
     ImageDecoderCallback decode,
   ) async {
     try {
-      final resp = await _client
-          .get(
-            Uri.parse(key.url),
-            headers: privateImageHeaders(key.url, key.token),
-          )
-          .timeout(const Duration(seconds: 30));
-      if (resp.statusCode != 200) {
-        throw NetworkImageLoadException(
-          statusCode: resp.statusCode,
-          uri: Uri.parse(key.url).replace(query: ''),
-        );
-      }
-      if (resp.bodyBytes.isEmpty) {
-        throw Exception('Empty photo response');
-      }
-      return decode(await ImmutableBuffer.fromUint8List(resp.bodyBytes));
+      final bytes = await downloadPrivatePhoto(
+        key.client ?? _client,
+        key.url,
+        key.token,
+      );
+      // Await asynchronous validation so failures reach cache eviction below.
+      return await decodePrivatePhoto(bytes, decoder: (buffer) => decode(buffer));
     } catch (_) {
       // Drop the failed entry so a later retry actually re-requests instead of
       // replaying the cached error.
@@ -98,10 +85,11 @@ class ResilientNetworkImage extends ImageProvider<ResilientNetworkImage> {
       other is ResilientNetworkImage &&
       other.url == url &&
       other.token == token &&
+      identical(other.client, client) &&
       other.scale == scale;
 
   @override
-  int get hashCode => Object.hash(url, scale, token);
+  int get hashCode => Object.hash(url, scale, token, identityHashCode(client));
 
   @override
   String toString() => 'ResilientNetworkImage(private photo, scale: $scale)';

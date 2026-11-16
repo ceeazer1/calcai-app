@@ -239,7 +239,7 @@ class _AiConsentScreenState extends State<AiConsentScreen> {
                 ),
                 const SizedBox(height: 14),
                 const Text(
-                  'To answer your questions, CalcAI shares your prompts, photos and relevant custom instructions with OpenAI, Google (Gemini), or Anthropic, depending on your selected model.',
+                  'To answer your questions, CalcAI shares your prompts, photos and relevant custom instructions with OpenAI or Anthropic, depending on your selected model.',
                   style: TextStyle(height: 1.5),
                 ),
                 const SizedBox(height: 12),

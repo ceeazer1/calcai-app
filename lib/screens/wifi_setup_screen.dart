@@ -40,7 +40,6 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
   bool _iphoneHotspot = false;
   late final BleService _ble;
   bool _leaving = false;
-  bool _allowPop = false;
   Future<void>? _modeCleanup;
 
   @override
@@ -77,15 +76,6 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
   }
 
   Future<void> _clearWifiMode() => _modeCleanup ??= _ble.endWifiUiMode();
-
-  Future<void> _goBack() async {
-    if (_leaving || _connectingSsid != null) return;
-    _leaving = true;
-    await _clearWifiMode();
-    if (!mounted) return;
-    setState(() => _allowPop = true);
-    Navigator.of(context).pop();
-  }
 
   void _onNetworkTapped(WifiNetwork network) {
     if (_connectingSsid != null || _leaving) return;
@@ -181,8 +171,8 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
                 : (value) => setState(() => _iphoneHotspot = value),
           ),
           const SizedBox(height: 12),
-          SizedBox(
-            height: 46,
+          ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 46),
             child: ElevatedButton(
               onPressed: busy ? null : _connectSelected,
               style: ElevatedButton.styleFrom(
@@ -285,7 +275,7 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
     );
   }
 
-  Future<void> _skipForNow() async {
+  Future<void> _leaveSetup() async {
     if (_leaving || _connectingSsid != null) return;
     _leaving = true;
     final auth = context.read<AuthService>();
@@ -299,6 +289,7 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
     await _clearWifiMode();
     await ble.disconnect();
     if (!mounted) return;
+    // Pairing replaced the welcome route. Open a fresh gate for the saved claim.
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const AppGate(restoreSession: false)),
       (_) => false,
@@ -324,9 +315,9 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
                         ProvisioningState.waitingForConnection;
 
                 return PopScope(
-                  canPop: _allowPop,
+                  canPop: false,
                   onPopInvokedWithResult: (didPop, _) {
-                    if (!didPop && !isSending) unawaited(_goBack());
+                    if (!didPop && !isSending) unawaited(_leaveSetup());
                   },
                   child: Stack(
                     fit: StackFit.expand,
@@ -343,7 +334,7 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
                                   IconButton(
                                     onPressed: isSending || _leaving
                                         ? null
-                                        : _goBack,
+                                        : _leaveSetup,
                                     tooltip: MaterialLocalizations.of(
                                       context,
                                     ).backButtonTooltip,
@@ -420,7 +411,7 @@ class _WifiSetupScreenState extends State<WifiSetupScreen>
                             Padding(
                               padding: const EdgeInsets.fromLTRB(24, 4, 24, 16),
                               child: TextButton(
-                                onPressed: isSending ? null : _skipForNow,
+                                onPressed: isSending ? null : _leaveSetup,
                                 child: Text(
                                   'Skip for now',
                                   style: GoogleFonts.inter(
@@ -535,37 +526,45 @@ class _EmptyNetworkState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.wifi_off_rounded, color: AppColors.textTertiary, size: 48),
-          const SizedBox(height: 16),
-          Text(
-            error == null ? 'No networks found' : 'Could not load networks',
-            style: GoogleFonts.outfit(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            error ?? 'Make sure your WiFi router is\npowered on and nearby',
-            textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
-              fontSize: 13,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.wifi_off_rounded,
               color: AppColors.textTertiary,
+              size: 48,
             ),
-          ),
-          const SizedBox(height: 24),
-          GradientButton(
-            label: 'Scan Again',
-            icon: Icons.refresh_rounded,
-            onPressed: onRetry,
-            width: 160,
-            height: 48,
-          ),
-        ],
+            const SizedBox(height: 16),
+            Text(
+              error == null ? 'No networks found' : 'Could not load networks',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.outfit(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              error ?? 'Make sure your WiFi router is\npowered on and nearby',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: AppColors.textTertiary,
+              ),
+            ),
+            const SizedBox(height: 24),
+            GradientButton(
+              label: 'Scan Again',
+              icon: Icons.refresh_rounded,
+              onPressed: onRetry,
+              width: double.infinity,
+              height: 48,
+            ),
+          ],
+        ),
       ),
     );
   }

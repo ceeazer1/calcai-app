@@ -1,37 +1,19 @@
-# CalcAI Link review access
+# CalcAI Link — review access preparation
 
-Apple lists a demo video or hardware as options when features require special
-hardware. A video is not a guarantee of acceptance or a replacement for reviewer
-login access. Reference: https://developer.apple.com/app-store/review/
+Use the final distribution candidate and the firmware version verified by Bench. This successor excludes Gemini and changes the response-style selector. Do not present the parent's unsigned build0 or physical bench1115 as this successor's final device acceptance. Bench alone controls the wired iPhone and calculator.
 
-## Film a short real-device walkthrough
+Prepare a dedicated normal reviewer account without customer data. Enter its functioning credentials only in App Store Connect, keep it active through review, and arrange real accessory access or a clear actual-device walkthrough. No reviewer bypass, fixed pairing code or mockup substitutes for accessory operation are included.
 
-Use another phone/camera so the reviewer can see the iPhone and calculator
-together. Use the final candidate and firmware 1.3.1. Avoid filming passwords,
-private API keys, personal photos or customer activity. Roughly 2–3 minutes:
+Record the final validated iPhone/calculator combination together:
 
-1. Show CalcAI Link on the iPhone and the CalcAI calculator beside it. Sign in to
-   a dedicated sample account; obscure the password.
-2. Open Bluetooth setup on the calculator. Scan, enter the displayed pairing
-   code and show the calculator responding.
-3. Choose Wi-Fi, connect, and show the calculator leaving Wi-Fi mode.
-4. Press Home page after Device paired. Show the AI-sharing explanation and
-   allow sharing on this sample account.
-5. Submit a simple math question/photo on the calculator. Show its answer and
-   the matching activity in the app. Open a sample note and AI preferences.
-6. Open Edit network, demonstrate the inline network details, then close the
-   Bluetooth portal. Show the closed portal on the calculator. Finish with
-   Settings, the Welcome expiry, AI sharing control and Delete Account option.
+1. Sign in to the dedicated sample account without recording credentials.
+2. Scan from CalcAI Link with calculator Bluetooth setup open; enter that calculator's six-digit code.
+3. Connect Wi-Fi and show Device paired and the calculator's resulting state.
+4. Press Home page and demonstrate the AI-sharing choice.
+5. Choose an OpenAI or Anthropic model. Show the title-only response-style choices and relative usage dots, a harmless calculator question/photo, its answer and matching app activity.
+6. Show a sample Note, custom instructions, Edit network and portal close behavior.
+7. Show sharing controls, welcome expiry, support/privacy and account deletion entry. Preserve the reviewer account while Apple reviews it.
 
-Attach the video or an accessible viewing link in App Review Information.
-Do not substitute browser mockups for footage of the accessory working. A
-separate disposable-account deletion test remains part of release validation;
-do not delete the reviewer account while Apple is reviewing it.
+Gemini is unavailable. A previously saved Gemini model requires an explicit supported-model choice without silently changing settings or billing. Google account sign-in remains available; legacy Google keys have removal-only UI. Avoid private keys, passwords, personal photos and customer content in footage.
 
-## Reviewer account
-
-Create a dedicated normal account with no customer data and a stable email and
-password sign-in. Enter the credentials directly in App Store Connect's review
-fields, not in this repository or public notes. Keep it active through review.
-Explain which features require the calculator and what can be tested without it.
-No hidden reviewer bypass or hard-coded production pairing code is provided.
+The actual current ASC account/review state and required final attachments remain unverified. A video does not guarantee acceptance or eliminate Apple's need for working reviewer access or hardware.

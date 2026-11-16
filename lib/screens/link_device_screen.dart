@@ -18,7 +18,7 @@ import 'wifi_setup_screen.dart';
 ///
 /// The scan runs here rather than on a page of its own: pushing a second
 /// screen to show a spinner made the user watch two layouts to do one thing.
-enum _Phase { idle, scanning, connecting, connected }
+enum _Phase { idle, checkingBluetooth, scanning, connecting, connected }
 
 class LinkDeviceScreen extends StatefulWidget {
   const LinkDeviceScreen({super.key});
@@ -62,6 +62,19 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
     }
 
     if (_phase == _Phase.connecting &&
+        (ble.connectionState == DeviceConnectionState.error ||
+            ble.connectionState == DeviceConnectionState.disconnected)) {
+      final error = ble.error?.trim();
+      setState(() {
+        _phase = _Phase.idle;
+        _error = error == null || error.isEmpty
+            ? 'The Bluetooth connection ended. Open Settings > BLE on your calculator, then scan again.'
+            : error;
+      });
+      return;
+    }
+
+    if (_phase == _Phase.connecting &&
         ble.connectionState == DeviceConnectionState.ready) {
       setState(() => _phase = _Phase.connected);
       _afterConnect();
@@ -75,11 +88,31 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
     final auth = context.read<AuthService>();
     final token = auth.token;
     final generation = ble.connectionGeneration;
+    final navigator = Navigator.of(context);
+
+    bool sameSession() => mounted && auth.token == token;
+    bool currentLink() =>
+        sameSession() &&
+        ble.connectionGeneration == generation &&
+        ble.connectionState.isConnected;
+
+    bool requireLink() {
+      if (currentLink()) return true;
+      if (sameSession()) {
+        setState(() {
+          _phase = _Phase.idle;
+          _error =
+              'The Bluetooth connection changed. Scan again to continue setup.';
+        });
+      }
+      return false;
+    }
+
     late final int pairingVersion;
     try {
       pairingVersion = await ble.negotiatePairing();
     } on PairingV2Exception catch (error) {
-      if (mounted) {
+      if (requireLink()) {
         setState(() {
           _phase = _Phase.idle;
           _error = error.message;
@@ -87,8 +120,9 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
       }
       return;
     }
+    if (!requireLink()) return;
     final paired = await ble.isDevicePaired();
-    if (!mounted || auth.token != token) return;
+    if (!requireLink()) return;
 
     // No answer. Two very different causes with the same null: firmware that
     // predates pairing, or a link that broke before the command landed. Saying
@@ -108,9 +142,9 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
     }
 
     if (paired == false) {
-      final ok = await Navigator.of(
-        context,
-      ).push<bool>(MaterialPageRoute(builder: (_) => const PairDeviceScreen()));
+      final ok = await navigator.push<bool>(
+        MaterialPageRoute(builder: (_) => const PairDeviceScreen()),
+      );
       if (!mounted || auth.token != token) return;
       if (ok != true) {
         setState(() => _phase = _Phase.idle);
@@ -127,16 +161,17 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
       // until it matches the owner it stored, so a failure here has to stop the
       // flow — otherwise the user reaches Wi-Fi setup, types their password,
       // and the calculator silently drops it with nothing on screen to explain.
-      final isOwner = await _proveOwnership();
-      if (!mounted || auth.token != token) return;
+      final isOwner = await _proveOwnership(currentLink);
+      if (!requireLink()) return;
       if (!isOwner) {
         // Not ours — but it may have been released by an admin, in which case
         // the backend will sign an instruction telling it to forget its old
         // owner. Without this the calculator is unusable by anyone forever:
         // unpairing clears the server record and cannot reach the device.
-        if (await _tryRelease()) {
-          if (!mounted || auth.token != token) return;
-          final ok = await Navigator.of(context).push<bool>(
+        final released = await _tryRelease(currentLink);
+        if (!requireLink()) return;
+        if (released) {
+          final ok = await navigator.push<bool>(
             MaterialPageRoute(builder: (_) => const PairDeviceScreen()),
           );
           if (!mounted || auth.token != token) return;
@@ -178,17 +213,8 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
       }
     }
 
-    if (!mounted || auth.token != token) return;
-    if (generation != ble.connectionGeneration ||
-        !ble.connectionState.isConnected) {
-      setState(() {
-        _phase = _Phase.idle;
-        _error =
-            'The Bluetooth connection changed. Scan again to continue setup.';
-      });
-      return;
-    }
-    Navigator.of(context).pushReplacement(
+    if (!requireLink()) return;
+    navigator.pushReplacement(
       MaterialPageRoute(
         builder: (_) => WifiSetupScreen(securePairing: pairingVersion == 2),
       ),
@@ -201,7 +227,7 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
   /// its own records name as the owner. The calculator used to settle this by
   /// comparing the display name the app sent -- a first name, or the local
   /// part of an email -- which anyone within radio range could guess.
-  Future<bool> _proveOwnership() async {
+  Future<bool> _proveOwnership(bool Function() currentLink) async {
     final ble = context.read<BleService>();
     final auth = context.read<AuthService>();
     final cloud = context.read<CloudService>();
@@ -210,18 +236,17 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
     if (token == null || owner == null || owner.isEmpty) return false;
 
     final ask = await ble.requestAuthNonce();
-    if (!mounted || ask == null) return false;
+    if (!currentLink() || ask == null) return false;
 
     final signature = await cloud.requestOwnershipProof(
       token,
       ask.mac,
       ask.nonce,
     );
-    if (!mounted || signature == null) return false;
+    if (!currentLink() || signature == null) return false;
 
     final proved = await ble.proveOwnership(ask.nonce, signature, owner);
-    if (!mounted) return false;
-    return proved;
+    return currentLink() && proved;
   }
 
   /// Clears a calculator whose owner an admin has released.
@@ -230,7 +255,7 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
   /// nor a stranger's can wipe a calculator that is still legitimately owned —
   /// the backend refuses to sign for one, and the firmware refuses an unsigned
   /// instruction.
-  Future<bool> _tryRelease() async {
+  Future<bool> _tryRelease(bool Function() currentLink) async {
     final ble = context.read<BleService>();
     final auth = context.read<AuthService>();
     final cloud = context.read<CloudService>();
@@ -239,7 +264,7 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
 
     _recoveryError = null;
     final ask = await ble.requestReleaseNonce();
-    if (!mounted) return false;
+    if (!currentLink()) return false;
     if (ask == null) {
       _recoveryError = ble.lastCommandError == null
           ? 'The calculator did not answer the pairing reset. Reopen BLE on the calculator and scan again. If it repeats, its firmware may need updating.'
@@ -253,9 +278,9 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
         ask.mac,
         ask.nonce,
       );
-      if (!mounted || signature == null) return false;
+      if (!currentLink() || signature == null) return false;
       final released = await ble.releaseOwnership(ask.nonce, signature);
-      if (!mounted) return false;
+      if (!currentLink()) return false;
       if (!released) {
         _recoveryError = ble.lastCommandError == 'bad_signature'
             ? 'The calculator could not verify the pairing reset. Contact CalcAI support to check its firmware.'
@@ -263,7 +288,7 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
       }
       return released;
     } on PairingReleaseException catch (error) {
-      _recoveryError = error.message;
+      if (currentLink()) _recoveryError = error.message;
       return false;
     }
   }
@@ -315,19 +340,21 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
   }
 
   Future<void> _scan() async {
-    final ble = context.read<BleService>();
+    if (_phase != _Phase.idle) return;
+    final ble = _ble;
     context.read<AuthService>().clearUnpairedNotice();
     setState(() {
       _error = null;
       _recoveryError = null;
       _recoveryMac = null;
       _needsSettings = false;
-      _phase = _Phase.scanning;
+      _phase = _Phase.checkingBluetooth;
     });
 
     // Refused once, iOS never asks again — Settings is the only way back.
-    if (!await ble.requestPermissions()) {
-      if (!mounted) return;
+    final granted = await ble.requestPermissions();
+    if (!mounted) return;
+    if (!granted) {
       setState(() {
         _phase = _Phase.idle;
         _needsSettings = true;
@@ -337,20 +364,18 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
     }
     // The radio being off is handled by the system power alert (it has its own
     // Settings button), so this is only a fallback if the user dismisses it.
-    if (!await ble.isBluetoothOn()) {
-      if (!mounted) return;
+    final bluetoothOn = await ble.isBluetoothOn();
+    if (!mounted) return;
+    if (!bluetoothOn) {
       setState(() {
         _phase = _Phase.idle;
         _error = 'Turn on Bluetooth, then tap Scan again.';
       });
       return;
     }
-    // Ten seconds is the default scan window and startScan only returns when it
-    // closes, but a device found early moves the phase on via the listener — so
-    // check that we are still scanning before calling it a miss. Reporting
-    // "not found" while the radio was still looking was why the first attempt
-    // always failed and the second, reading the devices left from the first,
-    // appeared to work.
+    // Accept discovery results only after Bluetooth checks have finished.
+    // The listener may advance setup before the scan window closes.
+    setState(() => _phase = _Phase.scanning);
     await ble.startScan(timeout: const Duration(seconds: 6));
     if (!mounted) return;
     if (_phase == _Phase.scanning && ble.devices.isEmpty) {
@@ -363,6 +388,7 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
 
   String get _status {
     switch (_phase) {
+      case _Phase.checkingBluetooth:
       case _Phase.scanning:
         return 'Looking for your calculator';
       case _Phase.connecting:
@@ -385,185 +411,191 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
       body: Container(
         decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 28),
-            child: Column(
-              children: [
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: IconButton(
-                    // Clear cloud state too, or the next account to sign in on
-                    // this phone sees the previous user's history and notes.
-                    onPressed: () {
-                      context.read<AuthService>().signOut();
-                      context.read<CloudService>().reset();
-                    },
-                    icon: const Icon(
-                      Icons.logout_rounded,
-                      color: AppColors.textTertiary,
-                      size: 20,
-                    ),
-                    tooltip: 'Sign out',
-                  ),
-                ),
+          child: LayoutBuilder(
+            builder: (context, viewport) => SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: viewport.maxHeight),
+                child: IntrinsicHeight(
+                  child: Column(
+                    children: [
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: IconButton(
+                          // Clear cloud state too, or the next account to sign in on
+                          // this phone sees the previous user's history and notes.
+                          onPressed: () {
+                            context.read<AuthService>().signOut();
+                            context.read<CloudService>().reset();
+                          },
+                          icon: const Icon(
+                            Icons.logout_rounded,
+                            color: AppColors.textTertiary,
+                            size: 20,
+                          ),
+                          tooltip: 'Sign out',
+                        ),
+                      ),
 
-                // Everything sits in the middle rather than pinned under
-                // the top bar: idle, there is nothing else on screen, and a
-                // heading floating above a void reads as a broken layout.
-                Expanded(
-                  child: Center(
-                    child: busy
-                        ? ScanningAnimation(
-                            isScanning: _phase != _Phase.connected,
-                            size: 240,
-                            color: _phase == _Phase.connected
-                                ? AppColors.accentBlue
-                                : AppColors.electricBlue,
-                            child: Icon(
-                              _phase == _Phase.connected
-                                  ? Icons.check_rounded
-                                  : Icons.bluetooth_searching_rounded,
-                              size: 40,
-                              color: _phase == _Phase.connected
-                                  ? AppColors.accentBlue
-                                  : AppColors.electricBlue,
-                            ),
-                          )
-                        : Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (revoked) ...[
-                                const Icon(
-                                  Icons.link_off_rounded,
-                                  size: 40,
-                                  color: AppColors.warning,
+                      // Everything sits in the middle rather than pinned under
+                      // the top bar: idle, there is nothing else on screen, and a
+                      // heading floating above a void reads as a broken layout.
+                      Expanded(
+                        child: Center(
+                          child: busy
+                              ? ScanningAnimation(
+                                  isScanning: _phase != _Phase.connected,
+                                  size: 240,
+                                  color: _phase == _Phase.connected
+                                      ? AppColors.accentBlue
+                                      : AppColors.electricBlue,
+                                  child: Icon(
+                                    _phase == _Phase.connected
+                                        ? Icons.check_rounded
+                                        : Icons.bluetooth_searching_rounded,
+                                    size: 40,
+                                    color: _phase == _Phase.connected
+                                        ? AppColors.accentBlue
+                                        : AppColors.electricBlue,
+                                  ),
+                                )
+                              : Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (revoked) ...[
+                                      const Icon(
+                                        Icons.link_off_rounded,
+                                        size: 40,
+                                        color: AppColors.warning,
+                                      ),
+                                      const SizedBox(height: 18),
+                                    ],
+                                    Text(
+                                      revoked
+                                          ? 'Calculator unpaired'
+                                          : firstName.isEmpty
+                                          ? 'Welcome'
+                                          : 'Welcome,',
+                                      textAlign: TextAlign.center,
+                                      style: GoogleFonts.outfit(
+                                        fontSize: revoked ? 26 : 42,
+                                        height: 1.12,
+                                        letterSpacing: -0.8,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                    ),
+                                    if (!revoked && firstName.isNotEmpty)
+                                      SilverShimmerName(name: firstName),
+                                    ...[
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        revoked
+                                            ? 'Your calculator was removed from this account.'
+                                            : 'Let’s pair your new CalcAI device.',
+                                        textAlign: TextAlign.center,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 15,
+                                          height: 1.45,
+                                          color: AppColors.textSecondary,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
-                                const SizedBox(height: 18),
-                              ],
+                        ),
+                      ),
+
+                      if (busy)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: Text(
+                            _status,
+                            style: GoogleFonts.inter(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+
+                      if (_error != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: Column(
+                            children: [
                               Text(
-                                revoked
-                                    ? 'Calculator unpaired'
-                                    : firstName.isEmpty
-                                    ? 'Welcome'
-                                    : 'Welcome,',
+                                _error!,
                                 textAlign: TextAlign.center,
-                                style: GoogleFonts.outfit(
-                                  fontSize: revoked ? 26 : 42,
-                                  height: 1.12,
-                                  letterSpacing: -0.8,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.textPrimary,
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  height: 1.4,
+                                  color: AppColors.error,
                                 ),
                               ),
-                              if (!revoked && firstName.isNotEmpty)
-                                SilverShimmerName(name: firstName),
-                              ...[
-                                const SizedBox(height: 16),
-                                Text(
-                                  revoked
-                                      ? 'Your calculator was removed from this account.'
-                                      : 'Let’s pair your new CalcAI device.',
-                                  textAlign: TextAlign.center,
-                                  style: GoogleFonts.inter(
-                                    fontSize: 15,
-                                    height: 1.45,
+                              if (_recoveryMac != null) ...[
+                                const SizedBox(height: 8),
+                                SelectableText(
+                                  'Calculator ID: $_recoveryMac',
+                                  style: const TextStyle(
+                                    fontSize: 12,
                                     color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                              if (_needsSettings) ...[
+                                const SizedBox(height: 6),
+                                TextButton(
+                                  onPressed: openAppSettings,
+                                  child: Text(
+                                    'Open Settings',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.electricBlue,
+                                    ),
                                   ),
                                 ),
                               ],
                             ],
                           ),
-                  ),
-                ),
-
-                if (busy)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: Text(
-                      _status,
-                      style: GoogleFonts.inter(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ),
-
-                if (_error != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: Column(
-                      children: [
-                        Text(
-                          _error!,
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            height: 1.4,
-                            color: AppColors.error,
-                          ),
                         ),
-                        if (_recoveryMac != null) ...[
-                          const SizedBox(height: 8),
-                          SelectableText(
-                            'Calculator ID: $_recoveryMac',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
+
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 54),
+                        child: ElevatedButton(
+                          onPressed: busy ? null : _scan,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.electricBlue,
+                            disabledBackgroundColor: AppColors.surfaceLight,
+                            foregroundColor: AppColors.textOnAccent,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
                             ),
+                            elevation: 0,
                           ),
-                        ],
-                        if (_needsSettings) ...[
-                          const SizedBox(height: 6),
-                          TextButton(
-                            onPressed: openAppSettings,
-                            child: Text(
-                              'Open Settings',
-                              style: GoogleFonts.inter(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.electricBlue,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.bluetooth_rounded, size: 20),
+                              const SizedBox(width: 8),
+                              Text(
+                                revoked ? 'Re-pair' : 'Scan',
+                                style: GoogleFonts.inter(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-
-                SizedBox(
-                  width: double.infinity,
-                  height: 54,
-                  child: ElevatedButton(
-                    onPressed: busy ? null : _scan,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.electricBlue,
-                      disabledBackgroundColor: AppColors.surfaceLight,
-                      foregroundColor: AppColors.textOnAccent,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.bluetooth_rounded, size: 20),
-                        const SizedBox(width: 8),
-                        Text(
-                          revoked ? 'Re-pair' : 'Scan',
-                          style: GoogleFonts.inter(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
+                            ],
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+
+                      const SizedBox(height: 20),
+                    ],
                   ),
                 ),
-
-                const SizedBox(height: 20),
-              ],
+              ),
             ),
           ),
         ),
