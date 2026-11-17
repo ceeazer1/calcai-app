@@ -280,23 +280,28 @@ class BleService extends ChangeNotifier {
       _scanSub = FlutterBluePlus.onScanResults.listen((results) {
         for (final r in results) {
           final name = r.advertisementData.advName;
-          if (name.isEmpty) continue;
-          if (!name.toLowerCase().contains('calcai')) continue;
-
           final existing = _devices.indexWhere(
             (d) => d.id == r.device.remoteId.str,
           );
 
           if (existing == -1) {
+            // A name or the configured service UUID only identifies a
+            // candidate. Connection, service and ownership proof stay required.
+            final hasService = r.advertisementData.serviceUuids.any(
+              (uuid) => uuid.str.toLowerCase() == serviceUuid.toLowerCase(),
+            );
+            if (!name.toLowerCase().contains('calcai') && !hasService) continue;
             _devices.add(
               CalcAiDevice(
                 device: r.device,
                 rssi: r.rssi,
-                advertisementName: name,
+                advertisementName: name.isEmpty ? null : name,
               ),
             );
           } else {
-            _devices[existing].rssi = r.rssi;
+            final candidate = _devices[existing];
+            candidate.rssi = r.rssi;
+            if (name.isNotEmpty) candidate.advertisementName = name;
           }
         }
         notifyListeners();

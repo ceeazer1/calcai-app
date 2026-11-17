@@ -19,7 +19,7 @@ class CalcAiDevice {
   int rssi;
 
   /// Name from advertisement data (may differ from device.platformName).
-  final String? advertisementName;
+  String? advertisementName;
 
   /// Resolved display name, preferring advertisement data.
   String get name =>
