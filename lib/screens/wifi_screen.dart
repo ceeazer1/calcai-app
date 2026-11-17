@@ -14,6 +14,41 @@ import '../widgets/phone_hotspot_option.dart';
 import '../widgets/wifi_network_picker.dart';
 import '../widgets/saved_network_details.dart';
 
+enum _WifiConnectionFailure {
+  bluetoothUnavailable(
+    'Bluetooth disconnected',
+    'Check that Bluetooth is on and CalcAI has Bluetooth permission in Settings, then try again.',
+  ),
+  notFound(
+    'Calc not found',
+    'No CalcAI calculator was found during this search. Keep the calculator nearby with its Bluetooth portal open, then try again.',
+  ),
+  discoveryFailed(
+    'Could not search for calculator',
+    'The Bluetooth search did not finish. Check Bluetooth and CalcAI\'s Bluetooth permission in Settings, then try again.',
+  ),
+  connectionFailed(
+    'Could not connect to calculator',
+    'The Bluetooth connection did not finish. Keep the calculator nearby with its Bluetooth portal open, then try again.',
+  ),
+  accessNotVerified(
+    'Could not verify access',
+    'Access to this calculator could not be verified. Check your internet connection and that you are signed in to the owning account, then try again.',
+  ),
+  verificationInterrupted(
+    'Bluetooth connection interrupted',
+    'The Bluetooth connection ended during verification. Keep the calculator nearby with its Bluetooth portal open, then try again.',
+  ),
+  cancelled(
+    'Search stopped',
+    'Try again when the calculator\'s Bluetooth portal is open.',
+  );
+
+  const _WifiConnectionFailure(this.title, this.message);
+  final String title;
+  final String message;
+}
+
 /// WiFi management screen — BLE-dependent, requires nearby CalcAI device.
 ///
 /// Opened as a full page from the Home screen (no longer a bottom-nav tab).
@@ -55,9 +90,13 @@ class _WifiScreenState extends State<WifiScreen> {
   String? _authToken;
   bool get _authenticating => _authAttempt != null;
 
-  /// True when the last attempt failed because Bluetooth is off/unavailable
-  /// (vs. the device simply not being found nearby).
-  bool _btOff = false;
+  _WifiConnectionFailure? _connectionFailure;
+  Object? _connectionAttempt;
+  bool _scanCompleted = false;
+  bool _discovering = false;
+  Future<void>? _scanRun;
+  Future<void>? _scanCleanup;
+  bool _waitingForScanCleanup = false;
 
   /// Whether a connect attempt has finished at least once. Until then we show
   /// "Searching…" instead of the failed state, so there's no initial flash.
@@ -195,13 +234,16 @@ class _WifiScreenState extends State<WifiScreen> {
 
   /// User tapped "skip" — stop searching and show the not-found state now.
   void _skipSearch() {
-    context.read<BleService>().stopScan();
-    _btOff = false; // skip is only offered while Bluetooth is on
+    unawaited(_stopDiscoveryScan(context.read<BleService>()));
+    _connectionFailure = _WifiConnectionFailure.cancelled;
     _stopAutoConnecting();
   }
 
   void _stopAutoConnecting() {
     _discoveryTimeout?.cancel();
+    _connectionAttempt = null;
+    _discovering = false;
+    _waitingForScanCleanup = false;
     _connectStarted = false;
     // Skip/timeout/hidden-tab cancellation also invalidates a pending proof.
     // A retry on the same BLE generation must start a fresh handshake.
@@ -223,7 +265,13 @@ class _WifiScreenState extends State<WifiScreen> {
   /// Side-effect listener: connect to the first CalcAI found during an
   /// auto-connect scan, and clear the flag once resolved.
   void _onBle() {
-    if (!mounted || !_autoConnecting || _closing || !widget.isActive) return;
+    if (!mounted ||
+        !_autoConnecting ||
+        _closing ||
+        !widget.isActive ||
+        _waitingForScanCleanup) {
+      return;
+    }
     final ble = context.read<BleService>();
 
     // A raw BLE link is not enough on a claimed calculator. Once service
@@ -234,16 +282,20 @@ class _WifiScreenState extends State<WifiScreen> {
     }
 
     // A started connect attempt failed → stop showing the connecting state.
-    if (_connectStarted &&
+    if ((_connectStarted || _authenticating) &&
         (ble.connectionState == DeviceConnectionState.error ||
             ble.connectionState == DeviceConnectionState.disconnected)) {
+      _connectionFailure = _authenticating
+          ? _WifiConnectionFailure.verificationInterrupted
+          : _WifiConnectionFailure.connectionFailed;
       _stopAutoConnecting();
       return;
     }
 
     // A candidate ends discovery. Connecting and proving ownership have
     // their own deadlines and must not inherit the remaining scan time.
-    if (!_connectStarted && ble.devices.isNotEmpty) {
+    if (_discovering && !_connectStarted && ble.devices.isNotEmpty) {
+      _discovering = false;
       _connectStarted = true;
       _discoveryTimeout?.cancel();
       ble.connectToDevice(ble.devices.first);
@@ -257,28 +309,76 @@ class _WifiScreenState extends State<WifiScreen> {
     final ble = context.read<BleService>();
     if (_autoConnecting || _closing) return;
 
+    final previousSearch = <Future<void>>[
+      if (_scanCleanup != null) _scanCleanup!,
+      if (_scanRun != null) _scanRun!,
+    ];
+    final attempt = Object();
     setState(() {
       _autoConnecting = true;
       _connectStarted = false;
-      _btOff = false;
+      _connectionFailure = null;
+      _connectionAttempt = attempt;
+      _scanCompleted = false;
+      _discovering = false;
+      _waitingForScanCleanup = previousSearch.isNotEmpty;
     });
+    bool isCurrent() =>
+        mounted &&
+        !_closing &&
+        widget.isActive &&
+        _autoConnecting &&
+        identical(_connectionAttempt, attempt);
+
+    if (previousSearch.isNotEmpty) {
+      try {
+        // An old native scan must finish before a new attempt can consume
+        // candidates or replace its subscription. Never wait indefinitely.
+        await Future.wait(previousSearch).timeout(const Duration(seconds: 12));
+      } catch (_) {
+        if (!isCurrent()) return;
+        _connectionFailure = _WifiConnectionFailure.discoveryFailed;
+        _stopAutoConnecting();
+        return;
+      }
+      if (!isCurrent()) return;
+      _waitingForScanCleanup = false;
+      if (ble.isScanning) {
+        _connectionFailure = _WifiConnectionFailure.discoveryFailed;
+        _stopAutoConnecting();
+        return;
+      }
+    }
 
     if (ble.connectionState == DeviceConnectionState.ready) {
       await _authenticateConnectedDevice();
       return;
     }
 
-    final granted = await ble.requestPermissions();
-    final on = granted && await ble.isBluetoothOn();
+    bool granted;
+    bool on;
+    try {
+      granted = await ble.requestPermissions();
+      if (!isCurrent()) return;
+      on = granted && await ble.isBluetoothOn();
+    } catch (_) {
+      if (!isCurrent()) return;
+      _connectionFailure = _WifiConnectionFailure.bluetoothUnavailable;
+      _stopAutoConnecting();
+      return;
+    }
+    if (!isCurrent()) return;
     if (!granted || !on) {
-      _btOff = true;
+      _connectionFailure = _WifiConnectionFailure.bluetoothUnavailable;
       _stopAutoConnecting();
       return;
     }
 
     // Fast path: reconnect straight to the last paired device (no scan).
     final reconnected = await ble.reconnectKnownDevice();
-    if (!mounted) return;
+    // A ready notification can start ownership proof before reconnect returns.
+    // Rejected/cancelled proof must not silently start a new fallback search.
+    if (!isCurrent()) return;
     if (reconnected || ble.connectionState.isConnected) {
       if (ble.connectionState == DeviceConnectionState.ready) {
         unawaited(_authenticateConnectedDevice());
@@ -288,17 +388,66 @@ class _WifiScreenState extends State<WifiScreen> {
 
     // Fall back to scanning for the device.
     _connectStarted = false;
+    _discovering = true;
     _discoveryTimeout?.cancel();
     // This deadline only applies while searching for a candidate.
     _discoveryTimeout = Timer(const Duration(seconds: 12), () {
-      if (mounted && _autoConnecting && !_connectStarted) {
+      if (isCurrent() && !_connectStarted) {
+        _connectionFailure = _scanCompleted
+            ? _WifiConnectionFailure.notFound
+            : _WifiConnectionFailure.discoveryFailed;
         _stopAutoConnecting();
-        unawaited(ble.stopScan());
+        unawaited(_stopDiscoveryScan(ble));
       }
     });
 
     // Fire the scan — _onBle handles connecting when a device appears.
-    ble.startScan();
+    late final Future<void> scan;
+    scan = _scanForDevice(ble, attempt).whenComplete(() {
+      if (identical(_scanRun, scan)) _scanRun = null;
+    });
+    _scanRun = scan;
+    unawaited(scan);
+  }
+
+  Future<void> _scanForDevice(BleService ble, Object attempt) async {
+    bool isCurrent() =>
+        mounted &&
+        !_closing &&
+        widget.isActive &&
+        _autoConnecting &&
+        !_connectStarted &&
+        identical(_connectionAttempt, attempt);
+    try {
+      // Production scanning catches native errors and stores ble.error, so a
+      // completed Future alone does not establish a successful empty search.
+      await ble.startScan();
+      if (!isCurrent()) return;
+      _scanCompleted = !ble.isScanning;
+      if (ble.error == null) return;
+    } catch (_) {
+      if (!isCurrent()) return;
+    }
+    _connectionFailure = _WifiConnectionFailure.discoveryFailed;
+    _stopAutoConnecting();
+    unawaited(_stopDiscoveryScan(ble));
+  }
+
+  Future<void> _stopDiscoveryScan(BleService ble) {
+    if (_scanCleanup != null) return _scanCleanup!;
+    late final Future<void> cleanup;
+    cleanup =
+        () async {
+          try {
+            await ble.stopScan();
+          } catch (_) {
+            // Preserve the original failure if native cleanup also fails.
+          }
+        }().whenComplete(() {
+          if (identical(_scanCleanup, cleanup)) _scanCleanup = null;
+        });
+    _scanCleanup = cleanup;
+    return cleanup;
   }
 
   Future<void> _authenticateConnectedDevice() async {
@@ -366,11 +515,13 @@ class _WifiScreenState extends State<WifiScreen> {
       } else {
         // Stop listening for this attempt before disconnect notifies. A later
         // connection is never disconnected by an older rejected proof.
+        _connectionFailure = _WifiConnectionFailure.accessNotVerified;
         _stopAutoConnecting();
         await ble.disconnect();
       }
     } catch (_) {
       if (isCurrent()) {
+        _connectionFailure = _WifiConnectionFailure.accessNotVerified;
         _stopAutoConnecting();
         await ble.disconnect();
       }
@@ -427,8 +578,6 @@ class _WifiScreenState extends State<WifiScreen> {
                           Expanded(
                             child: Text(
                               'WiFi Networks',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.outfit(
                                 fontSize: 26,
                                 fontWeight: FontWeight.w700,
@@ -505,91 +654,114 @@ class _WifiScreenState extends State<WifiScreen> {
     // Show the searching UI while connecting, or before the first attempt has
     // resolved (avoids a "Calc not found" flash on open).
     final searching = _autoConnecting || !_attempted;
+    final failure =
+        _connectionFailure ?? _WifiConnectionFailure.connectionFailed;
 
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: searching
-              ? [
-                  const _SearchingBleIcon(),
-                  const SizedBox(height: 18),
-                  Text(
-                    _authenticating
-                        ? 'Verifying…'
-                        : isLinking
-                        ? 'Connecting…'
-                        : 'Searching…',
-                    style: GoogleFonts.outfit(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 22),
-                  // Plain "skip" link — stop waiting and jump to the not-found
-                  // state instead of sitting through the timeout.
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: _skipSearch,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 6,
-                        horizontal: 16,
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minHeight: constraints.maxHeight > 48
+                ? constraints.maxHeight - 48
+                : 0,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: searching
+                ? [
+                    const _SearchingBleIcon(),
+                    const SizedBox(height: 18),
+                    Text(
+                      _authenticating
+                          ? 'Verifying…'
+                          : isLinking
+                          ? 'Connecting…'
+                          : 'Searching…',
+                      style: GoogleFonts.outfit(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
                       ),
+                    ),
+                    const SizedBox(height: 22),
+                    // Stopping discovery does not establish that no device exists.
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _skipSearch,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 6,
+                          horizontal: 16,
+                        ),
+                        child: Text(
+                          'skip',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.textTertiary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ]
+                : [
+                    Icon(
+                      failure == _WifiConnectionFailure.bluetoothUnavailable
+                          ? Icons.bluetooth_disabled_rounded
+                          : Icons.search_off_rounded,
+                      color: AppColors.textTertiary,
+                      size: 40,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      failure.title,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.outfit(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Semantics(
+                      liveRegion: true,
                       child: Text(
-                        'skip',
+                        failure.message,
+                        textAlign: TextAlign.center,
                         style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.textTertiary,
+                          fontSize: 14,
+                          height: 1.4,
+                          color: AppColors.textSecondary,
                         ),
                       ),
                     ),
-                  ),
-                ]
-              : [
-                  Icon(
-                    _btOff
-                        ? Icons.bluetooth_disabled_rounded
-                        : Icons.search_off_rounded,
-                    color: AppColors.textTertiary,
-                    size: 40,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    _btOff ? 'Bluetooth disconnected' : 'Calc not found',
-                    style: GoogleFonts.outfit(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton(
-                      onPressed: _attemptAutoConnect,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.electricBlue,
-                        foregroundColor: AppColors.textOnAccent,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: _attemptAutoConnect,
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size(0, 50),
+                          backgroundColor: AppColors.electricBlue,
+                          foregroundColor: AppColors.textOnAccent,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          elevation: 0,
                         ),
-                        elevation: 0,
-                      ),
-                      child: Text(
-                        'Try again',
-                        style: GoogleFonts.inter(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
+                        child: Text(
+                          'Try again',
+                          style: GoogleFonts.inter(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+          ),
         ),
       ),
     );
