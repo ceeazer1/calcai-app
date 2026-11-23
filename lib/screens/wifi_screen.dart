@@ -204,13 +204,13 @@ class _WifiScreenState extends State<WifiScreen> {
       );
       _askingToLeave = false;
       if (!mounted || closePortal == null) return;
-      _closing = true;
+      setState(() => _closing = true);
       _discoveryTimeout?.cancel();
       if (closePortal) {
         final closed = await ble.closeBlePortal();
         if (!mounted) return;
         if (!closed) {
-          _closing = false;
+          setState(() => _closing = false);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
@@ -224,7 +224,7 @@ class _WifiScreenState extends State<WifiScreen> {
         await _setNormalCalculatorStatus();
       }
     } else {
-      _closing = true;
+      setState(() => _closing = true);
       await _endWifiSession();
     }
     if (!mounted) return;
@@ -597,7 +597,23 @@ class _WifiScreenState extends State<WifiScreen> {
                     // still being fetched (first load), show a connected phase
                     // with the device name instead of a premature empty list.
                     Expanded(
-                      child: isConnected
+                      // A validated close deliberately disconnects before pop
+                      // finishes. Keep the exit state through route disposal;
+                      // that disconnect is not a failed connection attempt.
+                      child: _closing
+                          ? Center(
+                              child: SingleChildScrollView(
+                                padding: const EdgeInsets.all(32),
+                                child: Semantics(
+                                  liveRegion: true,
+                                  child: const Text(
+                                    'Leaving WiFi Networks…',
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ),
+                            )
+                          : isConnected
                           ? (ble.savedNetworksLoading &&
                                     ble.savedNetworks.isEmpty
                                 ? _buildConnectedLoading(ble)

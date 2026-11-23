@@ -263,12 +263,33 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
     if (token == null) return false;
 
     _recoveryError = null;
+    // Recovery runs before PairDeviceScreen. Verify the actual peripheral here
+    // as well; capabilities and a well-formed relnonce are not identity proof.
+    if (!await ble.ensureDeviceVerified()) {
+      if (currentLink()) {
+        _recoveryError =
+            'Could not verify this calculator for a pairing reset. Check your internet connection and scan again.';
+      }
+      return false;
+    }
+    if (!currentLink()) return false;
+    final verified = ble.verifiedChallenge;
+    if (verified == null || !isValidMacHex(verified.mac)) {
+      _recoveryError =
+          'Could not verify this calculator for a pairing reset. Scan again.';
+      return false;
+    }
     final ask = await ble.requestReleaseNonce();
     if (!currentLink()) return false;
     if (ask == null) {
       _recoveryError = ble.lastCommandError == null
           ? 'The calculator did not answer the pairing reset. Reopen BLE on the calculator and scan again. If it repeats, its firmware may need updating.'
           : 'Lost Bluetooth connection while resetting the pairing. Reopen BLE on the calculator and scan again.';
+      return false;
+    }
+    if (ask.mac != verified.mac) {
+      _recoveryError =
+          'The calculator identity did not match the pairing reset. Disconnect and scan again.';
       return false;
     }
     _recoveryMac = ask.mac;

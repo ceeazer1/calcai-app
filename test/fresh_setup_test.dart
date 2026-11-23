@@ -150,6 +150,11 @@ class _RecoveryBle extends _SetupBle {
   }
 
   final _Board board;
+  // Existing high-level recovery fixture's identity is synthetic. The new
+  // release_ack_receipt and release_identity_gate tests exercise real verification.
+  @override
+  DeviceChallenge get verifiedChallenge =>
+      DeviceChallenge(mac: mac, nonce: 'f' * 32, response: 'e' * 64);
   final characteristic = _RecoveryCharacteristic();
   @override
   BluetoothCharacteristic get commandCharacteristic => characteristic;

@@ -93,6 +93,13 @@ class _AdmissionBle extends SetupTestAppBle {
 class _OtherOwnerBle extends SetupTestAppBle {
   _OtherOwnerBle() : super(delay: Duration.zero, paired: true);
   int releases = 0;
+  // This high-level fixture models a genuine but still-owned calculator.
+  // The separate identity-gate fixtures exercise the actual verifier failures.
+  @override
+  Future<bool> ensureDeviceVerified() async => true;
+  @override
+  DeviceChallenge get verifiedChallenge =>
+      DeviceChallenge(mac: mac, nonce: 'f' * 32, response: 'e' * 64);
   @override
   Future<({String mac, String nonce})?> requestReleaseNonce() async =>
       (mac: mac, nonce: 'a' * 32);

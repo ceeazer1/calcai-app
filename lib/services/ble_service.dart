@@ -37,6 +37,153 @@ bool isValidMacHex(String? mac) =>
     mac != '000000000000' &&
     mac != 'ffffffffffff';
 
+/// Local evidence of an actual validated ACK, not an ownership or UI gate.
+///
+/// Only BleService's validated completion/release paths create these.
+/// Identity fingerprints,
+/// firmware attestations and host provenance are not observations this client
+/// has and must not be inferred from this receipt.
+sealed class BleCommandAckReceipt {
+  const BleCommandAckReceipt._({
+    required this.receiptId,
+    required this.cmd,
+    required this.ok,
+    required this.mac,
+    required this.connectionGeneration,
+    required this.appSessionId,
+    required this.observedAt,
+  });
+
+  final String receiptId;
+  final String cmd;
+  final bool ok;
+  final String mac;
+  final String connectionGeneration;
+  final String appSessionId;
+  final int observedAt;
+
+  Map<String, Object> _commonJson(String schema) => {
+    'schema': schema,
+    'receiptId': receiptId,
+    'cmd': cmd,
+    'ok': ok,
+    'mac': mac,
+    'connectionGeneration': connectionGeneration,
+    'appSessionId': appSessionId,
+    'observedAt': observedAt,
+  };
+
+  Map<String, Object> toJson();
+}
+
+final class PairingAckReceipt extends BleCommandAckReceipt {
+  const PairingAckReceipt._({
+    required super.receiptId,
+    required this.protocol,
+    required super.cmd,
+    required super.ok,
+    required super.mac,
+    required this.ownershipId,
+    required this.challengeId,
+    required super.connectionGeneration,
+    required super.appSessionId,
+    required super.observedAt,
+  }) : super._();
+
+  final int protocol;
+  final String ownershipId;
+  final String challengeId;
+
+  @override
+  Map<String, Object> toJson() => Map.unmodifiable({
+    ..._commonJson('calcai-paircomplete-ack/v1'),
+    'protocol': protocol,
+    'ownershipId': ownershipId,
+    'challengeId': challengeId,
+  });
+}
+
+/// Actual release acceptance; MAC comes from the validated same-link relnonce,
+/// since firmware's release ACK echoes cmd/ok but does not echo a MAC.
+final class ReleaseAckReceipt extends BleCommandAckReceipt {
+  const ReleaseAckReceipt._({
+    required super.receiptId,
+    required super.cmd,
+    required super.ok,
+    required super.mac,
+    required super.connectionGeneration,
+    required super.appSessionId,
+    required super.observedAt,
+  }) : super._();
+
+  @override
+  Map<String, Object> toJson() =>
+      Map.unmodifiable(_commonJson('calcai-release-ack/v1'));
+}
+
+// One short-lived record per command in existing app-container preferences.
+// No public setter/import API. Host/build/container provenance remains the
+// trusted export adapter's responsibility, never a claim made by these bytes.
+class _LocalAckReceipt<T extends BleCommandAckReceipt> {
+  _LocalAckReceipt(this.key, this.now, this.isCurrent);
+  final String key;
+  final DateTime Function() now;
+  final bool Function(T) isCurrent;
+  static const retention = Duration(minutes: 5);
+  T? _receipt;
+  Timer? _expiry;
+  int attempt = 0;
+  Future<void> _storageTail = Future<void>.value();
+  Future<void> get settled => _storageTail;
+
+  T? get value {
+    final receipt = _receipt;
+    if (receipt == null) return null;
+    final age = now().millisecondsSinceEpoch - receipt.observedAt;
+    if (!isCurrent(receipt) || age < 0 || age >= retention.inMilliseconds) {
+      invalidate();
+      return null;
+    }
+    return receipt;
+  }
+
+  void invalidate() {
+    ++attempt;
+    _receipt = null;
+    _expiry?.cancel();
+    _expiry = null;
+    _persist(null);
+  }
+
+  Future<bool> retain(T receipt) {
+    _receipt = receipt;
+    _expiry?.cancel();
+    _expiry = Timer(retention, () {
+      if (identical(_receipt, receipt)) invalidate();
+    });
+    return _persist(receipt);
+  }
+
+  Future<bool> _persist(T? receipt) {
+    final result = _storageTail.then((_) async {
+      try {
+        final prefs = await AppPreferences.getInstance();
+        if (receipt == null) return await prefs.remove(key);
+        if (!identical(value, receipt)) return false;
+        final stored = await prefs.setString(key, jsonEncode(receipt.toJson()));
+        if (!stored && identical(_receipt, receipt)) invalidate();
+        return stored && identical(value, receipt);
+      } catch (_) {
+        if (receipt != null && identical(_receipt, receipt)) invalidate();
+        // Missing diagnostic storage cannot fail a valid customer operation.
+        return false;
+      }
+    });
+    _storageTail = result.then<void>((_) {});
+    return result;
+  }
+}
+
 /// Comprehensive BLE service for CalcAI ESP32 WiFi provisioning.
 ///
 /// Uses [ChangeNotifier] so the UI can reactively rebuild via [Provider].
@@ -63,6 +210,8 @@ class BleService extends ChangeNotifier {
     this.wifiConfigCharUuid = '021a9007-0382-4aea-bff4-6b3f1c5adfb4',
     this.wifiStatusCharUuid = '021a9008-0382-4aea-bff4-6b3f1c5adfb4',
   }) {
+    // A prior process's receipt cannot stand in for this process's ACK.
+    _invalidateAckReceipts();
     // Let iOS raise its own "Turn On Bluetooth" alert, which carries a Settings
     // button. There is no API to switch the radio on (turnOn() is Android only)
     // and the URL scheme for the Bluetooth pane is private, so the system alert
@@ -170,7 +319,51 @@ class BleService extends ChangeNotifier {
   /// backend has confirmed the peripheral is genuine. Also relayed on claim, so
   /// pairing proves possession with the same nonce-bound answer.
   DeviceChallenge? _verifiedChallenge;
+  int? _verifiedChallengeGeneration;
   DeviceChallenge? get verifiedChallenge => _verifiedChallenge;
+
+  static final _ackAppSessionId = _newReceiptUuid();
+  late final _pairingAck = _LocalAckReceipt<PairingAckReceipt>(
+    'paircomplete_ack_receipt_v1',
+    () => ackReceiptNow,
+    (receipt) =>
+        _currentAckConnection(receipt) &&
+        _verifiedChallengeGeneration == connectionGeneration &&
+        _verifiedChallenge?.mac == receipt.mac,
+  );
+  late final _releaseAck = _LocalAckReceipt<ReleaseAckReceipt>(
+    'release_ack_receipt_v1',
+    () => ackReceiptNow,
+    (receipt) =>
+        _currentAckConnection(receipt) &&
+        _verifiedChallengeGeneration == connectionGeneration &&
+        _verifiedChallenge?.mac == receipt.mac,
+  );
+  ({String mac, String nonce, int generation})? _releaseNonceContext;
+
+  @protected
+  DateTime get ackReceiptNow => DateTime.now();
+
+  @protected
+  Future<void> get ackReceiptPersistenceSettled async {
+    await Future.wait([_pairingAck.settled, _releaseAck.settled]);
+  }
+
+  /// At most one current, identity-bound pairing ACK for five minutes.
+  /// Neither receipt becomes a customer ownership or completion gate.
+  PairingAckReceipt? get pairingAckReceipt => _pairingAck.value;
+  ReleaseAckReceipt? get releaseAckReceipt => _releaseAck.value;
+
+  bool _currentAckConnection(BleCommandAckReceipt receipt) =>
+      !_disposed &&
+      connectionState.isConnected &&
+      receipt.connectionGeneration == connectionGeneration.toString();
+
+  void _invalidateAckReceipts() {
+    _pairingAck.invalidate();
+    _releaseAck.invalidate();
+    _releaseNonceContext = null;
+  }
 
   /// Asks the backend whether a challenge answer is genuine.
   ///
@@ -469,6 +662,7 @@ class BleService extends ChangeNotifier {
     }
     if (_disposed) return;
     _cancelNetworkRemoval();
+    _invalidateAckReceipts();
     final generation = ++_connectionGeneration;
     bool current() =>
         !_disposed &&
@@ -484,6 +678,8 @@ class BleService extends ChangeNotifier {
     }
 
     _pairingApprovalVersion = null;
+    _verifiedChallenge = null;
+    _verifiedChallengeGeneration = null;
     _clearError();
     _connectedDevice = device;
     _setConnectionState(DeviceConnectionState.connecting);
@@ -610,6 +806,7 @@ class BleService extends ChangeNotifier {
   /// Disconnects from the current device.
   Future<void> disconnect() async {
     _cancelNetworkRemoval();
+    _invalidateAckReceipts();
     final generation = ++_connectionGeneration;
     final device = _connectedDevice;
     _pairingApprovalVersion = null;
@@ -632,6 +829,7 @@ class BleService extends ChangeNotifier {
 
   void _handleDisconnection() {
     _cancelNetworkRemoval();
+    _invalidateAckReceipts();
     _connectionGeneration++;
     _wifiScanGeneration++;
     _savedNetworksLoading = false;
@@ -646,6 +844,7 @@ class BleService extends ChangeNotifier {
     _deviceMac = null;
     // Verification is per-connection: a new link must prove itself again.
     _verifiedChallenge = null;
+    _verifiedChallengeGeneration = null;
     _setConnectionState(DeviceConnectionState.disconnected);
   }
 
@@ -1065,6 +1264,15 @@ class BleService extends ChangeNotifier {
     return List.generate(32, (_) => hex[_rng.nextInt(16)]).join();
   }
 
+  static String _newReceiptUuid() {
+    final bytes = List.generate(16, (_) => _rng.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+  }
+
   /// Asks the connected peripheral to answer an identity challenge.
   ///
   /// Serialises access to the scan characteristic.
@@ -1244,6 +1452,7 @@ class BleService extends ChangeNotifier {
     PairingOffer offer,
     String code,
   ) async {
+    _pairingAck.invalidate();
     final generation = connectionGeneration;
     _requirePairingV2(generation);
     final reply = await sendPairingCommand({
@@ -1272,12 +1481,14 @@ class BleService extends ChangeNotifier {
     return PairingApproval.fromJson(reply, offer);
   }
 
-  Future<void> completePairing(
+  Future<PairingAckReceipt?> completePairing(
     PairingOffer offer,
     PairingApproval approval,
     PairingCompletion completion,
     String owner,
   ) async {
+    _pairingAck.invalidate();
+    final receiptAttempt = _pairingAck.attempt;
     final generation = connectionGeneration;
     _requirePairingV2(generation);
     final reply = await sendPairingCommand({
@@ -1296,14 +1507,35 @@ class BleService extends ChangeNotifier {
     }
     if (reply['ok'] != true ||
         reply['cmd'] != 'paircomplete' ||
+        reply['protocol'] is! int ||
         reply['protocol'] != 2 ||
         reply['mac'] != offer.mac ||
         reply['challengeId'] != offer.challengeId ||
         reply['ownershipId'] != completion.fields['ownershipId']) {
       invalidPairingReply();
     }
+    PairingAckReceipt? receipt;
+    if (!_disposed &&
+        receiptAttempt == _pairingAck.attempt &&
+        _verifiedChallengeGeneration == generation &&
+        _verifiedChallenge?.mac == offer.mac) {
+      receipt = PairingAckReceipt._(
+        receiptId: _newReceiptUuid(),
+        protocol: reply['protocol'] as int,
+        cmd: reply['cmd'] as String,
+        ok: reply['ok'] as bool,
+        mac: reply['mac'] as String,
+        ownershipId: reply['ownershipId'] as String,
+        challengeId: reply['challengeId'] as String,
+        connectionGeneration: generation.toString(),
+        appSessionId: _ackAppSessionId,
+        observedAt: ackReceiptNow.millisecondsSinceEpoch,
+      );
+    }
     _pairedOwner = owner;
     notifyListeners();
+    if (receipt == null || receiptAttempt != _pairingAck.attempt) return null;
+    return await _pairingAck.retain(receipt) ? receipt : null;
   }
 
   /// Whether this calculator has already been claimed by an account.
@@ -1448,11 +1680,20 @@ class BleService extends ChangeNotifier {
   ///
   /// Returns null when the firmware predates the release command.
   Future<({String mac, String nonce})?> requestReleaseNonce() async {
+    _releaseAck.invalidate();
+    _releaseNonceContext = null;
+    final generation = connectionGeneration;
     final r = await _command({'cmd': 'relnonce'});
+    if (_disposed ||
+        generation != connectionGeneration ||
+        !connectionState.isConnected) {
+      return null;
+    }
     final mac = (r?['mac'] ?? '').toString().toLowerCase();
     final nonce = (r?['nonce'] ?? '').toString().toLowerCase();
     if (!isValidMacHex(mac)) return null;
     if (!RegExp(r'^[0-9a-f]{16,64}$').hasMatch(nonce)) return null;
+    _releaseNonceContext = (mac: mac, nonce: nonce, generation: generation);
     return (mac: mac, nonce: nonce);
   }
 
@@ -1462,16 +1703,49 @@ class BleService extends ChangeNotifier {
   /// checks it against a secret only the backend holds, so a phone cannot reset
   /// someone else's calculator by asking.
   Future<bool> releaseOwnership(String nonce, String response) async {
+    _releaseAck.invalidate();
+    final receiptAttempt = _releaseAck.attempt;
+    final generation = connectionGeneration;
+    final context = _releaseNonceContext;
+    _releaseNonceContext = null;
     final r = await _command({
       'cmd': 'release',
       'nonce': nonce,
       'response': response,
     });
+    if (_disposed ||
+        generation != connectionGeneration ||
+        !connectionState.isConnected) {
+      return false;
+    }
     final ok = r?['ok'] == true;
     if (ok) {
       _pairedOwner = null;
     } else {
       _lastCommandError = r?['error']?.toString() ?? _lastCommandError;
+    }
+    // Preserve the older bool-only customer contract, including firmware that
+    // omits cmd. Such replies cannot produce the stronger observable receipt.
+    if (ok &&
+        r?['cmd'] == 'release' &&
+        context != null &&
+        context.generation == generation &&
+        context.nonce == nonce &&
+        _verifiedChallengeGeneration == generation &&
+        _verifiedChallenge?.mac == context.mac &&
+        (r?['mac'] == null || r?['mac'] == context.mac) &&
+        receiptAttempt == _releaseAck.attempt) {
+      await _releaseAck.retain(
+        ReleaseAckReceipt._(
+          receiptId: _newReceiptUuid(),
+          cmd: r!['cmd'] as String,
+          ok: r['ok'] as bool,
+          mac: context.mac,
+          connectionGeneration: generation.toString(),
+          appSessionId: _ackAppSessionId,
+          observedAt: ackReceiptNow.millisecondsSinceEpoch,
+        ),
+      );
     }
     return ok;
   }
@@ -1541,7 +1815,10 @@ class BleService extends ChangeNotifier {
   /// Also used by the V2 code screen before requesting a signed offer.
   Future<bool> ensureDeviceVerified() async {
     final generation = connectionGeneration;
-    if (_verifiedChallenge != null) return true;
+    if (_verifiedChallenge != null &&
+        _verifiedChallengeGeneration == generation) {
+      return true;
+    }
 
     final verifier = deviceVerifier;
     if (verifier == null) {
@@ -1577,6 +1854,7 @@ class BleService extends ChangeNotifier {
 
     if (generation != connectionGeneration) return false;
     _verifiedChallenge = challenge;
+    _verifiedChallengeGeneration = generation;
     if (isValidMacHex(challenge.mac)) _deviceMac = challenge.mac;
     return true;
   }
@@ -1718,7 +1996,9 @@ class BleService extends ChangeNotifier {
 
     try {
       if (_networkRemoval != null) {
-        _setError('Wait for the current Wi-Fi request before changing settings.');
+        _setError(
+          'Wait for the current Wi-Fi request before changing settings.',
+        );
         return false;
       }
       final payload = jsonEncode({
@@ -2058,6 +2338,7 @@ class BleService extends ChangeNotifier {
   @override
   void dispose() {
     _cancelNetworkRemoval();
+    _invalidateAckReceipts();
     _disposed = true;
     ++_connectionGeneration;
     ++_benchScanGeneration;
