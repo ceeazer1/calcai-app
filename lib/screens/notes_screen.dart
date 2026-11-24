@@ -972,7 +972,7 @@ class _NoteEditorPageState extends State<_NoteEditorPage> {
                             ),
                             const SizedBox(height: 6),
                             Text(
-                              '96x64 screen — 16 chars per line, 8 lines each.',
+                              '96x64 screen — 16 chars per line, 7 text lines plus navigation.',
                               style: GoogleFonts.inter(
                                 fontSize: 11,
                                 color: AppColors.textTertiary,

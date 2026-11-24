@@ -1,0 +1,1146 @@
+{
+  "schemaVersion": 1,
+  "reference": "signed firmware 1.4.8 calculator/ti_text.h",
+  "referenceSha256": "4e2e882f1c519efd75a54cde698656094023c8541cecf99c21078ca2a8c37d45",
+  "width": 16,
+  "textRows": 7,
+  "generator": "evidence/oracle/generate_fixtures.py; unmodified header executed through a host-only Arduino String adapter",
+  "cases": [
+    {
+      "name": "empty",
+      "input": "",
+      "normalizedUtf8Hex": "",
+      "displayText": "",
+      "paddedPages": []
+    },
+    {
+      "name": "simple-three-line-customer-note",
+      "input": "Notes check\n2 + 3 = 5\n1/2 + 1/4 = 3/4",
+      "normalizedUtf8Hex": "4e6f74657320636865636b0a32202b2033203d20350a312f32202b20312f34203d20332f34",
+      "displayText": "Notes check\n2 + 3 = 5\n1/2 + 1/4 = 3/4",
+      "paddedPages": [
+        "Notes check     \n2 + 3 = 5       \n1/2 + 1/4 = 3/4 \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "seven-exact-width-lines",
+      "input": "1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456",
+      "normalizedUtf8Hex": "313233343536373839303132333435360a313233343536373839303132333435360a313233343536373839303132333435360a313233343536373839303132333435360a313233343536373839303132333435360a313233343536373839303132333435360a31323334353637383930313233343536",
+      "displayText": "1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456",
+      "paddedPages": [
+        "1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456"
+      ]
+    },
+    {
+      "name": "eight-exact-width-lines",
+      "input": "1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456",
+      "normalizedUtf8Hex": "313233343536373839303132333435360a313233343536373839303132333435360a313233343536373839303132333435360a313233343536373839303132333435360a313233343536373839303132333435360a313233343536373839303132333435360a313233343536373839303132333435360a31323334353637383930313233343536",
+      "displayText": "1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456",
+      "paddedPages": [
+        "1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456\n1234567890123456",
+        "1234567890123456\n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "exact-width-trailing-newline",
+      "input": "1234567890123456\n",
+      "normalizedUtf8Hex": "313233343536373839303132333435360a",
+      "displayText": "1234567890123456\n",
+      "paddedPages": [
+        "1234567890123456\n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "exact-width-then-real-blank-line",
+      "input": "1234567890123456\n\nEND",
+      "normalizedUtf8Hex": "313233343536373839303132333435360a0a454e44",
+      "displayText": "1234567890123456\n\nEND",
+      "paddedPages": [
+        "1234567890123456\n                \nEND             \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "explicit-blank-lines",
+      "input": "A\n\nB",
+      "normalizedUtf8Hex": "410a0a42",
+      "displayText": "A\n\nB",
+      "paddedPages": [
+        "A               \n                \nB               \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "seven-real-blank-lines",
+      "input": "\n\n\n\n\n\n\n",
+      "normalizedUtf8Hex": "0a0a0a0a0a0a0a",
+      "displayText": "\n\n\n\n\n\n\n",
+      "paddedPages": [
+        "                \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "eight-real-blank-lines",
+      "input": "\n\n\n\n\n\n\n\n",
+      "normalizedUtf8Hex": "0a0a0a0a0a0a0a0a",
+      "displayText": "\n\n\n\n\n\n\n\n",
+      "paddedPages": [
+        "                \n                \n                \n                \n                \n                \n                ",
+        "                \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "line-ending-normalization",
+      "input": "A\r\nB\rC\nD",
+      "normalizedUtf8Hex": "410d0a420d430a44",
+      "displayText": "A\nB\nC\nD",
+      "paddedPages": [
+        "A               \nB               \nC               \nD               \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "unicode-master-reproducer",
+      "input": "π × 2 ≤ 8",
+      "normalizedUtf8Hex": "cf8020c397203220e289a42038",
+      "displayText": "pi * 2 <= 8",
+      "paddedPages": [
+        "pi * 2 <= 8     \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "unicode-expansion-at-right-edge",
+      "input": "12345678901234π\nEND",
+      "normalizedUtf8Hex": "3132333435363738393031323334cf800a454e44",
+      "displayText": "12345678901234pi\nEND",
+      "paddedPages": [
+        "12345678901234pi\nEND             \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "punctuation",
+      "input": "‘one’ “two” – — − … `three`",
+      "normalizedUtf8Hex": "e280986f6e65e2809920e2809c74776fe2809d20e2809320e2809420e2889220e280a62060746872656560",
+      "displayText": "'one' \"two\" - - - ... 'three'",
+      "paddedPages": [
+        "'one' \"two\" - - \n- ... 'three'   \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "operators",
+      "input": "× ÷ ⋅ · ≠ ≤ ≥ ≈ ∞ → ← ↔",
+      "normalizedUtf8Hex": "c39720c3b720e28b8520c2b720e289a020e289a420e289a520e2898820e2889e20e2869220e2869020e28694",
+      "displayText": "* / * * != <= >= ~= inf -> <- <->",
+      "paddedPages": [
+        "* / * * != <= >=\n ~= inf -> <- <-\n>               \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "functions-and-fractions",
+      "input": "√ π ° ± ¼ ½ ¾",
+      "normalizedUtf8Hex": "e2889a20cf8020c2b020c2b120c2bc20c2bd20c2be",
+      "displayText": "sqrt pi deg +/- 1/4 1/2 3/4",
+      "paddedPages": [
+        "sqrt pi deg +/- \n1/4 1/2 3/4     \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "greek",
+      "input": "α β γ δ θ μ Σ ∑ ∫",
+      "normalizedUtf8Hex": "ceb120ceb220ceb320ceb420ceb820cebc20cea320e2889120e288ab",
+      "displayText": "alpha beta gamma delta theta mu Sigma sum int",
+      "paddedPages": [
+        "alpha beta gamma\n delta theta mu \nSigma sum int   \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "sets",
+      "input": "A ∈ B ∩ C ∪ D",
+      "normalizedUtf8Hex": "4120e28888204220e288a9204320e288aa2044",
+      "displayText": "A in B intersect C union D",
+      "paddedPages": [
+        "A in B intersect\n C union D      \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "superscripts",
+      "input": "⁰ ¹ ² ³ ⁴ ⁵ ⁶ ⁷ ⁸ ⁹ ⁻ ⁺",
+      "normalizedUtf8Hex": "e281b020c2b920c2b220c2b320e281b420e281b520e281b620e281b720e281b820e281b920e281bb20e281ba",
+      "displayText": "^0 ^1 ^2 ^3 ^4 ^5 ^6 ^7 ^8 ^9 ^- ^+",
+      "paddedPages": [
+        "^0 ^1 ^2 ^3 ^4 ^\n5 ^6 ^7 ^8 ^9 ^-\n ^+             \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "spacing-and-bullets",
+      "input": "A\t\t B   • X ● Y",
+      "normalizedUtf8Hex": "4109092042202020e280a2205820e2978f2059",
+      "displayText": "A B - X - Y",
+      "paddedPages": [
+        "A B - X - Y     \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "fences-and-zero-width",
+      "input": "```\nπ\n``` ~~~ A​B‌C‍D﻿",
+      "normalizedUtf8Hex": "6060600acf800a606060207e7e7e2041e2808b42e2808c43e2808d44efbbbf",
+      "displayText": "'''\npi\n'''  ABCD",
+      "paddedPages": [
+        "'''             \npi              \n'''  ABCD       \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "unmapped-utf8",
+      "input": "é 中 😀",
+      "normalizedUtf8Hex": "c3a920e4b8ad20f09f9880",
+      "displayText": "?? ??? ????",
+      "paddedPages": [
+        "?? ??? ????     \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "controls-and-del",
+      "input": "A\u0000\u0001\u001fBC",
+      "normalizedUtf8Hex": "4100011f427f43",
+      "displayText": "AB?C",
+      "paddedPages": [
+        "AB?C            \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "latex-operators",
+      "input": "\\times \\cdot \\div \\pi \\leq \\le \\geq \\ge \\neq \\pm \\infty",
+      "normalizedUtf8Hex": "c39720c2b720c3b720706920e289a420e289a420e289a520e289a520e289a020c2b120e2889e",
+      "displayText": "* * / pi <= <= >= >= != +/- inf",
+      "paddedPages": [
+        "* * / pi <= <= >\n= >= != +/- inf \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "latex-root",
+      "input": "\\sqrt{a + \\sqrt{b}} sqrt{c}",
+      "normalizedUtf8Hex": "737172742861202b2073717274286229292073717274286329",
+      "displayText": "sqrt(a + sqrt(b)) sqrt(c)",
+      "paddedPages": [
+        "sqrt(a + sqrt(b)\n) sqrt(c)       \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "latex-exponent",
+      "input": "x^{12} y^{a^{b}}",
+      "normalizedUtf8Hex": "785e313220795e615e62",
+      "displayText": "x^12 y^a^b",
+      "paddedPages": [
+        "x^12 y^a^b      \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "latex-fraction",
+      "input": "\\frac{a}{b} frac{c}{d}",
+      "normalizedUtf8Hex": "2861292f286229202863292f286429",
+      "displayText": "(a)/(b) (c)/(d)",
+      "paddedPages": [
+        "(a)/(b) (c)/(d) \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "latex-nested-fraction",
+      "input": "\\frac{\\frac{1}{2}}{\\sqrt{x^{2}}}",
+      "normalizedUtf8Hex": "282831292f283229292f287371727428785e322929",
+      "displayText": "((1)/(2))/(sqrt(x^2))",
+      "paddedPages": [
+        "((1)/(2))/(sqrt(\nx^2))           \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "malformed-latex",
+      "input": "\\sqrt{a \\frac{x} \\frac{a}{b \\sqrt{ z^{no",
+      "normalizedUtf8Hex": "5c737172747b61205c667261637b787d205c667261637b617d7b62205c737172747b207a5e7b6e6f",
+      "displayText": "\\sqrt{a \\frac{x} \\frac{a}{b \\sqrt{ z^{no",
+      "paddedPages": [
+        "\\sqrt{a \\frac{x}\n \\frac{a}{b \\sqr\nt{ z^{no        \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "valid-after-malformed",
+      "input": "\\frac BAD \\frac{1}{2} \\sqrt{bad \\sqrt{4}",
+      "normalizedUtf8Hex": "5c6672616320424144202831292f283229205c737172747b6261642073717274283429",
+      "displayText": "\\frac BAD (1)/(2) \\sqrt{bad sqrt(4)",
+      "paddedPages": [
+        "\\frac BAD (1)/(2\n) \\sqrt{bad sqrt\n(4)             \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "unknown-latex-kept",
+      "input": "\\unknown{a} \\left( x \\right)",
+      "normalizedUtf8Hex": "5c756e6b6e6f776e7b617d20e289a46674282078205c726967687429",
+      "displayText": "\\unknown{a} <=ft( x \\right)",
+      "paddedPages": [
+        "\\unknown{a} <=ft\n( x \\right)     \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "multiple-note-body-separator",
+      "input": "First note | Second note",
+      "normalizedUtf8Hex": "4669727374206e6f7465207c205365636f6e64206e6f7465",
+      "displayText": "First note | Second note",
+      "paddedPages": [
+        "First note | Sec\nond note        \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "case-preserved",
+      "input": "lower Case + PI",
+      "normalizedUtf8Hex": "6c6f7765722043617365202b205049",
+      "displayText": "lower Case + PI",
+      "paddedPages": [
+        "lower Case + PI \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "ascii-length-1",
+      "input": "X",
+      "normalizedUtf8Hex": "58",
+      "displayText": "X",
+      "paddedPages": [
+        "X               \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "ascii-length-15",
+      "input": "XXXXXXXXXXXXXXX",
+      "normalizedUtf8Hex": "585858585858585858585858585858",
+      "displayText": "XXXXXXXXXXXXXXX",
+      "paddedPages": [
+        "XXXXXXXXXXXXXXX \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "ascii-length-16",
+      "input": "XXXXXXXXXXXXXXXX",
+      "normalizedUtf8Hex": "58585858585858585858585858585858",
+      "displayText": "XXXXXXXXXXXXXXXX",
+      "paddedPages": [
+        "XXXXXXXXXXXXXXXX\n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "ascii-length-17",
+      "input": "XXXXXXXXXXXXXXXXX",
+      "normalizedUtf8Hex": "5858585858585858585858585858585858",
+      "displayText": "XXXXXXXXXXXXXXXXX",
+      "paddedPages": [
+        "XXXXXXXXXXXXXXXX\nX               \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "ascii-length-31",
+      "input": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "normalizedUtf8Hex": "58585858585858585858585858585858585858585858585858585858585858",
+      "displayText": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "paddedPages": [
+        "XXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXX \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "ascii-length-32",
+      "input": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "normalizedUtf8Hex": "5858585858585858585858585858585858585858585858585858585858585858",
+      "displayText": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "paddedPages": [
+        "XXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "ascii-length-111",
+      "input": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "normalizedUtf8Hex": "585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858",
+      "displayText": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "paddedPages": [
+        "XXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXX "
+      ]
+    },
+    {
+      "name": "ascii-length-112",
+      "input": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "normalizedUtf8Hex": "58585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858",
+      "displayText": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "paddedPages": [
+        "XXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX"
+      ]
+    },
+    {
+      "name": "ascii-length-113",
+      "input": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "normalizedUtf8Hex": "5858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858",
+      "displayText": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "paddedPages": [
+        "XXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX",
+        "X               \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "ascii-length-224",
+      "input": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "normalizedUtf8Hex": "5858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858",
+      "displayText": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "paddedPages": [
+        "XXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX",
+        "XXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX"
+      ]
+    },
+    {
+      "name": "ascii-length-225",
+      "input": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "normalizedUtf8Hex": "585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858",
+      "displayText": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "paddedPages": [
+        "XXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX",
+        "XXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX",
+        "X               \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-00",
+      "input": "\\sqrt{x}x²\n",
+      "normalizedUtf8Hex": "7371727428782978c2b20a",
+      "displayText": "sqrt(x)x^2\n",
+      "paddedPages": [
+        "sqrt(x)x^2      \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-01",
+      "input": "0123456789π0123456789\t\n",
+      "normalizedUtf8Hex": "30313233343536373839cf8030313233343536373839090a",
+      "displayText": "0123456789pi0123456789 \n",
+      "paddedPages": [
+        "0123456789pi0123\n456789          \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-02",
+      "input": "😀",
+      "normalizedUtf8Hex": "f09f9880",
+      "displayText": "????",
+      "paddedPages": [
+        "????            \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-03",
+      "input": "∈π≤∈😀\t∈\\sqrt{x}0123456789\t",
+      "normalizedUtf8Hex": "e28888cf80e289a4e28888f09f988009e28888737172742878293031323334353637383909",
+      "displayText": " in pi<= in ???? in sqrt(x)0123456789 ",
+      "paddedPages": [
+        " in pi<= in ????\n in sqrt(x)01234\n56789           \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-04",
+      "input": "A≤    ∈   \tb",
+      "normalizedUtf8Hex": "41e289a420202020e288882020200962",
+      "displayText": "A<= in b",
+      "paddedPages": [
+        "A<= in b        \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-05",
+      "input": "   😀 \r\n😀\\sqrt{x}∈    \r\n\t\n😀\\sqrt{x}0123456789\t x²x²π\t\\sqrt{x}\n\\frac{1}{2}x²\\sqrt{x}\t😀x²A123456789012345612345678901234561234567890123456",
+      "normalizedUtf8Hex": "202020f09f9880200d0af09f988073717274287829e28888202020200d0a090af09f98807371727428782930313233343536373839092078c2b278c2b2cf8009737172742878290a2831292f28322978c2b27371727428782909f09f988078c2b241313233343536373839303132333435363132333435363738393031323334353631323334353637383930313233343536",
+      "displayText": " ???? \n????sqrt(x) in \n \n????sqrt(x)0123456789 x^2x^2pi sqrt(x)\n(1)/(2)x^2sqrt(x) ????x^2A123456789012345612345678901234561234567890123456",
+      "paddedPages": [
+        " ????           \n????sqrt(x) in  \n                \n????sqrt(x)01234\n56789 x^2x^2pi s\nqrt(x)          \n(1)/(2)x^2sqrt(x",
+        ") ????x^2A123456\n7890123456123456\n7890123456123456\n7890123456      \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-06",
+      "input": "\\sqrt{x} 12345678901234560123456789   A\t\\frac{1}{2}1234567890123456A\tb ∈A\\frac{1}{2}1234567890123456\\sqrt{x}😀\n\n\tπ∈≤\nπ   ",
+      "normalizedUtf8Hex": "7371727428782920313233343536373839303132333435363031323334353637383920202041092831292f2832293132333435363738393031323334353641096220e28888412831292f2832293132333435363738393031323334353673717274287829f09f98800a0a09cf80e28888e289a40acf80202020",
+      "displayText": "sqrt(x) 12345678901234560123456789 A (1)/(2)1234567890123456A b in A(1)/(2)1234567890123456sqrt(x)????\n\n pi in <=\npi ",
+      "paddedPages": [
+        "sqrt(x) 12345678\n9012345601234567\n89 A (1)/(2)1234\n567890123456A b \nin A(1)/(2)12345\n67890123456sqrt(\nx)????          ",
+        "                \n pi in <=       \npi              \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-07",
+      "input": "π \\sqrt{x}",
+      "normalizedUtf8Hex": "cf802073717274287829",
+      "displayText": "pi sqrt(x)",
+      "paddedPages": [
+        "pi sqrt(x)      \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-08",
+      "input": " \\sqrt{x} 1234567890123456≤≤\r\n\r\n ∈ππ\t≤1234567890123456😀\t\r\n ",
+      "normalizedUtf8Hex": "20737172742878292031323334353637383930313233343536e289a4e289a40d0a0d0a20e28888cf80cf8009e289a431323334353637383930313233343536f09f9880090d0a20",
+      "displayText": " sqrt(x) 1234567890123456<=<=\n\n in pipi <=1234567890123456???? \n ",
+      "paddedPages": [
+        " sqrt(x) 1234567\n890123456<=<=   \n                \n in pipi <=12345\n67890123456???? \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-09",
+      "input": "0123456789   πAb\n",
+      "normalizedUtf8Hex": "30313233343536373839202020cf8041620a",
+      "displayText": "0123456789 piAb\n",
+      "paddedPages": [
+        "0123456789 piAb \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-10",
+      "input": "\r\n\t\nA    x²\\frac{1}{2} \\frac{1}{2}",
+      "normalizedUtf8Hex": "0d0a090a412020202078c2b22831292f283229202831292f283229",
+      "displayText": "\n \nA x^2(1)/(2) (1)/(2)",
+      "paddedPages": [
+        "                \n                \nA x^2(1)/(2) (1)\n/(2)            \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-11",
+      "input": "\n\tπb\t😀\\sqrt{x}x²😀≤ 1234567890123456   ≤≤\\sqrt{x}A\\frac{1}{2}b≤1234567890123456",
+      "normalizedUtf8Hex": "0a09cf806209f09f98807371727428782978c2b2f09f9880e289a42031323334353637383930313233343536202020e289a4e289a473717274287829412831292f28322962e289a431323334353637383930313233343536",
+      "displayText": "\n pib ????sqrt(x)x^2????<= 1234567890123456 <=<=sqrt(x)A(1)/(2)b<=1234567890123456",
+      "paddedPages": [
+        "                \n pib ????sqrt(x)\nx^2????<= 123456\n7890123456 <=<=s\nqrt(x)A(1)/(2)b<\n=123456789012345\n6               "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-12",
+      "input": "\n1234567890123456\\sqrt{x}b\tA∈\t\t😀0123456789x²1234567890123456b   1234567890123456 \r\nx²\\sqrt{x}AAπ",
+      "normalizedUtf8Hex": "0a3132333435363738393031323334353673717274287829620941e288880909f09f98803031323334353637383978c2b2313233343536373839303132333435366220202031323334353637383930313233343536200d0a78c2b2737172742878294141cf80",
+      "displayText": "\n1234567890123456sqrt(x)b A in ????0123456789x^21234567890123456b 1234567890123456 \nx^2sqrt(x)AApi",
+      "paddedPages": [
+        "                \n1234567890123456\nsqrt(x)b A in ??\n??0123456789x^21\n234567890123456b\n 123456789012345\n6               ",
+        "x^2sqrt(x)AApi  \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-13",
+      "input": "\r\n\r\nπ\\frac{1}{2}\r\nπ \t ∈x²≤x²\\frac{1}{2}A0123456789  😀\r\n\tπ A1234567890123456∈\r\n1234567890123456∈",
+      "normalizedUtf8Hex": "0d0a0d0acf802831292f2832290d0acf80200920e2888878c2b2e289a478c2b22831292f28322941303132333435363738392020f09f98800d0a09cf80204131323334353637383930313233343536e288880d0a31323334353637383930313233343536e28888",
+      "displayText": "\n\npi(1)/(2)\npi in x^2<=x^2(1)/(2)A0123456789 ????\n pi A1234567890123456 in \n1234567890123456 in ",
+      "paddedPages": [
+        "                \n                \npi(1)/(2)       \npi in x^2<=x^2(1\n)/(2)A0123456789\n ????           \n pi A12345678901",
+        "23456 in        \n1234567890123456\n in             \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-14",
+      "input": "A≤\\sqrt{x}\n∈\\sqrt{x}b∈\n \n\\sqrt{x}π∈π∈\r\n\nπx²\t\r\n \t0123456789😀",
+      "normalizedUtf8Hex": "41e289a4737172742878290ae288887371727428782962e288880a200a73717274287829cf80e28888cf80e288880d0a0acf8078c2b2090d0a200930313233343536373839f09f9880",
+      "displayText": "A<=sqrt(x)\n in sqrt(x)b in \n \nsqrt(x)pi in pi in \n\npix^2 \n 0123456789????",
+      "paddedPages": [
+        "A<=sqrt(x)      \n in sqrt(x)b in \n                \nsqrt(x)pi in pi \nin              \n                \npix^2           ",
+        " 0123456789???? \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-15",
+      "input": "π\tb   \nb1234567890123456Aπ ≤≤\\sqrt{x}≤≤∈AA∈\r\nπ\t\\frac{1}{2}x² x²",
+      "normalizedUtf8Hex": "cf8009622020200a623132333435363738393031323334353641cf8020e289a4e289a473717274287829e289a4e289a4e288884141e288880d0acf80092831292f28322978c2b22078c2b2",
+      "displayText": "pi b \nb1234567890123456Api <=<=sqrt(x)<=<= in AA in \npi (1)/(2)x^2 x^2",
+      "paddedPages": [
+        "pi b            \nb123456789012345\n6Api <=<=sqrt(x)\n<=<= in AA in   \npi (1)/(2)x^2 x^\n2               \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-16",
+      "input": "ππ\nx²0123456789\r\nb😀",
+      "normalizedUtf8Hex": "cf80cf800a78c2b2303132333435363738390d0a62f09f9880",
+      "displayText": "pipi\nx^20123456789\nb????",
+      "paddedPages": [
+        "pipi            \nx^20123456789   \nb????           \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-17",
+      "input": "1234567890123456b\\sqrt{x}A≤ b12345678901234560123456789\\frac{1}{2}≤😀A∈Ab\n\nA\nx²",
+      "normalizedUtf8Hex": "31323334353637383930313233343536627371727428782941e289a4206231323334353637383930313233343536303132333435363738392831292f283229e289a4f09f988041e2888841620a0a410a78c2b2",
+      "displayText": "1234567890123456bsqrt(x)A<= b12345678901234560123456789(1)/(2)<=????A in Ab\n\nA\nx^2",
+      "paddedPages": [
+        "1234567890123456\nbsqrt(x)A<= b123\n4567890123456012\n3456789(1)/(2)<=\n????A in Ab     \n                \nA               ",
+        "x^2             \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-18",
+      "input": "   \nπ",
+      "normalizedUtf8Hex": "2020200acf80",
+      "displayText": " \npi",
+      "paddedPages": [
+        "                \npi              \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-19",
+      "input": "∈\\sqrt{x}\t      π≤ AA\r\n1234567890123456\r\nππbb😀0123456789",
+      "normalizedUtf8Hex": "e288887371727428782909202020202020cf80e289a42041410d0a313233343536373839303132333435360d0acf80cf806262f09f988030313233343536373839",
+      "displayText": " in sqrt(x) pi<= AA\n1234567890123456\npipibb????0123456789",
+      "paddedPages": [
+        " in sqrt(x) pi<=\n AA             \n1234567890123456\npipibb????012345\n6789            \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-20",
+      "input": "π∈",
+      "normalizedUtf8Hex": "cf80e28888",
+      "displayText": "pi in ",
+      "paddedPages": [
+        "pi in           \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-21",
+      "input": "   ∈\t\n\\frac{1}{2}∈\r\n1234567890123456A\t \r\n\r\nx²   bπ\nx²01234567891234567890123456π12345678901234561234567890123456\r\n\t",
+      "normalizedUtf8Hex": "202020e28888090a2831292f283229e288880d0a313233343536373839303132333435364109200d0a0d0a78c2b220202062cf800a78c2b23031323334353637383931323334353637383930313233343536cf8031323334353637383930313233343536313233343536373839303132333435360d0a09",
+      "displayText": " in \n(1)/(2) in \n1234567890123456A \n\nx^2 bpi\nx^201234567891234567890123456pi12345678901234561234567890123456\n ",
+      "paddedPages": [
+        " in             \n(1)/(2) in      \n1234567890123456\nA               \n                \nx^2 bpi         \nx^20123456789123",
+        "4567890123456pi1\n2345678901234561\n234567890123456 \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-22",
+      "input": "0123456789\r\n   0123456789\\frac{1}{2}1234567890123456\t   \n\t😀x²\\frac{1}{2}\r\n≤01234567890123456789\\frac{1}{2}\t\\frac{1}{2}∈Ax² \\sqrt{x}\r\nx²😀x²012345678901234567891234567890123456b😀",
+      "normalizedUtf8Hex": "303132333435363738390d0a202020303132333435363738392831292f28322931323334353637383930313233343536092020200a09f09f988078c2b22831292f2832290d0ae289a430313233343536373839303132333435363738392831292f283229092831292f283229e288884178c2b220737172742878290d0a78c2b2f09f988078c2b230313233343536373839303132333435363738393132333435363738393031323334353662f09f9880",
+      "displayText": "0123456789\n 0123456789(1)/(2)1234567890123456 \n ????x^2(1)/(2)\n<=01234567890123456789(1)/(2) (1)/(2) in Ax^2 sqrt(x)\nx^2????x^2012345678901234567891234567890123456b????",
+      "paddedPages": [
+        "0123456789      \n 0123456789(1)/(\n2)12345678901234\n56              \n ????x^2(1)/(2) \n<=01234567890123\n456789(1)/(2) (1",
+        ")/(2) in Ax^2 sq\nrt(x)           \nx^2????x^2012345\n6789012345678912\n34567890123456b?\n???             \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-23",
+      "input": "😀≤",
+      "normalizedUtf8Hex": "f09f9880e289a4",
+      "displayText": "????<=",
+      "paddedPages": [
+        "????<=          \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-24",
+      "input": "x²\\sqrt{x}x²\\sqrt{x}A      1234567890123456∈bA\\frac{1}{2}A≤",
+      "normalizedUtf8Hex": "78c2b27371727428782978c2b2737172742878294120202020202031323334353637383930313233343536e2888862412831292f28322941e289a4",
+      "displayText": "x^2sqrt(x)x^2sqrt(x)A 1234567890123456 in bA(1)/(2)A<=",
+      "paddedPages": [
+        "x^2sqrt(x)x^2sqr\nt(x)A 1234567890\n123456 in bA(1)/\n(2)A<=          \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-25",
+      "input": "x²\n∈0123456789   \\frac{1}{2}b\t\\sqrt{x} \n1234567890123456A≤    A≤x²AA\\frac{1}{2}\\frac{1}{2} ∈x²b1234567890123456😀∈012345678912345678901234561234567890123456",
+      "normalizedUtf8Hex": "78c2b20ae28888303132333435363738392020202831292f283229620973717274287829200a3132333435363738393031323334353641e289a42020202041e289a478c2b241412831292f2832292831292f28322920e2888878c2b26231323334353637383930313233343536f09f9880e28888303132333435363738393132333435363738393031323334353631323334353637383930313233343536",
+      "displayText": "x^2\n in 0123456789 (1)/(2)b sqrt(x) \n1234567890123456A<= A<=x^2AA(1)/(2)(1)/(2) in x^2b1234567890123456???? in 012345678912345678901234561234567890123456",
+      "paddedPages": [
+        "x^2             \n in 0123456789 (\n1)/(2)b sqrt(x) \n1234567890123456\nA<= A<=x^2AA(1)/\n(2)(1)/(2) in x^\n2b12345678901234",
+        "56???? in 012345\n6789123456789012\n3456123456789012\n3456            \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-26",
+      "input": "0123456789 😀1234567890123456∈\\frac{1}{2}∈\n\t😀   bπx²   ≤\r\n\n",
+      "normalizedUtf8Hex": "3031323334353637383920f09f988031323334353637383930313233343536e288882831292f283229e288880a09f09f988020202062cf8078c2b2202020e289a40d0a0a",
+      "displayText": "0123456789 ????1234567890123456 in (1)/(2) in \n ???? bpix^2 <=\n\n",
+      "paddedPages": [
+        "0123456789 ????1\n234567890123456 \nin (1)/(2) in   \n ???? bpix^2 <= \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-27",
+      "input": "π\\sqrt{x}😀1234567890123456x²   \\frac{1}{2}\t\nb   x²∈≤b",
+      "normalizedUtf8Hex": "cf8073717274287829f09f98803132333435363738393031323334353678c2b22020202831292f283229090a6220202078c2b2e28888e289a462",
+      "displayText": "pisqrt(x)????1234567890123456x^2 (1)/(2) \nb x^2 in <=b",
+      "paddedPages": [
+        "pisqrt(x)????123\n4567890123456x^2\n (1)/(2)        \nb x^2 in <=b    \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-28",
+      "input": "≤ b≤A😀 ∈\r\n\tx²πA∈\\frac{1}{2}\tx²\t∈π0123456789   \\sqrt{x}    ≤1234567890123456x²A\r\nπ😀x²\n",
+      "normalizedUtf8Hex": "e289a42062e289a441f09f988020e288880d0a0978c2b2cf8041e288882831292f2832290978c2b209e28888cf80303132333435363738392020207371727428782920202020e289a43132333435363738393031323334353678c2b2410d0acf80f09f988078c2b20a",
+      "displayText": "<= b<=A???? in \n x^2piA in (1)/(2) x^2 in pi0123456789 sqrt(x) <=1234567890123456x^2A\npi????x^2\n",
+      "paddedPages": [
+        "<= b<=A???? in  \n x^2piA in (1)/(\n2) x^2 in pi0123\n456789 sqrt(x) <\n=123456789012345\n6x^2A           \npi????x^2       "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-29",
+      "input": "≤😀A≤\t0123456789bb\\sqrt{x}123456789012345612345678901234560123456789bx²≤     1234567890123456\tAb 😀\r\n\tπ",
+      "normalizedUtf8Hex": "e289a4f09f988041e289a409303132333435363738396262737172742878293132333435363738393031323334353631323334353637383930313233343536303132333435363738396278c2b2e289a420202020203132333435363738393031323334353609416220f09f98800d0a09cf80",
+      "displayText": "<=????A<= 0123456789bbsqrt(x)123456789012345612345678901234560123456789bx^2<= 1234567890123456 Ab ????\n pi",
+      "paddedPages": [
+        "<=????A<= 012345\n6789bbsqrt(x)123\n4567890123456123\n4567890123456012\n3456789bx^2<= 12\n34567890123456 A\nb ????          ",
+        " pi             \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-30",
+      "input": "π1234567890123456π😀b A😀012345678901234567891234567890123456",
+      "normalizedUtf8Hex": "cf8031323334353637383930313233343536cf80f09f9880622041f09f9880303132333435363738393031323334353637383931323334353637383930313233343536",
+      "displayText": "pi1234567890123456pi????b A????012345678901234567891234567890123456",
+      "paddedPages": [
+        "pi12345678901234\n56pi????b A????0\n1234567890123456\n7891234567890123\n456             \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-31",
+      "input": "b😀\\sqrt{x}≤A\r\n\r\n∈A   1234567890123456    x²\tb1234567890123456∈b\nx²A≤ x²πA\r\n\\sqrt{x}x²\r\nb\r\n≤",
+      "normalizedUtf8Hex": "62f09f988073717274287829e289a4410d0a0d0ae2888841202020313233343536373839303132333435362020202078c2b2096231323334353637383930313233343536e28888620a78c2b241e289a42078c2b2cf80410d0a7371727428782978c2b20d0a620d0ae289a4",
+      "displayText": "b????sqrt(x)<=A\n\n in A 1234567890123456 x^2 b1234567890123456 in b\nx^2A<= x^2piA\nsqrt(x)x^2\nb\n<=",
+      "paddedPages": [
+        "b????sqrt(x)<=A \n                \n in A 1234567890\n123456 x^2 b1234\n567890123456 in \nb               \nx^2A<= x^2piA   ",
+        "sqrt(x)x^2      \nb               \n<=              \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-32",
+      "input": "x²≤x²1234567890123456b\nb   x²1234567890123456≤\\sqrt{x}\n",
+      "normalizedUtf8Hex": "78c2b2e289a478c2b231323334353637383930313233343536620a6220202078c2b231323334353637383930313233343536e289a4737172742878290a",
+      "displayText": "x^2<=x^21234567890123456b\nb x^21234567890123456<=sqrt(x)\n",
+      "paddedPages": [
+        "x^2<=x^212345678\n90123456b       \nb x^212345678901\n23456<=sqrt(x)  \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-33",
+      "input": "\\sqrt{x}≤1234567890123456x²∈≤\\sqrt{x}\r\n\nπ    ≤∈1234567890123456x²😀\\sqrt{x}bx²   \\frac{1}{2}\\frac{1}{2}A😀A\r\n\\frac{1}{2}0123456789\\sqrt{x}",
+      "normalizedUtf8Hex": "73717274287829e289a43132333435363738393031323334353678c2b2e28888e289a4737172742878290d0a0acf8020202020e289a4e288883132333435363738393031323334353678c2b2f09f9880737172742878296278c2b22020202831292f2832292831292f28322941f09f9880410d0a2831292f2832293031323334353637383973717274287829",
+      "displayText": "sqrt(x)<=1234567890123456x^2 in <=sqrt(x)\n\npi <= in 1234567890123456x^2????sqrt(x)bx^2 (1)/(2)(1)/(2)A????A\n(1)/(2)0123456789sqrt(x)",
+      "paddedPages": [
+        "sqrt(x)<=1234567\n890123456x^2 in \n<=sqrt(x)       \n                \npi <= in 1234567\n890123456x^2????\nsqrt(x)bx^2 (1)/",
+        "(2)(1)/(2)A????A\n(1)/(2)012345678\n9sqrt(x)        \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-34",
+      "input": "😀\\sqrt{x}\r\n\\sqrt{x}😀 \t\nb",
+      "normalizedUtf8Hex": "f09f9880737172742878290d0a73717274287829f09f988020090a62",
+      "displayText": "????sqrt(x)\nsqrt(x)???? \nb",
+      "paddedPages": [
+        "????sqrt(x)     \nsqrt(x)????     \nb               \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-35",
+      "input": "      \\frac{1}{2}ππ≤",
+      "normalizedUtf8Hex": "2020202020202831292f283229cf80cf80e289a4",
+      "displayText": " (1)/(2)pipi<=",
+      "paddedPages": [
+        " (1)/(2)pipi<=  \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-36",
+      "input": " \tx²A\\sqrt{x}\t1234567890123456A   π\t\r\nx²\r\n\\frac{1}{2}",
+      "normalizedUtf8Hex": "200978c2b24173717274287829093132333435363738393031323334353641202020cf80090d0a78c2b20d0a2831292f283229",
+      "displayText": " x^2Asqrt(x) 1234567890123456A pi \nx^2\n(1)/(2)",
+      "paddedPages": [
+        " x^2Asqrt(x) 123\n4567890123456A p\ni               \nx^2             \n(1)/(2)         \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-37",
+      "input": "\\frac{1}{2}0123456789\r\nπ😀1234567890123456😀\n≤   A1234567890123456 \\sqrt{x}\n\r\n\\sqrt{x}≤x²\t   Aπ1234567890123456   ",
+      "normalizedUtf8Hex": "2831292f283229303132333435363738390d0acf80f09f988031323334353637383930313233343536f09f98800ae289a4202020413132333435363738393031323334353620737172742878290a0d0a73717274287829e289a478c2b20920202041cf8031323334353637383930313233343536202020",
+      "displayText": "(1)/(2)0123456789\npi????1234567890123456????\n<= A1234567890123456 sqrt(x)\n\nsqrt(x)<=x^2 Api1234567890123456 ",
+      "paddedPages": [
+        "(1)/(2)012345678\n9               \npi????1234567890\n123456????      \n<= A123456789012\n3456 sqrt(x)    \n                ",
+        "sqrt(x)<=x^2 Api\n1234567890123456\n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-38",
+      "input": "x²   😀😀😀x²\r\n\t",
+      "normalizedUtf8Hex": "78c2b2202020f09f9880f09f9880f09f988078c2b20d0a09",
+      "displayText": "x^2 ????????????x^2\n ",
+      "paddedPages": [
+        "x^2 ????????????\nx^2             \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-39",
+      "input": "   \n\n \nAA\\sqrt{x}1234567890123456\nA1234567890123456∈πb b0123456789",
+      "normalizedUtf8Hex": "2020200a0a200a414173717274287829313233343536373839303132333435360a4131323334353637383930313233343536e28888cf8062206230313233343536373839",
+      "displayText": " \n\n \nAAsqrt(x)1234567890123456\nA1234567890123456 in pib b0123456789",
+      "paddedPages": [
+        "                \n                \n                \nAAsqrt(x)1234567\n890123456       \nA123456789012345\n6 in pib b012345",
+        "6789            \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-40",
+      "input": "b1234567890123456   \\frac{1}{2}\r\n\n\\sqrt{x}x²😀∈ 0123456789   \t\t\\frac{1}{2}😀😀0123456789\nx²😀\\sqrt{x}   x²\nπA∈\t",
+      "normalizedUtf8Hex": "62313233343536373839303132333435362020202831292f2832290d0a0a7371727428782978c2b2f09f9880e28888203031323334353637383920202009092831292f283229f09f9880f09f9880303132333435363738390a78c2b2f09f98807371727428782920202078c2b20acf8041e2888809",
+      "displayText": "b1234567890123456 (1)/(2)\n\nsqrt(x)x^2???? in 0123456789 (1)/(2)????????0123456789\nx^2????sqrt(x) x^2\npiA in ",
+      "paddedPages": [
+        "b123456789012345\n6 (1)/(2)       \n                \nsqrt(x)x^2???? i\nn 0123456789 (1)\n/(2)????????0123\n456789          ",
+        "x^2????sqrt(x) x\n^2              \npiA in          \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-41",
+      "input": "   Ax²≤\\sqrt{x}\\sqrt{x}01234567891234567890123456\\frac{1}{2}\r\n\r\n\t\\sqrt{x}\tA\\frac{1}{2}bπ \n\\sqrt{x}x²😀∈≤   ",
+      "normalizedUtf8Hex": "2020204178c2b2e289a4737172742878297371727428782930313233343536373839313233343536373839303132333435362831292f2832290d0a0d0a097371727428782909412831292f28322962cf80200a7371727428782978c2b2f09f9880e28888e289a4202020",
+      "displayText": " Ax^2<=sqrt(x)sqrt(x)01234567891234567890123456(1)/(2)\n\n sqrt(x) A(1)/(2)bpi \nsqrt(x)x^2???? in <= ",
+      "paddedPages": [
+        " Ax^2<=sqrt(x)sq\nrt(x)01234567891\n234567890123456(\n1)/(2)          \n                \n sqrt(x) A(1)/(2\n)bpi            ",
+        "sqrt(x)x^2???? i\nn <=            \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-42",
+      "input": "π\n\t",
+      "normalizedUtf8Hex": "cf800a09",
+      "displayText": "pi\n ",
+      "paddedPages": [
+        "pi              \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-43",
+      "input": "∈ ≤\\sqrt{x}",
+      "normalizedUtf8Hex": "e2888820e289a473717274287829",
+      "displayText": " in <=sqrt(x)",
+      "paddedPages": [
+        " in <=sqrt(x)   \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-44",
+      "input": "πA\nπ\tb∈\nb 01234567890123456789\t\nbx²   b≤   π",
+      "normalizedUtf8Hex": "cf80410acf800962e288880a62203031323334353637383930313233343536373839090a6278c2b220202062e289a4202020cf80",
+      "displayText": "piA\npi b in \nb 01234567890123456789 \nbx^2 b<= pi",
+      "paddedPages": [
+        "piA             \npi b in         \nb 01234567890123\n456789          \nbx^2 b<= pi     \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-45",
+      "input": "\\sqrt{x} π≤A   0123456789≤≤\t    AA\r\n\\frac{1}{2}\\frac{1}{2}",
+      "normalizedUtf8Hex": "7371727428782920cf80e289a44120202030313233343536373839e289a4e289a4092020202041410d0a2831292f2832292831292f283229",
+      "displayText": "sqrt(x) pi<=A 0123456789<=<= AA\n(1)/(2)(1)/(2)",
+      "paddedPages": [
+        "sqrt(x) pi<=A 01\n23456789<=<= AA \n(1)/(2)(1)/(2)  \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-46",
+      "input": "😀πx²π1234567890123456∈\r\n0123456789x²\\sqrt{x}1234567890123456\\sqrt{x}   1234567890123456x²\n   b😀    \\sqrt{x}       \\frac{1}{2}b   x²",
+      "normalizedUtf8Hex": "f09f9880cf8078c2b2cf8031323334353637383930313233343536e288880d0a3031323334353637383978c2b27371727428782931323334353637383930313233343536737172742878292020203132333435363738393031323334353678c2b20a20202062f09f98802020202073717274287829202020202020202831292f2832296220202078c2b2",
+      "displayText": "????pix^2pi1234567890123456 in \n0123456789x^2sqrt(x)1234567890123456sqrt(x) 1234567890123456x^2\n b???? sqrt(x) (1)/(2)b x^2",
+      "paddedPages": [
+        "????pix^2pi12345\n67890123456 in  \n0123456789x^2sqr\nt(x)123456789012\n3456sqrt(x) 1234\n567890123456x^2 \n b???? sqrt(x) (",
+        "1)/(2)b x^2     \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-47",
+      "input": "∈1234567890123456b0123456789x²\\frac{1}{2}∈π    \n≤≤",
+      "normalizedUtf8Hex": "e2888831323334353637383930313233343536623031323334353637383978c2b22831292f283229e28888cf80202020200ae289a4e289a4",
+      "displayText": " in 1234567890123456b0123456789x^2(1)/(2) in pi \n<=<=",
+      "paddedPages": [
+        " in 123456789012\n3456b0123456789x\n^2(1)/(2) in pi \n<=<=            \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-48",
+      "input": "\n\\frac{1}{2}1234567890123456≤\\sqrt{x}0123456789b ≤ πb0123456789\n1234567890123456\\sqrt{x}b π≤Ab\r\n\\sqrt{x}πx²😀\nA\r\n",
+      "normalizedUtf8Hex": "0a2831292f28322931323334353637383930313233343536e289a473717274287829303132333435363738396220e289a420cf8062303132333435363738390a31323334353637383930313233343536737172742878296220cf80e289a441620d0a73717274287829cf8078c2b2f09f98800a410d0a",
+      "displayText": "\n(1)/(2)1234567890123456<=sqrt(x)0123456789b <= pib0123456789\n1234567890123456sqrt(x)b pi<=Ab\nsqrt(x)pix^2????\nA\n",
+      "paddedPages": [
+        "                \n(1)/(2)123456789\n0123456<=sqrt(x)\n0123456789b <= p\nib0123456789    \n1234567890123456\nsqrt(x)b pi<=Ab ",
+        "sqrt(x)pix^2????\nA               \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-49",
+      "input": " ",
+      "normalizedUtf8Hex": "20",
+      "displayText": " ",
+      "paddedPages": [
+        "                \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-50",
+      "input": "Ab0123456789    ",
+      "normalizedUtf8Hex": "41623031323334353637383920202020",
+      "displayText": "Ab0123456789 ",
+      "paddedPages": [
+        "Ab0123456789    \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-51",
+      "input": "≤≤∈≤\\sqrt{x}0123456789Ax² ∈\t\r\nx²😀x²    A\\sqrt{x}π\t∈",
+      "normalizedUtf8Hex": "e289a4e289a4e28888e289a473717274287829303132333435363738394178c2b220e28888090d0a78c2b2f09f988078c2b2202020204173717274287829cf8009e28888",
+      "displayText": "<=<= in <=sqrt(x)0123456789Ax^2 in \nx^2????x^2 Asqrt(x)pi in ",
+      "paddedPages": [
+        "<=<= in <=sqrt(x\n)0123456789Ax^2 \nin              \nx^2????x^2 Asqrt\n(x)pi in        \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-52",
+      "input": "x²b\r\nA≤\r\n\r\n0123456789≤😀bbπ∈      \r\n∈1234567890123456x²",
+      "normalizedUtf8Hex": "78c2b2620d0a41e289a40d0a0d0a30313233343536373839e289a4f09f98806262cf80e288882020202020200d0ae288883132333435363738393031323334353678c2b2",
+      "displayText": "x^2b\nA<=\n\n0123456789<=????bbpi in \n in 1234567890123456x^2",
+      "paddedPages": [
+        "x^2b            \nA<=             \n                \n0123456789<=????\nbbpi in         \n in 123456789012\n3456x^2         "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-53",
+      "input": "∈😀\t",
+      "normalizedUtf8Hex": "e28888f09f988009",
+      "displayText": " in ???? ",
+      "paddedPages": [
+        " in ????        \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-54",
+      "input": "bA0123456789\\frac{1}{2}😀π   \\sqrt{x}π \r\n\n😀≤\\frac{1}{2}0123456789😀   x²≤ \\sqrt{x}A😀😀\t",
+      "normalizedUtf8Hex": "6241303132333435363738392831292f283229f09f9880cf8020202073717274287829cf80200d0a0af09f9880e289a42831292f28322930313233343536373839f09f988020202078c2b2e289a4207371727428782941f09f9880f09f988009",
+      "displayText": "bA0123456789(1)/(2)????pi sqrt(x)pi \n\n????<=(1)/(2)0123456789???? x^2<= sqrt(x)A???????? ",
+      "paddedPages": [
+        "bA0123456789(1)/\n(2)????pi sqrt(x\n)pi             \n                \n????<=(1)/(2)012\n3456789???? x^2<\n= sqrt(x)A??????",
+        "??              \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-55",
+      "input": " \\frac{1}{2}\nx²\t\t\r\n😀1234567890123456\\frac{1}{2}x²\\frac{1}{2}\n",
+      "normalizedUtf8Hex": "202831292f2832290a78c2b209090d0af09f9880313233343536373839303132333435362831292f28322978c2b22831292f2832290a",
+      "displayText": " (1)/(2)\nx^2 \n????1234567890123456(1)/(2)x^2(1)/(2)\n",
+      "paddedPages": [
+        " (1)/(2)        \nx^2             \n????123456789012\n3456(1)/(2)x^2(1\n)/(2)           \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-56",
+      "input": "∈   0123456789😀  😀 \r\nAπA\t≤\\frac{1}{2}b\\sqrt{x}\\sqrt{x}0123456789",
+      "normalizedUtf8Hex": "e2888820202030313233343536373839f09f98802020f09f9880200d0a41cf804109e289a42831292f28322962737172742878297371727428782930313233343536373839",
+      "displayText": " in 0123456789???? ???? \nApiA <=(1)/(2)bsqrt(x)sqrt(x)0123456789",
+      "paddedPages": [
+        " in 0123456789??\n?? ????         \nApiA <=(1)/(2)bs\nqrt(x)sqrt(x)012\n3456789         \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-57",
+      "input": "x²A0123456789\t\t∈",
+      "normalizedUtf8Hex": "78c2b241303132333435363738390909e28888",
+      "displayText": "x^2A0123456789 in ",
+      "paddedPages": [
+        "x^2A0123456789 i\nn               \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-58",
+      "input": "   \r\n      \r\n\n       bbA∈   0123456789 \nx²\t   ∈b\n",
+      "normalizedUtf8Hex": "2020200d0a2020202020200d0a0a20202020202020626241e2888820202030313233343536373839200a78c2b209202020e28888620a",
+      "displayText": " \n \n\n bbA in 0123456789 \nx^2 in b\n",
+      "paddedPages": [
+        "                \n                \n                \n bbA in 01234567\n89              \nx^2 in b        \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-59",
+      "input": "\n    AA \n\r\n   \n😀\\frac{1}{2}",
+      "normalizedUtf8Hex": "0a202020204141200a0d0a2020200af09f98802831292f283229",
+      "displayText": "\n AA \n\n \n????(1)/(2)",
+      "paddedPages": [
+        "                \n AA             \n                \n                \n????(1)/(2)     \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-60",
+      "input": "\\sqrt{x}0123456789π\r\n≤π😀\\frac{1}{2}   ≤A1234567890123456\r\nx²πA\n   0123456789bAA1234567890123456\\frac{1}{2}😀😀\tx²",
+      "normalizedUtf8Hex": "7371727428782930313233343536373839cf800d0ae289a4cf80f09f98802831292f283229202020e289a441313233343536373839303132333435360d0a78c2b2cf80410a20202030313233343536373839624141313233343536373839303132333435362831292f283229f09f9880f09f98800978c2b2",
+      "displayText": "sqrt(x)0123456789pi\n<=pi????(1)/(2) <=A1234567890123456\nx^2piA\n 0123456789bAA1234567890123456(1)/(2)???????? x^2",
+      "paddedPages": [
+        "sqrt(x)012345678\n9pi             \n<=pi????(1)/(2) \n<=A1234567890123\n456             \nx^2piA          \n 0123456789bAA12",
+        "34567890123456(1\n)/(2)???????? x^\n2               \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-61",
+      "input": "∈\r\n1234567890123456b😀∈\\sqrt{x}π∈x²01234567891234567890123456\t0123456789∈    ≤   ∈0123456789bA\r\n\\sqrt{x}\\frac{1}{2}0123456789   \\frac{1}{2} 0123456789   ",
+      "normalizedUtf8Hex": "e288880d0a3132333435363738393031323334353662f09f9880e2888873717274287829cf80e2888878c2b230313233343536373839313233343536373839303132333435360930313233343536373839e2888820202020e289a4202020e288883031323334353637383962410d0a737172742878292831292f283229303132333435363738392020202831292f2832292030313233343536373839202020",
+      "displayText": " in \n1234567890123456b???? in sqrt(x)pi in x^201234567891234567890123456 0123456789 in <= in 0123456789bA\nsqrt(x)(1)/(2)0123456789 (1)/(2) 0123456789 ",
+      "paddedPages": [
+        " in             \n1234567890123456\nb???? in sqrt(x)\npi in x^20123456\n7891234567890123\n456 0123456789 i\nn <= in 01234567",
+        "89bA            \nsqrt(x)(1)/(2)01\n23456789 (1)/(2)\n 0123456789     \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-62",
+      "input": "   x²\\frac{1}{2}\t😀A\r\n\\frac{1}{2}\r\n\tx²\n😀    \n\\frac{1}{2}😀b0123456789\tx²0123456789   \tA😀",
+      "normalizedUtf8Hex": "20202078c2b22831292f28322909f09f9880410d0a2831292f2832290d0a0978c2b20af09f9880202020200a2831292f283229f09f988062303132333435363738390978c2b2303132333435363738392020200941f09f9880",
+      "displayText": " x^2(1)/(2) ????A\n(1)/(2)\n x^2\n???? \n(1)/(2)????b0123456789 x^20123456789 A????",
+      "paddedPages": [
+        " x^2(1)/(2) ????\nA               \n(1)/(2)         \n x^2            \n????            \n(1)/(2)????b0123\n456789 x^2012345",
+        "6789 A????      \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-63",
+      "input": "😀bA   ∈   \n 😀≤   \n\t😀πbA😀12345678901234561234567890123456",
+      "normalizedUtf8Hex": "f09f98806241202020e288882020200a20f09f9880e289a42020200a09f09f9880cf806241f09f98803132333435363738393031323334353631323334353637383930313233343536",
+      "displayText": "????bA in \n ????<= \n ????pibA????12345678901234561234567890123456",
+      "paddedPages": [
+        "????bA in       \n ????<=         \n ????pibA????123\n4567890123456123\n4567890123456   \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-64",
+      "input": "\t0123456789∈\r\n1234567890123456😀1234567890123456   1234567890123456∈\tπ   ∈x²0123456789x²π≤∈\r\n∈\\sqrt{x}π\t≤\\sqrt{x}x²\\sqrt{x}1234567890123456",
+      "normalizedUtf8Hex": "0930313233343536373839e288880d0a31323334353637383930313233343536f09f98803132333435363738393031323334353620202031323334353637383930313233343536e2888809cf80202020e2888878c2b23031323334353637383978c2b2cf80e289a4e288880d0ae2888873717274287829cf8009e289a47371727428782978c2b27371727428782931323334353637383930313233343536",
+      "displayText": " 0123456789 in \n1234567890123456????1234567890123456 1234567890123456 in pi in x^20123456789x^2pi<= in \n in sqrt(x)pi <=sqrt(x)x^2sqrt(x)1234567890123456",
+      "paddedPages": [
+        " 0123456789 in  \n1234567890123456\n????123456789012\n3456 12345678901\n23456 in pi in x\n^20123456789x^2p\ni<= in          ",
+        " in sqrt(x)pi <=\nsqrt(x)x^2sqrt(x\n)123456789012345\n6               \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-65",
+      "input": "π😀",
+      "normalizedUtf8Hex": "cf80f09f9880",
+      "displayText": "pi????",
+      "paddedPages": [
+        "pi????          \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-66",
+      "input": "b\tπbA   \tx²x²\r\n   \\sqrt{x}\t≤≤ 😀\t😀A   \t\\sqrt{x}b\n\\sqrt{x}\nπ \r\n ∈",
+      "normalizedUtf8Hex": "6209cf8062412020200978c2b278c2b20d0a2020207371727428782909e289a4e289a420f09f988009f09f9880412020200973717274287829620a737172742878290acf80200d0a20e28888",
+      "displayText": "b pibA x^2x^2\n sqrt(x) <=<= ???? ????A sqrt(x)b\nsqrt(x)\npi \n in ",
+      "paddedPages": [
+        "b pibA x^2x^2   \n sqrt(x) <=<= ??\n?? ????A sqrt(x)\nb               \nsqrt(x)         \npi              \n in             "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-67",
+      "input": " \\sqrt{x}😀\n0123456789Ab",
+      "normalizedUtf8Hex": "2073717274287829f09f98800a303132333435363738394162",
+      "displayText": " sqrt(x)????\n0123456789Ab",
+      "paddedPages": [
+        " sqrt(x)????    \n0123456789Ab    \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-68",
+      "input": "0123456789😀\r\n\\sqrt{x} ∈\\frac{1}{2}0123456789",
+      "normalizedUtf8Hex": "30313233343536373839f09f98800d0a7371727428782920e288882831292f28322930313233343536373839",
+      "displayText": "0123456789????\nsqrt(x) in (1)/(2)0123456789",
+      "paddedPages": [
+        "0123456789????  \nsqrt(x) in (1)/(\n2)0123456789    \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-69",
+      "input": "1234567890123456   b      b\\frac{1}{2}\t0123456789A\t∈ ≤ ∈   ∈b",
+      "normalizedUtf8Hex": "3132333435363738393031323334353620202062202020202020622831292f28322909303132333435363738394109e2888820e289a420e28888202020e2888862",
+      "displayText": "1234567890123456 b b(1)/(2) 0123456789A in <= in in b",
+      "paddedPages": [
+        "1234567890123456\n b b(1)/(2) 0123\n456789A in <= in\n in b           \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-70",
+      "input": "≤b\r\n0123456789\\frac{1}{2}bA1234567890123456\\frac{1}{2}≤\tπA",
+      "normalizedUtf8Hex": "e289a4620d0a303132333435363738392831292f2832296241313233343536373839303132333435362831292f283229e289a409cf8041",
+      "displayText": "<=b\n0123456789(1)/(2)bA1234567890123456(1)/(2)<= piA",
+      "paddedPages": [
+        "<=b             \n0123456789(1)/(2\n)bA1234567890123\n456(1)/(2)<= piA\n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-71",
+      "input": "≤ 😀A😀bA≤0123456789∈\\frac{1}{2}≤ ≤∈\\frac{1}{2}\r\nπ\r\nπ😀≤x²π",
+      "normalizedUtf8Hex": "e289a420f09f988041f09f98806241e289a430313233343536373839e288882831292f283229e289a420e289a4e288882831292f2832290d0acf800d0acf80f09f9880e289a478c2b2cf80",
+      "displayText": "<= ????A????bA<=0123456789 in (1)/(2)<= <= in (1)/(2)\npi\npi????<=x^2pi",
+      "paddedPages": [
+        "<= ????A????bA<=\n0123456789 in (1\n)/(2)<= <= in (1\n)/(2)           \npi              \npi????<=x^2pi   \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-72",
+      "input": "\r\n\t∈0123456789≤",
+      "normalizedUtf8Hex": "0d0a09e2888830313233343536373839e289a4",
+      "displayText": "\n in 0123456789<=",
+      "paddedPages": [
+        "                \n in 0123456789<=\n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-73",
+      "input": "1234567890123456   \\sqrt{x}\n\t   bx²A ",
+      "normalizedUtf8Hex": "31323334353637383930313233343536202020737172742878290a092020206278c2b24120",
+      "displayText": "1234567890123456 sqrt(x)\n bx^2A ",
+      "paddedPages": [
+        "1234567890123456\n sqrt(x)        \n bx^2A          \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-74",
+      "input": "≤∈πx²\r\n∈",
+      "normalizedUtf8Hex": "e289a4e28888cf8078c2b20d0ae28888",
+      "displayText": "<= in pix^2\n in ",
+      "paddedPages": [
+        "<= in pix^2     \n in             \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-75",
+      "input": "1234567890123456≤\n0123456789😀   ≤\n \r\nx²≤   \tx²≤\n\nbπ\\sqrt{x}A😀\n",
+      "normalizedUtf8Hex": "31323334353637383930313233343536e289a40a30313233343536373839f09f9880202020e289a40a200d0a78c2b2e289a42020200978c2b2e289a40a0a62cf807371727428782941f09f98800a",
+      "displayText": "1234567890123456<=\n0123456789???? <=\n \nx^2<= x^2<=\n\nbpisqrt(x)A????\n",
+      "paddedPages": [
+        "1234567890123456\n<=              \n0123456789???? <\n=               \n                \nx^2<= x^2<=     \n                ",
+        "bpisqrt(x)A???? \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-76",
+      "input": "1234567890123456\r\nb0123456789\\sqrt{x}\r\n\\frac{1}{2}\\sqrt{x}01234567891234567890123456b\\sqrt{x}π \\sqrt{x}   ",
+      "normalizedUtf8Hex": "313233343536373839303132333435360d0a6230313233343536373839737172742878290d0a2831292f2832297371727428782930313233343536373839313233343536373839303132333435366273717274287829cf802073717274287829202020",
+      "displayText": "1234567890123456\nb0123456789sqrt(x)\n(1)/(2)sqrt(x)01234567891234567890123456bsqrt(x)pi sqrt(x) ",
+      "paddedPages": [
+        "1234567890123456\nb0123456789sqrt(\nx)              \n(1)/(2)sqrt(x)01\n2345678912345678\n90123456bsqrt(x)\npi sqrt(x)      "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-77",
+      "input": " \tx²x²\n\r\n😀\\sqrt{x}≤\n\\frac{1}{2}b\t0123456789≤",
+      "normalizedUtf8Hex": "200978c2b278c2b20a0d0af09f988073717274287829e289a40a2831292f283229620930313233343536373839e289a4",
+      "displayText": " x^2x^2\n\n????sqrt(x)<=\n(1)/(2)b 0123456789<=",
+      "paddedPages": [
+        " x^2x^2         \n                \n????sqrt(x)<=   \n(1)/(2)b 0123456\n789<=           \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-78",
+      "input": "x²1234567890123456π\r\n😀∈≤1234567890123456\\frac{1}{2} π1234567890123456≤0123456789π 😀   1234567890123456A😀π",
+      "normalizedUtf8Hex": "78c2b231323334353637383930313233343536cf800d0af09f9880e28888e289a4313233343536373839303132333435362831292f28322920cf8031323334353637383930313233343536e289a430313233343536373839cf8020f09f98802020203132333435363738393031323334353641f09f9880cf80",
+      "displayText": "x^21234567890123456pi\n???? in <=1234567890123456(1)/(2) pi1234567890123456<=0123456789pi ???? 1234567890123456A????pi",
+      "paddedPages": [
+        "x^21234567890123\n456pi           \n???? in <=123456\n7890123456(1)/(2\n) pi123456789012\n3456<=0123456789\npi ???? 12345678",
+        "90123456A????pi \n                \n                \n                \n                \n                \n                "
+      ]
+    },
+    {
+      "name": "cross-boundary-mix-79",
+      "input": "😀0123456789   x²∈123456789012345601234567891234567890123456\\sqrt{x}\\sqrt{x}1234567890123456Ax²   \\frac{1}{2}π",
+      "normalizedUtf8Hex": "f09f98803031323334353637383920202078c2b2e288883132333435363738393031323334353630313233343536373839313233343536373839303132333435367371727428782973717274287829313233343536373839303132333435364178c2b22020202831292f283229cf80",
+      "displayText": "????0123456789 x^2 in 123456789012345601234567891234567890123456sqrt(x)sqrt(x)1234567890123456Ax^2 (1)/(2)pi",
+      "paddedPages": [
+        "????0123456789 x\n^2 in 1234567890\n1234560123456789\n1234567890123456\nsqrt(x)sqrt(x)12\n34567890123456Ax\n^2 (1)/(2)pi    "
+      ]
+    }
+  ]
+}

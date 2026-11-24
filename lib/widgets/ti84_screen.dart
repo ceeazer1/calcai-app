@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../utils/ti84_text.dart';
+
 /// TI-84 Plus LCD geometry.
 ///
 /// The screen is 96x64 pixels. The large home-screen font is 6x8 px per cell,
@@ -21,7 +23,8 @@ const double _kCellH = 8;
 
 /// Wraps [text] the way the firmware does.
 ///
-/// Mirrors `paginateForTI()` in esp32.ino exactly: characters are accumulated
+/// Mirrors `paginateForTI()` in calculator/ti_text.h: normalize simple math,
+/// sanitize to the firmware's ASCII representation, then accumulate characters
 /// and the line is flushed the moment it reaches [cols] — a **hard wrap that
 /// breaks mid-word**, not a word wrap. Newlines flush early. Matching this is
 /// what makes the preview truthful rather than merely pretty.
@@ -34,14 +37,18 @@ List<String> wrapForTi84(String text, {int cols = kTi84Cols}) {
     curr = StringBuffer();
   }
 
-  final s = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
-  for (final rune in s.runes) {
-    final c = String.fromCharCode(rune);
+  final s = prepareForTi84(text);
+  for (var i = 0; i < s.length; i++) {
+    final c = s[i];
     if (c == '\n') {
       flush();
     } else {
       curr.write(c);
-      if (curr.length >= cols) flush();
+      if (curr.length >= cols) {
+        flush();
+        // A newline terminates this full line; it does not add a blank row.
+        if (i + 1 < s.length && s[i + 1] == '\n') i++;
+      }
     }
   }
   if (curr.isNotEmpty) flush();
