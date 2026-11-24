@@ -7,6 +7,7 @@ import 'package:calcai_app/services/ble_service.dart';
 import 'package:calcai_app/services/cloud_service.dart';
 import 'package:calcai_app/services/local_bench_profile.dart';
 import 'package:calcai_app/theme/app_theme.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -29,6 +30,9 @@ const _otherUuid = '021a9004-0382-4aea-bff4-6b3f1c5adfb5';
 const _id = '00000000-0000-0000-0000-00000000C62E';
 const _otherId = '00000000-0000-0000-0000-00000000C386';
 final _calls = <MethodCall>[];
+void Function(MethodCall)? _onNativeCall;
+int? _failStartNumber;
+Completer<void>? _startReplyGate;
 
 Map<String, Object> _advertisement({
   String id = _id,
@@ -62,7 +66,7 @@ Future<void> _emit(List<Map<String, Object>> advertisements) async {
 int get _starts => _calls.where((call) => call.method == 'startScan').length;
 
 Future<void> _waitForStart(int previous) async {
-  for (var i = 0; i < 100; i++) {
+  for (var i = 0; i < 1000; i++) {
     if (_starts > previous) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
       return;
@@ -162,6 +166,11 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(_channel, (call) async {
           _calls.add(call);
+          _onNativeCall?.call(call);
+          if (call.method == 'startScan') await _startReplyGate?.future;
+          if (call.method == 'startScan' && _starts == _failStartNumber) {
+            throw PlatformException(code: 'scan_unavailable');
+          }
           switch (call.method) {
             case 'flutterRestart':
             case 'connectedCount':
@@ -182,6 +191,9 @@ void main() {
   });
   setUp(() {
     _calls.clear();
+    _onNativeCall = null;
+    _failStartNumber = null;
+    _startReplyGate = null;
     SharedPreferences.setMockInitialValues({});
   });
 
@@ -223,6 +235,286 @@ void main() {
     });
     return;
   }
+
+  group('iOS native discovery', () {
+    setUp(() => debugDefaultTargetPlatformOverride = TargetPlatform.iOS);
+    tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    test(
+      'requests only the configured service in the native first pass',
+      () async {
+        final scan = await _scan(
+          service: BleService(serviceUuid: _otherUuid.toUpperCase()),
+        );
+        final arguments =
+            _calls.singleWhere((c) => c.method == 'startScan').arguments as Map;
+        expect(arguments['with_services'], [_otherUuid]);
+        for (final key in [
+          'with_names',
+          'with_keywords',
+          'with_remote_ids',
+          'with_msd',
+          'with_service_data',
+        ]) {
+          expect(
+            arguments[key],
+            isEmpty,
+            reason: '$key disables native UUID filtering',
+          );
+        }
+        await _emit([
+          _advertisement(services: [_otherUuid]),
+        ]);
+        await scan.ble.stopScan();
+        await scan.done;
+        expect(_starts, 1);
+        expect(scan.ble.devices.single.id, _id);
+        expect(scan.ble.pairedOwner, isNull);
+        expect(scan.ble.verifiedChallenge, isNull);
+      },
+    );
+
+    test(
+      'falls back for name-only firmware within the original timeout',
+      () async {
+        final elapsed = Stopwatch()..start();
+        final scan = await _scan(timeout: const Duration(milliseconds: 400));
+        await _waitForStart(1);
+        final arguments =
+            _calls.lastWhere((c) => c.method == 'startScan').arguments as Map;
+        expect(arguments['with_services'], isEmpty);
+        expect(scan.ble.isScanning, isTrue);
+        await _emit([_advertisement(name: 'CALcAi-Legacy', services: [])]);
+        final candidate = scan.ble.devices.single;
+        await _emit([
+          _advertisement(name: 'CalcAI-Legacy full', services: [], rssi: -29),
+        ]);
+        await scan.done;
+        expect(_starts, 2);
+        expect(identical(scan.ble.devices.single, candidate), isTrue);
+        expect(candidate.advertisementName, 'CalcAI-Legacy full');
+        expect(candidate.rssi, -29);
+        // Includes test/transport scheduling overhead, but rejects two full windows.
+        expect(elapsed.elapsed, lessThan(const Duration(milliseconds: 650)));
+        expect(scan.ble.pairedOwner, isNull);
+        expect(scan.ble.verifiedChallenge, isNull);
+      },
+    );
+
+    test(
+      'both empty passes finish and late results cannot add a candidate',
+      () async {
+        final scan = await _scan(timeout: const Duration(milliseconds: 220));
+        await scan.done;
+        expect(_starts, 2);
+        expect(scan.ble.isScanning, isFalse);
+        await _emit([_advertisement(name: 'CalcAI-late')]);
+        expect(scan.ble.devices, isEmpty);
+      },
+    );
+
+    test(
+      'user stop during the first pass prevents fallback and late updates',
+      () async {
+        final scan = await _scan(timeout: const Duration(milliseconds: 220));
+        await scan.ble.stopScan();
+        await scan.done;
+        await _emit([_advertisement(name: 'CalcAI-late')]);
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+        expect(_starts, 1);
+        expect(scan.ble.devices, isEmpty);
+      },
+    );
+
+    test(
+      'mixed modern and legacy candidates survive both scan phases',
+      () async {
+        final scan = await _scan(timeout: const Duration(milliseconds: 400));
+        await _emit([_advertisement(name: 'CalcAI-modern')]);
+        final modern = scan.ble.devices.single;
+        await _waitForStart(1);
+        expect(scan.ble.devices.single, same(modern));
+        await _emit([
+          _advertisement(id: _otherId, name: 'CalcAI-legacy', services: []),
+        ]);
+        await scan.done;
+        expect(_starts, 2);
+        expect(scan.ble.devices.map((d) => d.id), [_id, _otherId]);
+        expect(scan.ble.devices.first, same(modern));
+        expect(scan.ble.pairedOwner, isNull);
+        expect(scan.ble.verifiedChallenge, isNull);
+        expect(_calls.where((c) => c.method == 'connect'), isEmpty);
+      },
+    );
+
+    test('overlapping stops cannot clear a replacement attempt', () async {
+      final scan = await _scan(timeout: const Duration(milliseconds: 400));
+      Future<void>? replacement;
+      var replacing = false;
+      scan.ble.addListener(() {
+        if (!scan.ble.isScanning && !replacing) {
+          replacing = true;
+          replacement = scan.ble.startScan(
+            timeout: const Duration(milliseconds: 400),
+          );
+        }
+      });
+      addTearDown(() async {
+        await scan.ble.stopScan();
+        await replacement;
+      });
+      final stop1 = scan.ble.stopScan();
+      final stop2 = scan.ble.stopScan();
+      await Future.wait([stop1, stop2]);
+      await _waitForStart(1);
+      await scan.done;
+      expect(scan.ble.isScanning, isTrue);
+      expect(FlutterBluePlus.isScanningNow, isTrue);
+      await _emit([_advertisement(id: _otherId)]);
+      expect(scan.ble.devices.single.id, _otherId);
+    });
+
+    test('canceled pass cannot stop the replacement native scan', () async {
+      final scan = await _scan(timeout: const Duration(milliseconds: 400));
+      Future<void>? replacement;
+      var replacing = false;
+      scan.ble.addListener(() {
+        if (!scan.ble.isScanning && !replacing) {
+          replacing = true;
+          replacement = scan.ble.startScan(
+            timeout: const Duration(milliseconds: 400),
+          );
+        }
+      });
+      addTearDown(() async {
+        await scan.ble.stopScan();
+        await replacement;
+      });
+      await scan.ble.stopScan();
+      await _waitForStart(1);
+      await scan.done;
+      final secondStart = _calls.lastIndexWhere((c) => c.method == 'startScan');
+      await _emit([_advertisement(id: _otherId)]);
+      expect(scan.ble.devices.single.id, _otherId);
+      expect(FlutterBluePlus.isScanningNow, isTrue);
+      expect(
+        _calls.skip(secondStart + 1).where((c) => c.method == 'stopScan'),
+        isEmpty,
+      );
+    });
+
+    test('stop at the native phase boundary cannot restart scanning', () async {
+      final scan = await _scan(timeout: const Duration(milliseconds: 220));
+      Future<void>? stopped;
+      _onNativeCall = (call) {
+        if (call.method == 'stopScan' && stopped == null) {
+          stopped = scan.ble.stopScan();
+        }
+      };
+      await scan.done;
+      await stopped;
+      expect(stopped, isNotNull);
+      expect(_starts, 1);
+      expect(scan.ble.isScanning, isFalse);
+    });
+
+    test('stop while native start is pending cannot start fallback', () async {
+      final gate = Completer<void>();
+      _startReplyGate = gate;
+      final scan = await _scan(timeout: const Duration(milliseconds: 220));
+      final stopped = scan.ble.stopScan();
+      gate.complete();
+      await stopped;
+      await scan.done;
+      expect(_starts, 1);
+      expect(scan.ble.isScanning, isFalse);
+    });
+
+    test('stop during compatibility fallback ignores late results', () async {
+      final scan = await _scan(timeout: const Duration(milliseconds: 400));
+      await _waitForStart(1);
+      await scan.ble.stopScan();
+      await scan.done;
+      await _emit([_advertisement(name: 'CalcAI-late', services: [])]);
+      expect(_starts, 2);
+      expect(scan.ble.isScanning, isFalse);
+      expect(scan.ble.devices, isEmpty);
+    });
+
+    test(
+      'selection stop preserves the candidate without starting fallback',
+      () async {
+        final scan = await _scan(timeout: const Duration(milliseconds: 220));
+        Future<void>? stopped;
+        scan.ble.addListener(() {
+          if (scan.ble.devices.isNotEmpty && stopped == null) {
+            stopped = scan.ble.stopScan();
+          }
+        });
+        await _emit([_advertisement()]);
+        await scan.done;
+        await stopped;
+        await _emit([_advertisement(id: _otherId, name: 'CalcAI-late')]);
+        expect(_starts, 1);
+        expect(scan.ble.devices.single.id, _id);
+        expect(scan.ble.connectionState, DeviceConnectionState.disconnected);
+      },
+    );
+
+    test(
+      'dispose at the phase boundary prevents fallback and notification',
+      () async {
+        final ble = BleService();
+        final previous = _starts;
+        final done = ble.startScan(timeout: const Duration(milliseconds: 220));
+        await _waitForStart(previous);
+        var disposed = false;
+        _onNativeCall = (call) {
+          if (call.method == 'stopScan' && !disposed) {
+            disposed = true;
+            ble.dispose();
+          }
+        };
+        addTearDown(() async {
+          _onNativeCall = null;
+          if (!disposed) ble.dispose();
+          await FlutterBluePlus.stopScan();
+        });
+        await done;
+        expect(disposed, isTrue);
+        await _emit([_advertisement()]);
+        expect(_starts, 1);
+        expect(ble.devices, isEmpty);
+      },
+    );
+
+    test(
+      'native start failure is reported without an automatic second attempt',
+      () async {
+        _failStartNumber = 1;
+        final scan = await _scan();
+        await scan.done;
+        expect(_starts, 1);
+        expect(scan.ble.error, contains('Scan failed:'));
+        expect(scan.ble.devices, isEmpty);
+      },
+    );
+  });
+
+  test('Android keeps one unfiltered scan and name-only discovery', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final scan = await _scan();
+    expect(
+      (_calls.singleWhere((c) => c.method == 'startScan').arguments
+          as Map)['with_services'],
+      isEmpty,
+    );
+    await _emit([_advertisement(name: 'CalcAI-legacy', services: [])]);
+    await scan.done;
+    expect(_starts, 1);
+    expect(scan.ble.devices.single.id, _id);
+  });
 
   for (final name in <String?>[null, '']) {
     test('exact UUID discovers candidate with advName=$name', () async {

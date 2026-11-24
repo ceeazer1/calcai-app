@@ -387,6 +387,7 @@ class BleService extends ChangeNotifier {
   BluetoothCharacteristic? get commandCharacteristic => _scanChar;
 
   StreamSubscription<List<ScanResult>>? _scanSub;
+  int _scanGeneration = 0;
   StreamSubscription<BluetoothConnectionState>? _connectionSub;
   StreamSubscription<List<int>>? _statusNotifySub;
 
@@ -454,12 +455,17 @@ class BleService extends ChangeNotifier {
   /// Starts scanning for CalcAI BLE devices.
   ///
   /// Results are accumulated in [devices]. The scan runs for [timeout]
-  /// seconds and then stops automatically.
+  /// seconds and then stops automatically. On iOS the same time budget covers
+  /// a service-filtered first pass and a legacy name-only compatibility pass.
   Future<void> startScan({
     Duration timeout = const Duration(seconds: 10),
   }) async {
     if (LocalBenchProfile.enabled) return _startBenchScan(timeout);
-    if (_isScanning) return;
+    if (_disposed || _isScanning) return;
+    final generation = ++_scanGeneration;
+    bool current() => !_disposed && generation == _scanGeneration;
+    StreamSubscription<List<ScanResult>>? subscription;
+    Timer? deadline;
 
     _clearError();
     _devices.clear();
@@ -469,8 +475,10 @@ class BleService extends ChangeNotifier {
     try {
       // Cancel any existing scan
       await FlutterBluePlus.stopScan();
+      if (!current()) return;
 
-      _scanSub = FlutterBluePlus.onScanResults.listen((results) {
+      subscription = FlutterBluePlus.onScanResults.listen((results) {
+        if (!current()) return;
         for (final r in results) {
           final name = r.advertisementData.advName;
           final existing = _devices.indexWhere(
@@ -499,19 +507,51 @@ class BleService extends ChangeNotifier {
         }
         notifyListeners();
       });
+      _scanSub = subscription;
 
-      await FlutterBluePlus.startScan(timeout: timeout);
-      // startScan completes when scanning STARTS, not when its timer expires.
-      // Keep the result subscription until native scanning ends (or connection
-      // stops it early). isScanning replays its current state to new listeners.
-      await FlutterBluePlus.isScanning.where((scanning) => !scanning).first;
+      Future<void> scanPass(Duration window, List<Guid> services) async {
+        if (!current()) return;
+        await FlutterBluePlus.startScan(
+          timeout: window,
+          withServices: services,
+        );
+        if (!current()) return;
+        // startScan completes when scanning starts. Keep listening until it
+        // ends, then drain native stop before considering a second pass.
+        await FlutterBluePlus.isScanning.where((scanning) => !scanning).first;
+        if (!current()) return;
+        await FlutterBluePlus.stopScan();
+      }
+
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+        final elapsed = Stopwatch()..start();
+        deadline = Timer(timeout, () {
+          if (current()) unawaited(FlutterBluePlus.stopScan());
+        });
+        // Only a service filter reaches CoreBluetooth as a UUID filter. Adding
+        // a name/keyword filter makes the pinned Darwin plugin scan unfiltered.
+        await scanPass(Duration(microseconds: timeout.inMicroseconds ~/ 2), [
+          Guid(serviceUuid),
+        ]);
+        final remaining = timeout - elapsed.elapsed;
+        if (current() && remaining > Duration.zero) {
+          // Older firmware may advertise only a CalcAI name. Retain the same
+          // candidate checks and accumulated results within the original budget.
+          await scanPass(remaining, const []);
+        }
+      } else {
+        await scanPass(timeout, const []);
+      }
     } catch (e) {
-      _setError('Scan failed: ${_friendlyError(e)}');
+      if (current()) _setError('Scan failed: ${_friendlyError(e)}');
     } finally {
-      _isScanning = false;
-      _scanSub?.cancel();
-      _scanSub = null;
-      notifyListeners();
+      deadline?.cancel();
+      await subscription?.cancel();
+      if (current()) {
+        _isScanning = false;
+        _scanSub = null;
+        notifyListeners();
+      }
     }
   }
 
@@ -589,16 +629,20 @@ class BleService extends ChangeNotifier {
 
   /// Stops an ongoing BLE scan.
   Future<void> stopScan() async {
+    final generation = ++_scanGeneration;
+    final subscription = _scanSub;
+    _scanSub = null;
     if (LocalBenchProfile.enabled) {
       ++_benchScanGeneration;
       _benchTarget.invalidate();
       _devices.clear();
     }
     await FlutterBluePlus.stopScan();
-    _scanSub?.cancel();
-    _scanSub = null;
-    _isScanning = false;
-    if (!_disposed) notifyListeners();
+    await subscription?.cancel();
+    if (!_disposed && generation == _scanGeneration) {
+      _isScanning = false;
+      notifyListeners();
+    }
   }
 
   // ── Connection ─────────────────────────────────────────────────────
@@ -2340,6 +2384,7 @@ class BleService extends ChangeNotifier {
     _cancelNetworkRemoval();
     _invalidateAckReceipts();
     _disposed = true;
+    ++_scanGeneration;
     ++_connectionGeneration;
     ++_benchScanGeneration;
     _benchTarget.invalidate();

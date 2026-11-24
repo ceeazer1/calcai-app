@@ -150,7 +150,7 @@ void main() {
   );
 
   const fallback =
-      'The Bluetooth connection ended. Open Settings > BLE on your calculator, then scan again.';
+      'The Bluetooth connection ended. Open Settings > Bluetooth on your calculator, then scan again.';
   for (final scenario in [
     (
       name: 'connection error preserves its explanation',

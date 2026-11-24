@@ -68,7 +68,7 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
       setState(() {
         _phase = _Phase.idle;
         _error = error == null || error.isEmpty
-            ? 'The Bluetooth connection ended. Open Settings > BLE on your calculator, then scan again.'
+            ? 'The Bluetooth connection ended. Open Settings > Bluetooth on your calculator, then scan again.'
             : error;
       });
       return;
@@ -402,7 +402,8 @@ class _LinkDeviceScreenState extends State<LinkDeviceScreen> {
     if (_phase == _Phase.scanning && ble.devices.isEmpty) {
       setState(() {
         _phase = _Phase.idle;
-        _error = 'No calculator found. Open Settings > BLE on it, then retry.';
+        _error =
+            'No calculator found. Open Settings > Bluetooth on your calculator, then try again.';
       });
     }
   }

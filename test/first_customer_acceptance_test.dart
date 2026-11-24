@@ -431,7 +431,7 @@ Future<void> main() async {
           'denied' => 'CalcAI needs Bluetooth access to find your calculator.',
           'off' => 'Turn on Bluetooth, then tap Scan again.',
           'none' =>
-            'No calculator found. Open Settings > BLE on it, then retry.',
+            'No calculator found. Open Settings > Bluetooth on your calculator, then try again.',
           _ => 'Could not verify this calculator. Scan again.',
         };
         expect(find.text(message), findsOneWidget);
